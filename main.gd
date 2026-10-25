@@ -805,7 +805,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			total_kills = 0
 			single_shot_kills_since_drop = 0
 			active_multipliers.clear()
-			drops.clear() # A new run must not inherit the previous run\'s rewards.
+			drops.clear() # A new run must not inherit old rewards.
 			level = 1
 			damage_level = 0
 			rate_level = 0
