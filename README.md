@@ -386,3 +386,19 @@ The city name appears in the live HUD and in the centered next-level introductio
 3. Confirm the shop opens after every fifth level and that level 25 leads to victory/Top 10 rather than level 26.
 4. Test falling pickups during transitions and the shop-to-city transition, and check that weapon downgrades and boss health decrement remain correct.
 5. Godot 4 end-to-end testing and balancing are required before calling the 25-level campaign production-ready.
+
+## HUD lives icon, lieutenant intro, and no frozen transition shots (latest)
+- The top-left lives display now uses a small **blue ship icon × N** instead of literal **LIVES N**; Scrap remains next to it and the BEST counter stays on the right.
+- Every city guardian now receives a dedicated **3.8-second lieutenant announcement** after the last regular enemy is destroyed:
+  **THE GUARDIAN OF THIS ZONE / HAS SENT HIS LIEUTENANT / TO DEAL WITH YOU**.
+  The guardian mini-boss does **not** appear or shoot until that announcement has finished. This applies to boss stages 5, 10, 15, 20 and 25, including the final Zagreb encounter.
+- During the lieutenant announcement, the player can move and catch leftover falling Scrap, Double Shot and multiplier rewards. P and TAB still freeze the announcement/rewards.
+- **Frozen player projectile fix:** firing is disabled in both the between-level intermission and the boss announcement. The player's fire-button held state is still updated so keeping B/Space/mouse pressed cannot create an unintended shot when the next wave starts. Movement and rewards are unaffected; combat shooting remains edge-triggered and works again when battle resumes.
+- Existing player projectiles are cleared upon entry to a level intermission or boss announcement. Player weapon level and other upgrades are not reset by these transitions.
+
+### QA checklist
+1. Verify the upper-left HUD reads [tiny blue ship] **x3 SCRAP ...** at the start, and x2 after taking one actual life loss.
+2. During a normal intermission after any cleared level, repeatedly press fire: no blue/yellow/lilac frozen shots should build up in front of the ship. After enemies arrive, firing must work normally on a fresh press.
+3. Clear all waves on stage 5: verify the announced sentence stays visible for about 3.8 seconds, with no early boss attack, then the guardian appears.
+4. Move and catch a falling reward during the announcement; confirm it counts and resumes normally on P unpause.
+5. Check regular boss and final boss after the announcement and verify shop and next level transitions still work.
