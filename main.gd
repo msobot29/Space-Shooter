@@ -20,7 +20,7 @@ var lives := 3
 var score := 0
 var scrap := 0
 var level := 1
-var damage_level := 0
+var damage_level := 0 # 0-2 single, 3-5 double, 6 triple
 var rate_level := 0
 var ability_level := 1 # 1/2/3 = 2/4/6 seconds
 var ability_time := 0.0
@@ -212,8 +212,34 @@ func update_player(delta: float) -> void:
 	player_x = clampf(player_x + clampf(move, -1.0, 1.0) * SPEED * delta, 28.0, W - 28.0)
 	fire_clock -= delta
 	if (Input.is_key_pressed(KEY_B) or Input.is_key_pressed(KEY_SPACE) or Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)) and fire_clock <= 0.0:
-		player_bullets.append(Vector2(player_x, PLAYER_Y - 34.0))
+		fire_weapon()
 		fire_clock = maxf(0.085, 0.22 - rate_level * 0.035)
+
+func fire_weapon() -> void:
+	# Each tier shoots its projectiles in parallel, with consistent damage per bullet.
+	var muzzle_y := PLAYER_Y - 34.0
+	if damage_level >= 6:
+		for offset in [-25.0, 0.0, 25.0]:
+			player_bullets.append(Vector2(player_x + offset, muzzle_y))
+	elif damage_level >= 3:
+		for offset in [-17.0, 17.0]:
+			player_bullets.append(Vector2(player_x + offset, muzzle_y))
+	else:
+		player_bullets.append(Vector2(player_x, muzzle_y))
+
+func weapon_label() -> String:
+	if damage_level >= 6:
+		return "TRIPLE SHOT MAX"
+	if damage_level >= 3:
+		return "DOUBLE SHOT %d/3" % [damage_level - 3]
+	return "SINGLE SHOT %d/3" % damage_level
+
+func next_weapon_label() -> String:
+	if damage_level >= 6:
+		return "MAX"
+	if damage_level >= 3:
+		return "Triple at %d/3" % [damage_level - 3]
+	return "Double at %d/3" % damage_level
 
 func update_enemies(delta: float) -> void:
 	if boss_active:
@@ -348,7 +374,7 @@ func upgrade_cost(kind: int) -> int:
 	return 99999
 
 func buy_upgrade(kind: int) -> void:
-	var capped := (kind == 1 and damage_level >= 4) or (kind == 2 and rate_level >= 4) or (kind == 3 and ability_level >= 3)
+	var capped := (kind == 1 and damage_level >= 6) or (kind == 2 and rate_level >= 4) or (kind == 3 and ability_level >= 3)
 	if capped or scrap < upgrade_cost(kind):
 		return
 	scrap -= upgrade_cost(kind)
@@ -459,7 +485,11 @@ func _draw() -> void:
 		draw_rect(Rect2(70, 218, 580, 495), Color(0.07, 0.12, 0.23, 0.96))
 		text_at("MISSION COMPLETE!", 198, 310, 32)
 		text_at("SCRAP: %d" % scrap, 265, 360, 26, Color(0.95, 0.85, 0.3))
-		text_at("1 - Weapon damage Lv.%d   (%d)" % [damage_level, upgrade_cost(1)], 120, 430, 23)
+		if damage_level >= 6:
+			text_at("1 - TRIPLE SHOT MAX", 120, 430, 23)
+		else:
+			text_at("1 - %s  (%d)" % [weapon_label(), upgrade_cost(1)], 120, 430, 23)
+		text_at("Next: %s" % next_weapon_label(), 120, 457, 17, Color(0.6, 0.85, 0.98))
 		text_at("2 - Fire rate Lv.%d       (%d)" % [rate_level, upgrade_cost(2)], 120, 490, 23)
 		text_at("3 - X shield Lv.%d / 3   (%d)" % [ability_level, upgrade_cost(3)], 120, 555, 23)
 		text_at("ENTER - Next mission", 185, 660, 26, Color(0.4, 0.9, 1.0))
