@@ -145,3 +145,9 @@ The shop displays the actual purchase price and owned status. This section super
 2. Buy Fire Rate; repeated taps may fire faster, but holding remains single-volley.
 3. With enough Scrap in the first shop, purchase speed and fire rate once each; a second purchase should be blocked until the next cleared level.
 4. Verify final tier remains locked throughout the five-level demo and ship/shield/boss behavior is unchanged.
+
+## Latest rule: no mission-based upgrade locks
+- Extra Speed (50 Scrap per purchase) and Rate of Fire (75 Scrap per purchase) can now be bought whenever the player has the funds, regardless of mission number.
+- Both retain their existing 4-level maximum for balance, but reaching it does not require a specific mission. Previous `LATER STAGE` restrictions are removed.
+- Firing is still one volley per fresh press rather than automatic on holding the button.
+- All weapon, shield and boss mechanics are unchanged. This rule supersedes the previous stage-gated upgrade note above.
