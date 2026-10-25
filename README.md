@@ -243,3 +243,26 @@ Engine test still needs confirmation in Godot 4.
 1. Clear missions 1–4: no shop should appear; each following level starts automatically.
 2. Clear mission 5: shop appears; test pricing and upgrade purchases.
 3. Press ENTER on the mission-5 shop: victory and persistent High Score / name entry appear, not mission 6.
+
+## Croatia prototype expanded to 10 levels (latest)
+The playable Croatia prototype now covers **missions 1–10**, while the long-term campaign roadmap remains unchanged.
+
+**Progression**
+- Missions **1–4** proceed one after another with no shop intermission.
+- Mission **4** ends with the existing mini-boss (200 HP), then mission 5 starts.
+- After **mission 5**, the between-stage shop opens. Scrap earned across the first five missions can now be spent on upgrades used in missions 6–10. Press ENTER to start mission 6.
+- Missions **6–8** continue automatically; regular sea creatures gain some HP in the second half, with progressively faster (but bounded) enemy fire.
+- Mission **9** includes another mini-boss encounter (270 HP), with the same recognizable 360-degree attack and two-phase behavior.
+- After **mission 10**, the shop opens once more. Press **ENTER - View results** to finish the Croatia demo and submit a qualifying score to the persistent Top 10 board. Purchases at the final shop cannot be used until additional missions are added.
+
+**Balance:** Red crabs stay in the forward shield formation; no arbitrary mission lock applies to purchases. The second half's enemy firing interval is limited to 0.56 seconds, and enemy HP rises gradually rather than every third level. Score multipliers still trigger every 30 cumulative kills across the entire run, and Shop/High Score/Pause functionality remains.
+
+**QA smoke test**
+1. Clear levels 1–4 and verify stage transitions are automatic and that boss appears after the waves on level 4.
+2. Clear level 5: buy Speed or Rate of Fire, then press ENTER. Verify level 6 loads with the purchased stat.
+3. Clear levels 6–8 and verify waves, hit detection, drops and score multipliers still function.
+4. On level 9, verify the 270-HP mini-boss spawns after its two waves, then transition to level 10.
+5. Clear level 10: shop appears, then ENTER shows victory + local Top 10 name entry, with no accidental level 11.
+6. Confirm the P pause, R shield, TAB Ship Status and colored Double/Triple Shot remain usable.
+
+This section supersedes earlier references to a five-level maximum in the README. The actual game logic has been updated, but the new 10-level progression still requires an in-engine Godot test.
