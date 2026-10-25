@@ -442,10 +442,15 @@ func complete_level() -> void:
 const DOUBLE_SHOT_PRICE := 540
 const TRIPLE_SHOT_PRICE := 1580
 
+# Progressive Scrap costs balance upgrades without mission-based restrictions.
+# Total for MAX speed: 1730; total for MAX fire rate: 2150.
+const SPEED_UPGRADE_COSTS := [100, 260, 520, 850]
+const FIRE_UPGRADE_COSTS := [125, 325, 650, 1050]
+
 func upgrade_cost(kind: int) -> int:
 	match kind:
-		1: return 50
-		2: return 75
+		1: return SPEED_UPGRADE_COSTS[mini(speed_level, 3)]
+		2: return FIRE_UPGRADE_COSTS[mini(rate_level, 3)]
 		3: return DOUBLE_SHOT_PRICE
 		4: return TRIPLE_SHOT_PRICE - (DOUBLE_SHOT_PRICE if damage_level >= 3 else 0)
 		5: return 900 if ability_level == 1 else 1800
