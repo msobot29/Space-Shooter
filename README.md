@@ -73,7 +73,7 @@ At weapon upgrade 6, the outer projectiles spread **22 degrees** left/right whil
 ## Movement, fire-rate and boss spin update
 - Initial ship movement is **295 px/s** (was 470); shop key **4** buys up to four speed levels, +48 px/s each, costing 120 / 250 / 380 / 510 Scrap.
 - Initial firing interval is **0.34 s** (was 0.22); rate upgrades shorten it by 0.05 s per level, down to **0.14 s** at level 4 (effective floor 0.12 s).
-- Mission-4 mini-boss now periodically dives toward the player and rotates a full 360 degrees during a **1.5 s** warning, then fires **48** projectiles outward in every direction. A distinct purple-pink circle and on-screen warning signal the attack. Activating X Shield ahead of the incoming ring should be a strong defensive option; avoiding it without the shield may still be possible with careful positioning.
+- Mission-4 mini-boss now periodically dives toward the player and rotates a full 360 degrees during a **1.5 s** warning, then attempts a **48-slot** radial projectile ring, leaving two deliberately wider dodge corridors. One gap is oriented toward the player's position when the ring is fired and a second is offset by about 36 degrees. A distinct purple-pink circle and on-screen warning signal the attack. Activating X Shield remains useful, but players can also dodge through the gaps with precise positioning. The boss now has **160 HP** (was 90) and enters phase 2 at 75 HP. The 360 attack repeats every three volleys (spread, spin, aimed), with shorter gaps between attack sequences.
 - X Shield duration and its 10-second cooldown after deactivation have not changed.
 
 ### Test checklist
@@ -84,3 +84,9 @@ At weapon upgrade 6, the outer projectiles spread **22 degrees** left/right whil
 5. Confirm X Shield blocks the radial projectiles when timed correctly.
 
 Godot editor validation remains pending.
+
+## Boss balance update
+- HP: 160 (previously 90); second phase starts at 75 HP.
+- Special 360 spin now happens regularly every three attack decisions: spread -> spin -> aimed attack, repeating. Attack interval: 1.5 seconds in phase 1 / 1.2 seconds in phase 2, excluding 1.5-second spin warning.
+- 48 radial projectile slots with two open corridors to enable skillful dodging. Projectile speed 350 px/s (phase 1), 410 px/s (phase 2).
+- Test both escaping through the gaps and blocking with X Shield. Gaps are intended to improve chances, not guarantee safety.
