@@ -110,3 +110,16 @@ The shop displays the actual purchase price and owned status. This section super
 - Two **red armored crabs per side** enter each wave and remain closer to the player than the jellyfish and eels. They have 5 + level/3 HP and act as a defensive front line that intercepts upward fire before it reaches the rear ranks.
 - Other enemies occupy the same firing lanes behind them; red crabs are tougher but can be destroyed to expose the formation.
 - Test wave 1 and wave 2: no screen-crossing teleports; front-line red crabs absorb incoming shots, with the remaining sea creatures flying behind.
+
+## Ship status modal (latest)
+- Inspired by Warblade's S (speed) and B (bullets) status meters, adapted to this game's mechanics as **SPEED** and **FIRE** bars (our FIRE bar represents rate of fire, not Warblade's on-screen bullet capacity).
+- Compact speed and fire-level bars now appear in the top-left HUD, without a large panel in the enemy flight area.
+- Press **TAB** during gameplay to open the **SHIP STATUS** modal. Gameplay simulation pauses until TAB is pressed again.
+- The modal shows current ship speed in pixels per second, speed upgrade level, shots per second, seconds between shots, fire-rate level, equipped weapon and shield level.
+- The between-level shop also shows live speed (px/s) and firing rate (shots/s); values refresh as purchases are made.
+- Shop costs remain 50 Scrap for every Extra Speed upgrade, 75 Scrap for every Rate of Fire upgrade and 1580 Scrap for direct Triple Shot (or 1040 after Double Shot).
+
+### Test
+1. Press TAB during a mission; check speed and shots/s; confirm enemies stop moving until TAB closes it.
+2. Buy Extra Speed and Rate of Fire separately; verify their values increase in the shop and TAB panel on the next mission.
+3. Confirm the five shop choices still respond to keys 1-5.
