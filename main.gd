@@ -1,5 +1,5 @@
 extends Node2D
-## Adriatic Uprising - playable Croatia chapter prototype (levels 1-10).
+## Adriatic Uprising - 25-level Croatia liberation campaign.
 ## All sprites are procedural. Godot 4.x / GDScript 2.0.
 
 const W := 720.0
@@ -12,7 +12,8 @@ const SPIN_PROJECTILES := 48
 const SPIN_GAP_PRIMARY := 0.145 # Smaller dodge corridor than the original 0.22
 const SPIN_GAP_SECONDARY := 0.12 # Smaller than original 0.19
 const BULLET_SPEED := 820.0
-const MAX_LEVEL := 10
+const MAX_LEVEL := 25
+const CITY_NAMES := ["ZADAR", "RIJEKA", "SPLIT", "OSIJEK", "ZAGREB"]
 const HIGH_SCORE_FILE := "user://highscores.cfg"
 const HIGH_SCORE_LIMIT := 10
 const ABILITY_COOLDOWN := 10.0 # Starts after the shield expires
@@ -77,6 +78,12 @@ var waves_spawned := 0
 var wave_path_ids: Array[int] = []
 var boss_pending := false
 
+func city_name() -> String:
+	return CITY_NAMES[clampi(int((level - 1) / 5), 0, CITY_NAMES.size() - 1)]
+
+func city_mission() -> int:
+	return ((level - 1) % 5) + 1
+
 func _ready() -> void:
 	randomize()
 	font = ThemeDB.fallback_font
@@ -110,11 +117,11 @@ func start_level() -> void:
 	explosions.clear()
 	boss.clear()
 	boss_active = false
-	boss_pending = level == 4 or level == 9
+	boss_pending = level % 5 == 0 # City guardian every 5 levels; final boss at 25
 	waves_spawned = 0
 	wave_path_ids.clear()
 	boss_phase = 1
-	boss_shields = 2
+	boss_shields = 4 if level == MAX_LEVEL else 2
 	boss_attack_index = 0
 	boss_warning_time = 0.0
 	boss_warning_x = W / 2.0
@@ -162,20 +169,20 @@ func spawn_wave() -> void:
 			# Five distinct formations for missions 6-10, with armored crabs always
 			# in the lower/front rows to protect the lighter enemies.
 			if level >= 6:
-				match level:
-					6: # V wedge: mirrored guards at the tip, back-line on wings.
+				match city_mission():
+					1: # V wedge: mirrored guards at the tip, back-line on wings.
 						formation_x = (160.0 + float(lane) * 115.0) if left else (560.0 - float(lane) * 115.0)
 						row_y = (505.0 + float(lane) * 46.0) if is_guard else (280.0 + float(index - 2) * 45.0)
-					7: # Tight double columns: layered defenders and rear units.
+					2: # Tight double columns: layered defenders and rear units.
 						formation_x = (205.0 + float(lane) * 58.0) if left else (515.0 - float(lane) * 58.0)
 						row_y = (485.0 + float(lane) * 55.0) if is_guard else (265.0 + float(index - 2) * 65.0)
-					8: # Crescent: wider rear wings and a compact red shield.
+					3: # Crescent: wider rear wings and a compact red shield.
 						formation_x = (170.0 + float(lane) * 130.0) if left else (550.0 - float(lane) * 130.0)
 						row_y = (515.0 + float(lane) * 35.0) if is_guard else (265.0 + absf(float(index - 3)) * 65.0)
-					9: # Pincer: each side approaches around the screen edges.
+					4: # Pincer: each side approaches around the screen edges.
 						formation_x = (120.0 + float(lane) * 100.0) if left else (600.0 - float(lane) * 100.0)
 						row_y = (505.0 + float(lane) * 40.0) if is_guard else (240.0 + float(index - 2) * 58.0)
-					10: # Crown: shield in the middle, rear units spanning the field.
+					5: # Crown: shield in the middle, rear units spanning the field.
 						formation_x = (210.0 + float(lane) * 65.0) if left else (510.0 - float(lane) * 65.0)
 						row_y = (520.0 + float(lane) * 40.0) if is_guard else (275.0 + float(index - 2) * 48.0)
 			var target_pos := Vector2(formation_x, row_y + float(waves_spawned - 1) * 20.0)
@@ -190,7 +197,7 @@ func spawn_wave() -> void:
 				"path": path_id,
 				"side": -1.0 if left else 1.0,
 				"offset": float(index) * 0.26,
-				"hp": 5 + int((level - 1) / 4) if is_guard else 2 + int((level - 1) / 4),
+				"hp": 5 + mini(int((level - 1) / 5), 4) if is_guard else 2 + mini(int((level - 1) / 5), 4),
 				"kind": kind
 			})
 
@@ -253,7 +260,8 @@ func launch_boss() -> void:
 	boss_pending = false
 	boss_active = true
 	enemy_bullets.clear()
-	var boss_hp := 270.0 if level >= 9 else 200.0
+	# Each liberated city has a stronger guardian; Zagreb is the final fight.
+	var boss_hp := 650.0 if level == MAX_LEVEL else 200.0 + float(int((level - 1) / 5)) * 70.0
 	boss = {"pos": Vector2(W / 2.0, 155.0), "prev_pos": Vector2(W / 2.0, 155.0), "hp": boss_hp, "max_hp": boss_hp, "direction": 1.0}
 	boss_fire_clock = 1.4
 	spin_countdown = 0.0
@@ -394,32 +402,32 @@ func launch_enemy_shot(origin: Vector2, velocity: Vector2, tint: Color) -> void:
 func fire_advanced_enemy_pattern(origin: Vector2, kind: int) -> void:
 	# Distinct, readable attacks for the second five-mission block.
 	var aim := (Vector2(player_x, PLAYER_Y) - origin).normalized()
-	var speed := 270.0 + float(level - 6) * 12.0
-	match level:
-		6: # Electric eels: a single accurately aimed green bolt.
+	var speed := minf(360.0, 270.0 + float(level - 6) * 5.0)
+	match city_mission():
+		1: # Electric eels: a single accurately aimed green bolt.
 			if kind == 2:
 				launch_enemy_shot(origin, aim * speed, Color(0.5, 1.0, 0.35))
 			else:
 				enemy_bullets.append(origin)
-		7: # Double columns: paired crossing blue bolts.
+		2: # Double columns: paired crossing blue bolts.
 			if kind == 0:
 				launch_enemy_shot(origin, aim.rotated(-0.19) * speed, Color(0.38, 0.84, 1.0))
 				launch_enemy_shot(origin, aim.rotated(0.19) * speed, Color(0.38, 0.84, 1.0))
 			else:
 				enemy_bullets.append(origin)
-		8: # Crescent: three-way orange fan only from armored guards.
+		3: # Crescent: three-way orange fan only from armored guards.
 			if kind == 1:
 				for angle in [-0.27, 0.0, 0.27]:
 					launch_enemy_shot(origin, aim.rotated(angle) * speed, Color(1.0, 0.64, 0.3))
 			else:
 				enemy_bullets.append(origin)
-		9: # Pincer: two narrow targeted lanes, including the miniboss's guards.
+		4: # Pincer: two narrow targeted lanes, including the miniboss's guards.
 			if kind == 2:
 				for angle in [-0.11, 0.11]:
 					launch_enemy_shot(origin, aim.rotated(angle) * speed, Color(0.65, 1.0, 0.48))
 			else:
 				enemy_bullets.append(origin)
-		10: # Crown: alternating narrow paired fire and aimed pulses.
+		5: # Crown: alternating narrow paired fire and aimed pulses.
 			if kind == 0:
 				for angle in [-0.22, 0.22]:
 					launch_enemy_shot(origin, aim.rotated(angle) * speed, Color(0.65, 0.72, 1.0))
@@ -432,7 +440,7 @@ func update_boss(delta: float) -> void:
 	var pos: Vector2 = boss["pos"]
 	boss["prev_pos"] = pos
 	var direction: float = boss["direction"]
-	pos.x += direction * (100.0 if boss_phase == 1 else 165.0) * delta
+	pos.x += direction * ((135.0 if boss_phase == 1 else 195.0) if level == MAX_LEVEL else (100.0 if boss_phase == 1 else 165.0)) * delta
 	if pos.x >= W - 110.0 or pos.x <= 110.0:
 		direction *= -1.0
 	pos.x = clampf(pos.x, 110.0, W - 110.0)
@@ -466,7 +474,7 @@ func update_boss(delta: float) -> void:
 			spin_rotation = 0.0
 			# The next volley begins only after the warning and rotation.
 		boss_attack_index += 1
-		boss_fire_clock = 1.5 if boss_phase == 1 else 1.2
+		boss_fire_clock = (1.20 if boss_phase == 1 else 0.98) if level == MAX_LEVEL else (1.5 if boss_phase == 1 else 1.2)
 	if boss_phase == 1 and float(boss["hp"]) <= float(boss["max_hp"]) * 0.475:
 		boss_phase = 2
 
@@ -481,7 +489,8 @@ func fire_radial_barrage(origin: Vector2) -> void:
 		var secondary_gap := absf(wrapf(angle - second_gap, -PI, PI)) < SPIN_GAP_SECONDARY
 		if near_player_gap or secondary_gap:
 			continue
-		var velocity := Vector2(cos(angle), sin(angle)) * (350.0 if boss_phase == 1 else 410.0)
+		var speed := (390.0 if boss_phase == 1 else 450.0) if level == MAX_LEVEL else (350.0 if boss_phase == 1 else 410.0)
+		var velocity := Vector2(cos(angle), sin(angle)) * speed
 		radial_bullets.append({"pos": origin, "velocity": velocity})
 
 func swept_hit_fraction(from_pos: Vector2, to_pos: Vector2, target_before: Vector2, target_after: Vector2, radius: float) -> float:
@@ -876,7 +885,7 @@ func draw_ship_status_modal() -> void:
 func _draw() -> void:
 	for star in stars:
 		draw_circle(star, 1.5, Color(0.45, 0.65, 0.9, 0.55))
-	text_at("CROATIA %d/%d  WAVE %d/2  SCORE %d" % [level, MAX_LEVEL, waves_spawned, score], 20, 35)
+	text_at("%s  LVL %d/%d  WAVE %d/2  SCORE %d" % [city_name(), level, MAX_LEVEL, waves_spawned, score], 20, 35, 19)
 	text_at("LIVES %d       SCRAP %d" % [lives, scrap], 20, 66, 21, Color(0.8, 0.95, 0.7))
 	text_at("BEST %d" % maxi(score, int(high_scores[0]["score"]) if not high_scores.is_empty() else 0), 480, 66, 19, Color(1.0, 0.88, 0.5))
 	if ability_time > 0.0:
@@ -952,7 +961,7 @@ func _draw() -> void:
 			draw_line(Vector2(boss_warning_x, 215.0), Vector2(boss_warning_x, H - 80.0), Color(1.0, 0.35, 0.25, 0.7), 2.0)
 		draw_rect(Rect2(150, 85, 420, 12), Color(0.25, 0.25, 0.35))
 		draw_rect(Rect2(150, 85, 420 * float(boss["hp"]) / float(boss["max_hp"]), 12), Color(0.9, 0.25, 0.3))
-		text_at("MINI BOSS  |  SHIELD %d" % boss_shields, 226, 118, 18)
+		text_at("%s  |  SHIELD %d" % ["FINAL BOSS" if level == MAX_LEVEL else "CITY GUARDIAN", boss_shields], 215, 118, 18)
 	for drop in drops:
 		var pos: Vector2 = drop["pos"]
 		if drop.get("kind", "scrap") == "multiplier":
@@ -973,13 +982,13 @@ func _draw() -> void:
 		# First 10 seconds are silent; only show the level title near wave entry.
 		draw_rect(Rect2(144, 369, 432, 114), Color(0.04, 0.10, 0.23, 0.87))
 		draw_rect(Rect2(144, 369, 432, 4), Color(0.25, 0.73, 1.0))
-		var level_title := "LEVEL %d" % level
-		var title_size := 53
+		var level_title := "%s - LEVEL %d" % [city_name(), level]
+		var title_size := 35
 		var title_width := font.get_string_size(level_title, HORIZONTAL_ALIGNMENT_LEFT, -1, title_size).x
 		text_at(level_title, (W - title_width) / 2.0, 442, title_size, Color(0.92, 0.97, 1.0))
 	if state == "shop":
 		draw_rect(Rect2(52, 190, 616, 555), Color(0.07, 0.12, 0.23, 0.96))
-		text_at("MISSION COMPLETE!", 198, 250, 32)
+		text_at("%s LIBERATED!" % city_name(), 185, 250, 30)
 		text_at("SCRAP: %d" % scrap, 250, 296, 26, Color(0.95, 0.85, 0.3))
 		if speed_level >= 4:
 			text_at("1 - Extra Speed: MAX", 105, 353, 22)
@@ -1009,7 +1018,7 @@ func _draw() -> void:
 	elif state == "gameover" or state == "victory":
 		draw_leaderboard()
 		if state == "victory":
-			text_at("CROATIA CLEARED!", 214, 174, 29, Color(0.45, 1.0, 0.7))
+			text_at("CROATIA LIBERATED!", 186, 174, 29, Color(0.45, 1.0, 0.7))
 		else:
 			text_at("GAME OVER", 258, 174, 29, Color(1.0, 0.35, 0.4))
 	if show_stats_modal and (state == "playing" or state == "intermission"):
