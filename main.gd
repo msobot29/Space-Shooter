@@ -603,9 +603,9 @@ func _draw() -> void:
 	draw_stat_meter("FIRE", rate_level, 4, 25, 162, Color(1.0, 0.38, 0.3))
 	text_at("TAB - SHIP STATUS", 27, 183, 14, Color(0.7, 0.85, 0.98))
 	if not active_multipliers.is_empty():
-		draw_rect(Rect2(369, 108, 334, 61), Color(0.17, 0.10, 0.26, 0.90))
-		text_at("SCORE x%d" % score_multiplier(), 382, 135, 24, Color(1.0, 0.85, 0.35))
-		text_at("%.1fs remaining" % multiplier_time_left(), 383, 158, 17, Color(0.95, 0.85, 1.0))
+		draw_rect(Rect2(385, 168, 316, 65), Color(0.17, 0.10, 0.26, 0.90))
+		text_at("SCORE x%d" % score_multiplier(), 399, 195, 24, Color(1.0, 0.85, 0.35))
+		text_at("%.1fs remaining" % multiplier_time_left(), 400, 220, 17, Color(0.95, 0.85, 1.0))
 	if state == "playing":
 		if invulnerable <= 0.0 or int(Time.get_ticks_msec() / 100) % 2 == 0:
 			var ship := PackedVector2Array([Vector2(player_x, PLAYER_Y - 36), Vector2(player_x - 27, PLAYER_Y + 23), Vector2(player_x, PLAYER_Y + 12), Vector2(player_x + 27, PLAYER_Y + 23)])
