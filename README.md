@@ -349,3 +349,17 @@ This rule supersedes the previous README section requiring all drops to resolve 
 3. Confirm level 2 enemies start only after the countdown and existing drops that remain in view persist.
 4. Pause with P during countdown; verify the number and falling rewards freeze, then resume.
 5. After level 5 shop, press ENTER and verify LEVEL 6 intro; after level 10 shop, confirm victory/High Score rather than level 11.
+
+## Stage transition timing — silent break, then title (latest)
+The previous visible STARTING IN countdown has been **removed**. Between ordinary missions and after leaving the level-5 shop:
+1. For the first **10 seconds**, no countdown or level title appears. The previous mission has ended, no enemies spawn, and the player can still move and collect any Scrap, Double Shot or multiplier pickups left on screen.
+2. After those 10 seconds, a large centered **LEVEL 2**, **LEVEL 3**, etc. title appears. There is still **no numeric countdown**.
+3. **3.5 seconds after the title first appears**, the next level begins and its first wave spawns.
+This is a total **13.5-second transition** before enemy spawning. Pickups keep falling throughout both phases and carry over to the new level if still on screen. P/TAB freeze the transition; the shop still appears after levels 5 and 10, with the Level 6 introduction occurring after leaving the level-5 shop.
+
+### Verification
+- Clear level 1, ensure there is **no countdown** and no level-title overlay during the first 10 seconds.
+- Confirm LEVEL 2 appears only after ~10 seconds, then the next wave begins ~3.5 seconds later.
+- Repeat after level 5 shop, verifying LEVEL 6 timing.
+- Verify Scrap/bonus pickup collection works while waiting and that P/TAB pause both timing phases.
+This section supersedes the earlier README wording describing a visible STARTING IN countdown.
