@@ -103,7 +103,7 @@ func start_level() -> void:
 	player_bullets.clear()
 	enemy_bullets.clear()
 	radial_bullets.clear()
-	drops.clear()
+	# Keep falling rewards across stages; they continue falling in the new mission.
 	explosions.clear()
 	boss.clear()
 	boss_active = false
@@ -274,17 +274,15 @@ func _process(delta: float) -> void:
 	if lives <= 0:
 		finish_run(false)
 	elif waves_spawned == WAVES_PER_LEVEL and enemies.is_empty():
-		# Finish falling Scrap, Double Shot and score bonus pickups before
-		# entering the boss fight, the next mission, or the shop.
-		# This also handles rewards from the final enemy or boss.
-		if drops.is_empty():
-			if boss_active:
-				if boss.is_empty():
-					complete_level()
-			elif boss_pending:
-				launch_boss()
-			else:
+		# Stage flow must never wait for collectibles. Existing Scrap and bonuses
+		# stay in drops and carry into the next mission as falling objects.
+		if boss_active:
+			if boss.is_empty():
 				complete_level()
+		elif boss_pending:
+			launch_boss()
+		else:
+			complete_level()
 	queue_redraw()
 
 func update_player(delta: float) -> void:
@@ -807,6 +805,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			total_kills = 0
 			single_shot_kills_since_drop = 0
 			active_multipliers.clear()
+			drops.clear() # A new run must not inherit the previous run\'s rewards.
 			level = 1
 			damage_level = 0
 			rate_level = 0
@@ -867,8 +866,6 @@ func _draw() -> void:
 	draw_stat_meter("SPEED", speed_level, 4, 25, 135, Color(0.24, 0.7, 1.0))
 	draw_stat_meter("FIRE", rate_level, 4, 25, 162, Color(1.0, 0.38, 0.3))
 	text_at("TAB - SHIP STATUS", 27, 183, 14, Color(0.7, 0.85, 0.98))
-	if state == "playing" and waves_spawned == WAVES_PER_LEVEL and enemies.is_empty() and not drops.is_empty() and (not boss_active or boss.is_empty()):
-		text_at("COLLECT DROPS - %d REMAINING" % drops.size(), 187, 286, 20, Color(1.0, 0.86, 0.46))
 	if not active_multipliers.is_empty():
 		draw_rect(Rect2(385, 168, 316, 65), Color(0.17, 0.10, 0.26, 0.90))
 		text_at("SCORE x%d" % score_multiplier(), 399, 195, 24, Color(1.0, 0.85, 0.35))
