@@ -451,12 +451,8 @@ func upgrade_cost(kind: int) -> int:
 		5: return 900 if ability_level == 1 else 1800
 	return 99999
 
-func available_movement_upgrade_level() -> int:
-	# The final tier belongs to later campaign stages; early shops unlock one tier each.
-	return 4 if level >= 10 else mini(3, level)
-
 func buy_upgrade(kind: int) -> void:
-	var capped := (kind == 1 and speed_level >= available_movement_upgrade_level()) or (kind == 2 and rate_level >= available_movement_upgrade_level()) or (kind == 3 and damage_level >= 3) or (kind == 4 and damage_level >= 6) or (kind == 5 and ability_level >= 3)
+	var capped := (kind == 1 and speed_level >= 4) or (kind == 2 and rate_level >= 4) or (kind == 3 and damage_level >= 3) or (kind == 4 and damage_level >= 6) or (kind == 5 and ability_level >= 3)
 	if capped or scrap < upgrade_cost(kind):
 		return
 	scrap -= upgrade_cost(kind)
@@ -631,14 +627,10 @@ func _draw() -> void:
 		text_at("SCRAP: %d" % scrap, 250, 296, 26, Color(0.95, 0.85, 0.3))
 		if speed_level >= 4:
 			text_at("1 - Extra Speed: MAX", 105, 353, 22)
-		elif speed_level >= available_movement_upgrade_level():
-			text_at("1 - Extra Speed Lv.%d/4 (LATER STAGE)" % speed_level, 105, 353, 22, Color(0.65, 0.73, 0.87))
 		else:
 			text_at("1 - Extra Speed Lv.%d/4  (%d)" % [speed_level, upgrade_cost(1)], 105, 353, 22)
 		if rate_level >= 4:
 			text_at("2 - Rate of Fire: MAX", 105, 407, 22)
-		elif rate_level >= available_movement_upgrade_level():
-			text_at("2 - Rate of Fire Lv.%d/4 (LATER STAGE)" % rate_level, 105, 407, 22, Color(0.65, 0.73, 0.87))
 		else:
 			text_at("2 - Rate of Fire Lv.%d/4 (%d)" % [rate_level, upgrade_cost(2)], 105, 407, 22)
 		if damage_level >= 3:
