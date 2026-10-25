@@ -23,7 +23,7 @@ var lives := 3
 var score := 0
 var scrap := 0
 var level := 1
-var damage_level := 0 # 0-2 single, 3-5 double, 6 triple
+var damage_level := 0 # 0 = single, 3 = double, 6 = triple; purchased instantly
 var rate_level := 0
 var speed_level := 0
 var ability_level := 1 # 1/2/3 = 2/4/6 seconds
@@ -419,26 +419,28 @@ func complete_level() -> void:
 	else:
 		state = "shop"
 
+const DOUBLE_SHOT_PRICE := 540
+const TRIPLE_SHOT_PRICE := 1980
+
 func upgrade_cost(kind: int) -> int:
 	match kind:
 		1: return 120 + speed_level * 130
 		2: return 80 + rate_level * 100
-		3: return 80 + damage_level * 100 # Three purchases unlock Double Shot
-		4: return 80 + damage_level * 100 # Next three unlock Triple Shot
+		3: return DOUBLE_SHOT_PRICE
+		4: return TRIPLE_SHOT_PRICE - (DOUBLE_SHOT_PRICE if damage_level >= 3 else 0)
 		5: return 900 if ability_level == 1 else 1800
 	return 99999
 
 func buy_upgrade(kind: int) -> void:
-	# Shot progression stays sequential even though the shop has separate entries.
-	var locked := (kind == 3 and damage_level >= 3) or (kind == 4 and damage_level < 3)
-	var capped := (kind == 1 and speed_level >= 4) or (kind == 2 and rate_level >= 4) or (kind == 4 and damage_level >= 6) or (kind == 5 and ability_level >= 3)
-	if locked or capped or scrap < upgrade_cost(kind):
+	var capped := (kind == 1 and speed_level >= 4) or (kind == 2 and rate_level >= 4) or (kind == 3 and damage_level >= 3) or (kind == 4 and damage_level >= 6) or (kind == 5 and ability_level >= 3)
+	if capped or scrap < upgrade_cost(kind):
 		return
 	scrap -= upgrade_cost(kind)
 	match kind:
 		1: speed_level += 1
 		2: rate_level += 1
-		3, 4: damage_level += 1
+		3: damage_level = 3
+		4: damage_level = 6
 		5: ability_level += 1
 
 func _unhandled_key_input(event: InputEvent) -> void:
@@ -565,15 +567,13 @@ func _draw() -> void:
 		else:
 			text_at("2 - Rate of Fire Lv.%d/4 (%d)" % [rate_level, upgrade_cost(2)], 105, 407, 22)
 		if damage_level >= 3:
-			text_at("3 - Double Shot: UNLOCKED", 105, 461, 22, Color(0.5, 1.0, 0.7))
+			text_at("3 - Double Shot: OWNED", 105, 461, 22, Color(0.5, 1.0, 0.7))
 		else:
-			text_at("3 - Double Shot %d/3 (%d)" % [damage_level, upgrade_cost(3)], 105, 461, 22)
-		if damage_level < 3:
-			text_at("4 - Triple Shot: LOCKED", 105, 515, 22, Color(0.65, 0.65, 0.7))
-		elif damage_level >= 6:
-			text_at("4 - Triple Shot: MAX", 105, 515, 22, Color(0.5, 1.0, 0.7))
+			text_at("3 - Double Shot (%d Scrap)" % upgrade_cost(3), 105, 461, 22)
+		if damage_level >= 6:
+			text_at("4 - Triple Shot: OWNED", 105, 515, 22, Color(0.5, 1.0, 0.7))
 		else:
-			text_at("4 - Triple Shot %d/3 (%d)" % [damage_level - 3, upgrade_cost(4)], 105, 515, 22)
+			text_at("4 - Triple Shot (%d Scrap)" % upgrade_cost(4), 105, 515, 22)
 		if ability_level >= 3:
 			text_at("5 - Shield Upgrade: MAX", 105, 569, 22)
 		else:
