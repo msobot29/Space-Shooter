@@ -177,7 +177,7 @@ func launch_boss() -> void:
 	boss_pending = false
 	boss_active = true
 	enemy_bullets.clear()
-	boss = {"pos": Vector2(W / 2.0, 155.0), "hp": 160.0, "max_hp": 160.0, "direction": 1.0}
+	boss = {"pos": Vector2(W / 2.0, 155.0), "hp": 200.0, "max_hp": 200.0, "direction": 1.0}
 	boss_fire_clock = 1.4
 	spin_countdown = 0.0
 	spin_rotation = 0.0
@@ -315,7 +315,7 @@ func update_boss(delta: float) -> void:
 			# The next volley begins only after the warning and rotation.
 		boss_attack_index += 1
 		boss_fire_clock = 1.5 if boss_phase == 1 else 1.2
-	if boss_phase == 1 and float(boss["hp"]) <= 75.0:
+	if boss_phase == 1 and float(boss["hp"]) <= 95.0:
 		boss_phase = 2
 
 func fire_radial_barrage(origin: Vector2) -> void:
@@ -421,24 +421,26 @@ func complete_level() -> void:
 
 func upgrade_cost(kind: int) -> int:
 	match kind:
-		1: return 80 + damage_level * 100
+		1: return 120 + speed_level * 130
 		2: return 80 + rate_level * 100
-		4: return 120 + speed_level * 130
-		3:
-			return 900 if ability_level == 1 else 1800
+		3: return 80 + damage_level * 100 # Three purchases unlock Double Shot
+		4: return 80 + damage_level * 100 # Next three unlock Triple Shot
+		5: return 900 if ability_level == 1 else 1800
 	return 99999
 
 func buy_upgrade(kind: int) -> void:
-	var capped := (kind == 1 and damage_level >= 6) or (kind == 2 and rate_level >= 4) or (kind == 4 and speed_level >= 4) or (kind == 3 and ability_level >= 3)
-	if capped or scrap < upgrade_cost(kind):
+	# Shot progression stays sequential even though the shop has separate entries.
+	var locked := (kind == 3 and damage_level >= 3) or (kind == 4 and damage_level < 3)
+	var capped := (kind == 1 and speed_level >= 4) or (kind == 2 and rate_level >= 4) or (kind == 4 and damage_level >= 6) or (kind == 5 and ability_level >= 3)
+	if locked or capped or scrap < upgrade_cost(kind):
 		return
 	scrap -= upgrade_cost(kind)
 	match kind:
-		1: damage_level += 1
+		1: speed_level += 1
 		2: rate_level += 1
-		4: speed_level += 1
-		3: ability_level += 1
-		   
+		3, 4: damage_level += 1
+		5: ability_level += 1
+
 func _unhandled_key_input(event: InputEvent) -> void:
 	if not event is InputEventKey or not event.pressed or event.echo:
 		return
@@ -448,6 +450,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			KEY_2: buy_upgrade(2)
 			KEY_3: buy_upgrade(3)
 			KEY_4: buy_upgrade(4)
+			KEY_5: buy_upgrade(5)
 
 			KEY_ENTER, KEY_KP_ENTER:
 				level += 1
@@ -550,21 +553,32 @@ func _draw() -> void:
 		var pos: Vector2 = effect["pos"]
 		draw_arc(pos, 30.0 * float(effect["time"]) / 0.3 + 8.0, 0, TAU, 20, Color(1.0, 0.68, 0.2), 4.0)
 	if state == "shop":
-		draw_rect(Rect2(70, 218, 580, 495), Color(0.07, 0.12, 0.23, 0.96))
-		text_at("MISSION COMPLETE!", 198, 310, 32)
-		text_at("SCRAP: %d" % scrap, 265, 360, 26, Color(0.95, 0.85, 0.3))
-		if damage_level >= 6:
-			text_at("1 - TRIPLE SHOT MAX", 120, 430, 23)
-		else:
-			text_at("1 - %s  (%d)" % [weapon_label(), upgrade_cost(1)], 120, 430, 23)
-		text_at("Next: %s" % next_weapon_label(), 120, 457, 17, Color(0.6, 0.85, 0.98))
-		text_at("2 - Fire rate Lv.%d       (%d)" % [rate_level, upgrade_cost(2)], 120, 490, 23)
-		text_at("3 - X shield Lv.%d / 3   (%d)" % [ability_level, upgrade_cost(3)], 120, 545, 23)
+		draw_rect(Rect2(52, 190, 616, 555), Color(0.07, 0.12, 0.23, 0.96))
+		text_at("MISSION COMPLETE!", 198, 250, 32)
+		text_at("SCRAP: %d" % scrap, 250, 296, 26, Color(0.95, 0.85, 0.3))
 		if speed_level >= 4:
-			text_at("4 - Ship speed MAX", 120, 590, 23)
+			text_at("1 - Extra Speed: MAX", 105, 353, 22)
 		else:
-			text_at("4 - Ship speed Lv.%d / 4 (%d)" % [speed_level, upgrade_cost(4)], 120, 590, 23)
-		text_at("ENTER - Next mission", 185, 660, 26, Color(0.4, 0.9, 1.0))
+			text_at("1 - Extra Speed Lv.%d/4  (%d)" % [speed_level, upgrade_cost(1)], 105, 353, 22)
+		if rate_level >= 4:
+			text_at("2 - Rate of Fire: MAX", 105, 407, 22)
+		else:
+			text_at("2 - Rate of Fire Lv.%d/4 (%d)" % [rate_level, upgrade_cost(2)], 105, 407, 22)
+		if damage_level >= 3:
+			text_at("3 - Double Shot: UNLOCKED", 105, 461, 22, Color(0.5, 1.0, 0.7))
+		else:
+			text_at("3 - Double Shot %d/3 (%d)" % [damage_level, upgrade_cost(3)], 105, 461, 22)
+		if damage_level < 3:
+			text_at("4 - Triple Shot: LOCKED", 105, 515, 22, Color(0.65, 0.65, 0.7))
+		elif damage_level >= 6:
+			text_at("4 - Triple Shot: MAX", 105, 515, 22, Color(0.5, 1.0, 0.7))
+		else:
+			text_at("4 - Triple Shot %d/3 (%d)" % [damage_level - 3, upgrade_cost(4)], 105, 515, 22)
+		if ability_level >= 3:
+			text_at("5 - Shield Upgrade: MAX", 105, 569, 22)
+		else:
+			text_at("5 - Shield Upgrade Lv.%d/3 (%d)" % [ability_level, upgrade_cost(5)], 105, 569, 22)
+		text_at("ENTER - Next mission", 185, 687, 26, Color(0.4, 0.9, 1.0))
 	elif state == "gameover":
 		text_at("GAME OVER", 195, 440, 52, Color(1.0, 0.35, 0.4))
 		text_at("Press ENTER to restart", 205, 500, 24)
