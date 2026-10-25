@@ -100,35 +100,42 @@ func start_level() -> void:
 	queue_redraw()
 
 func spawn_wave() -> void:
-	# Exactly five attackers enter from each side; each wave has an independent route.
+	# Two mirrored groups of five, with red crabs always guarding the front line.
 	waves_spawned += 1
 	var path_id := randi_range(0, 3)
 	wave_path_ids.append(path_id)
 	for side in range(2):
 		for index in range(5):
 			var left := side == 0
-			var row_y := 170.0 + float(index) * 70.0
-			var formation_x := (128.0 + float(index) * 46.0) if left else (592.0 - float(index) * 46.0)
-			var from_x := (-65.0 - float(index) * 52.0) if left else (W + 65.0 + float(index) * 52.0)
-			var start_pos := Vector2(from_x, row_y - 105.0)
-			var target_pos := Vector2(formation_x, row_y + (waves_spawned - 1) * 27.0)
+			var is_guard := index < 2
+			var kind := 1 if is_guard else (0 if index == 2 or index == 4 else 2)
+			var lane := index if is_guard else (index - 2) % 2
+			var formation_x := (155.0 + float(lane) * 120.0) if left else (565.0 - float(lane) * 120.0)
+			var row_y := (505.0 + float(index) * 45.0) if is_guard else (250.0 + float(index - 2) * 67.0)
+			var target_pos := Vector2(formation_x, row_y + float(waves_spawned - 1) * 25.0)
+			var start_pos := Vector2(-85.0 - float(index) * 35.0 if left else W + 85.0 + float(index) * 35.0, 110.0 + float(index) * 38.0)
 			enemies.append({
 				"pos": start_pos,
 				"start": start_pos,
 				"target": target_pos,
 				"age": 0.0,
+				"delay": float(index) * 0.19 + float(side) * 0.07,
 				"path": path_id,
 				"side": -1.0 if left else 1.0,
 				"offset": float(index) * 0.26,
-				"hp": (2 + int(level / 3)) + (1 if (side + index + waves_spawned) % 3 == 1 else 0),
-				"kind": (side + index + waves_spawned) % 3
+				"hp": 5 + int(level / 3) if is_guard else 2 + int(level / 3),
+				"kind": kind
 			})
 
 func move_enemy(enemy: Dictionary, delta: float) -> void:
+	# Continuous path: no offset jumps when an enemy finishes entering.
 	var age: float = float(enemy["age"]) + delta
 	enemy["age"] = age
-	var entrance_time := 1.55 + float(enemy["offset"])
-	var fraction := clampf(age / entrance_time, 0.0, 1.0)
+	var flight_time := age - float(enemy["delay"])
+	if flight_time <= 0.0:
+		return
+	var entrance_time := 2.8
+	var fraction := clampf(flight_time / entrance_time, 0.0, 1.0)
 	var eased := fraction * fraction * (3.0 - 2.0 * fraction)
 	var source: Vector2 = enemy["start"]
 	var target: Vector2 = enemy["target"]
@@ -137,38 +144,39 @@ func move_enemy(enemy: Dictionary, delta: float) -> void:
 	var route: int = enemy["path"]
 	var position := source.lerp(target, eased)
 	if fraction < 1.0:
-		# Different arcs and swerves while entering from opposite screen edges.
+		# Each entrance arc starts and finishes at zero displacement.
+		var arc := sin(PI * fraction)
 		match route:
 			0:
-				position.y -= sin(PI * fraction) * 100.0
+				position.y -= arc * 65.0
 			1:
-				position.y += sin(PI * fraction) * 115.0
+				position.y += arc * 70.0
 			2:
-				position.x += side * sin(TAU * fraction) * 92.0
+				position.x += side * sin(TAU * fraction) * 65.0
 			3:
-				position.x -= side * sin(PI * fraction) * 110.0
+				position.x -= side * arc * 70.0
 	else:
-		# Enemies keep flying in curved paths instead of staying static.
-		var t := age - entrance_time
+		# Sway starts at zero, so there's no visible teleport when formations settle.
+		var t := flight_time - entrance_time
+		var sway := sin(t * (1.05 if int(enemy["kind"]) == 1 else 1.55))
+		var vertical := sin(t * 1.25)
 		match route:
 			0:
-				position.x += sin(t * 1.2 + offset * 3.0) * 70.0
-				position.y += sin(t * 1.7 + offset) * 35.0
+				position.x += sway * 32.0
+				position.y += vertical * 14.0
 			1:
-				position.x += cos(t * 1.7 + offset * 2.0) * 85.0
-				position.y += sin(t * 1.1 + offset) * 54.0
+				position.x += sway * 42.0
+				position.y += vertical * 18.0
 			2:
-				position.x += sin(t * 2.0 + offset) * 96.0
-				position.y += sin(t * 1.0 + offset * 2.0) * 50.0
+				position.x += sway * 48.0
+				position.y += vertical * 16.0
 			3:
-				position.x += side * sin(t * 1.3 + offset * 2.0) * 110.0
-				position.y += cos(t * 1.6 + offset) * 36.0
-	# Eels are fast evasive attackers; crabs are tougher and move more steadily.
-	var kind: int = int(enemy["kind"])
-	if kind == 2 and fraction >= 1.0:
-		position.x += sin(age * 4.2 + offset * 5.0) * 36.0
-	elif kind == 1 and fraction >= 1.0:
-		position.y += sin(age * 0.9 + offset) * 18.0
+				position.x += side * sway * 38.0
+				position.y += vertical * 13.0
+		if int(enemy["kind"]) == 2:
+			position.x += sin(t * 3.5) * 13.0
+		elif int(enemy["kind"]) == 1:
+			position.y += sin(t * 0.9) * 7.0
 	position.x = clampf(position.x, -360.0, W + 360.0)
 	position.y = clampf(position.y, 55.0, 650.0)
 	enemy["pos"] = position
