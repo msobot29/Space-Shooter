@@ -1,5 +1,5 @@
 extends Node2D
-## Adriatic Uprising - playable Croatia chapter prototype (levels 1-5).
+## Adriatic Uprising - playable Croatia chapter prototype (levels 1-10).
 ## All sprites are procedural. Godot 4.x / GDScript 2.0.
 
 const W := 720.0
@@ -12,7 +12,7 @@ const SPIN_PROJECTILES := 48
 const SPIN_GAP_PRIMARY := 0.145 # Smaller dodge corridor than the original 0.22
 const SPIN_GAP_SECONDARY := 0.12 # Smaller than original 0.19
 const BULLET_SPEED := 820.0
-const MAX_LEVEL := 5
+const MAX_LEVEL := 10
 const HIGH_SCORE_FILE := "user://highscores.cfg"
 const HIGH_SCORE_LIMIT := 10
 const ABILITY_COOLDOWN := 10.0 # Starts after the shield expires
@@ -104,7 +104,7 @@ func start_level() -> void:
 	explosions.clear()
 	boss.clear()
 	boss_active = false
-	boss_pending = level == 4
+	boss_pending = level == 4 or level == 9
 	waves_spawned = 0
 	wave_path_ids.clear()
 	boss_phase = 1
@@ -133,6 +133,7 @@ func spawn_wave() -> void:
 	# Two mirrored groups of five, with red crabs always guarding the front line.
 	waves_spawned += 1
 	var path_id := randi_range(0, 3)
+	# Later missions rotate entry patterns, but keep the same smooth motion.
 	wave_path_ids.append(path_id)
 	for side in range(2):
 		for index in range(5):
@@ -154,7 +155,7 @@ func spawn_wave() -> void:
 				"path": path_id,
 				"side": -1.0 if left else 1.0,
 				"offset": float(index) * 0.26,
-				"hp": 5 + int(level / 3) if is_guard else 2 + int(level / 3),
+				"hp": 5 + int((level - 1) / 4) if is_guard else 2 + int((level - 1) / 4),
 				"kind": kind
 			})
 
@@ -217,7 +218,8 @@ func launch_boss() -> void:
 	boss_pending = false
 	boss_active = true
 	enemy_bullets.clear()
-	boss = {"pos": Vector2(W / 2.0, 155.0), "prev_pos": Vector2(W / 2.0, 155.0), "hp": 200.0, "max_hp": 200.0, "direction": 1.0}
+	var boss_hp := 270.0 if level >= 9 else 200.0
+	boss = {"pos": Vector2(W / 2.0, 155.0), "prev_pos": Vector2(W / 2.0, 155.0), "hp": boss_hp, "max_hp": boss_hp, "direction": 1.0}
 	boss_fire_clock = 1.4
 	spin_countdown = 0.0
 	spin_rotation = 0.0
@@ -327,7 +329,7 @@ func update_enemies(delta: float) -> void:
 			# Jellyfish fire an additional offset projectile.
 			if int(attacker["kind"]) == 0:
 				enemy_bullets.append(source + Vector2(22, 18))
-		enemy_fire_clock = maxf(0.45, 1.4 - level * 0.12)
+		enemy_fire_clock = maxf(0.56, 1.43 - float(level) * 0.085)
 
 func update_boss(delta: float) -> void:
 	if not boss_active or boss.is_empty():
@@ -370,7 +372,7 @@ func update_boss(delta: float) -> void:
 			# The next volley begins only after the warning and rotation.
 		boss_attack_index += 1
 		boss_fire_clock = 1.5 if boss_phase == 1 else 1.2
-	if boss_phase == 1 and float(boss["hp"]) <= 95.0:
+	if boss_phase == 1 and float(boss["hp"]) <= float(boss["max_hp"]) * 0.475:
 		boss_phase = 2
 
 func fire_radial_barrage(origin: Vector2) -> void:
@@ -746,7 +748,7 @@ func draw_ship_status_modal() -> void:
 func _draw() -> void:
 	for star in stars:
 		draw_circle(star, 1.5, Color(0.45, 0.65, 0.9, 0.55))
-	text_at("CROATIA %d/5  WAVE %d/2  SCORE %d" % [level, waves_spawned, score], 20, 35)
+	text_at("CROATIA %d/%d  WAVE %d/2  SCORE %d" % [level, MAX_LEVEL, waves_spawned, score], 20, 35)
 	text_at("LIVES %d       SCRAP %d" % [lives, scrap], 20, 66, 21, Color(0.8, 0.95, 0.7))
 	text_at("BEST %d" % maxi(score, int(high_scores[0]["score"]) if not high_scores.is_empty() else 0), 480, 66, 19, Color(1.0, 0.88, 0.5))
 	if ability_time > 0.0:
