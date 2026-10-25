@@ -17,7 +17,8 @@ const HIGH_SCORE_FILE := "user://highscores.cfg"
 const HIGH_SCORE_LIMIT := 10
 const ABILITY_COOLDOWN := 10.0 # Starts after the shield expires
 const WAVE_DELAY := 5.0
-const LEVEL_TRANSITION_SECONDS := 10.0
+const LEVEL_TRANSITION_SECONDS := 10.0 # Silent pause before showing the title
+const LEVEL_TITLE_SECONDS := 3.5 # Enemies begin after the title is shown
 const ENEMIES_PER_WAVE := 10
 const WAVES_PER_LEVEL := 2
 const DOUBLE_DROP_CHANCE := 0.12
@@ -135,9 +136,9 @@ func start_level() -> void:
 	queue_redraw()
 
 func begin_level_transition() -> void:
-	# Preserve falling rewards throughout the countdown before spawning a new wave.
+	# Preserve falling rewards during the silent break and level-title intro.
 	state = "intermission"
-	level_transition_time = LEVEL_TRANSITION_SECONDS
+	level_transition_time = LEVEL_TRANSITION_SECONDS + LEVEL_TITLE_SECONDS
 	player_bullets.clear()
 	enemy_bullets.clear()
 	radial_bullets.clear()
@@ -264,7 +265,7 @@ func _process(delta: float) -> void:
 		queue_redraw()
 		return
 	if state == "intermission":
-		# Movement and all reward pickup timers continue while no enemies spawn.
+		# Movement and falling rewards continue through both intro phases.
 		update_player(delta)
 		update_pickups(delta)
 		update_multiplier_timers(delta)
@@ -968,13 +969,14 @@ func _draw() -> void:
 	for effect in explosions:
 		var pos: Vector2 = effect["pos"]
 		draw_arc(pos, 30.0 * float(effect["time"]) / 0.3 + 8.0, 0, TAU, 20, Color(1.0, 0.68, 0.2), 4.0)
-	if state == "intermission":
-		# HUD title is drawn while all carried-over pickups remain visible.
-		draw_rect(Rect2(125, 345, 470, 178), Color(0.04, 0.10, 0.23, 0.91))
-		draw_rect(Rect2(125, 345, 470, 5), Color(0.25, 0.73, 1.0))
-		text_at("LEVEL %d" % level, 242, 420, 49, Color(0.92, 0.97, 1.0))
-		text_at("STARTING IN %d" % int(ceil(level_transition_time)), 246, 463, 25, Color(0.45, 0.89, 1.0))
-		text_at("COLLECT FALLING REWARDS", 211, 495, 18, Color(0.9, 0.83, 0.54))
+	if state == "intermission" and level_transition_time <= LEVEL_TITLE_SECONDS:
+		# First 10 seconds are silent; only show the level title near wave entry.
+		draw_rect(Rect2(144, 369, 432, 114), Color(0.04, 0.10, 0.23, 0.87))
+		draw_rect(Rect2(144, 369, 432, 4), Color(0.25, 0.73, 1.0))
+		var level_title := "LEVEL %d" % level
+		var title_size := 53
+		var title_width := font.get_string_size(level_title, HORIZONTAL_ALIGNMENT_LEFT, -1, title_size).x
+		text_at(level_title, (W - title_width) / 2.0, 442, title_size, Color(0.92, 0.97, 1.0))
 	if state == "shop":
 		draw_rect(Rect2(52, 190, 616, 555), Color(0.07, 0.12, 0.23, 0.96))
 		text_at("MISSION COMPLETE!", 198, 250, 32)
