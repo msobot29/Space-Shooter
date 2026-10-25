@@ -178,7 +178,7 @@ func update_bullets(delta: float) -> void:
 				explosions.append({"pos": shot, "time": 0.25})
 				if boss_shields == 0 and float(boss["hp"]) <= 0.0:
 					score += 2500
-					drop_scrap(boss_pos, 15)
+					scrap += 300 # Award immediately because the stage ends on victory.
 					boss.clear()
 		elif not boss_active:
 			for j in range(enemies.size() - 1, -1, -1):
