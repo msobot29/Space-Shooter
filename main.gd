@@ -289,6 +289,10 @@ func _process(delta: float) -> void:
 	if state == "intermission" or state == "boss_intro":
 		# Let old rewards fall and remain collectible during both types of intro.
 		update_player(delta)
+		if state == "intermission":
+			# Keep player shots flying normally during the level wait.
+			# No enemies exist here; update_bullets removes shots offscreen.
+			update_bullets(delta)
 		update_pickups(delta)
 		update_multiplier_timers(delta)
 		update_effects(delta)
@@ -346,10 +350,10 @@ func update_player(delta: float) -> void:
 	player_x = clampf(player_x + clampf(move, -1.0, 1.0) * (BASE_SPEED + speed_level * SPEED_STEP) * delta, 28.0, W - 28.0)
 	fire_clock = maxf(0.0, fire_clock - delta)
 	var pressed := Input.is_key_pressed(KEY_B) or Input.is_key_pressed(KEY_SPACE) or Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)
-	# Only fire in active combat. During transitions, firing previously made
-	# frozen projectiles because bullets were drawn but not being updated.
-	# Track held input to avoid an accidental volley when combat resumes.
-	if state == "playing" and pressed and not fire_held and fire_clock <= 0.0:
+	# Shooting remains available between levels; bullets are updated even
+	# while the next wave has not started. Boss announcements stay non-combat.
+	# Keep edge-triggered shots: holding the key does not repeat volleys.
+	if (state == "playing" or state == "intermission") and pressed and not fire_held and fire_clock <= 0.0:
 		fire_weapon()
 		fire_clock = maxf(0.12, 0.34 - rate_level * 0.05)
 	fire_held = pressed
