@@ -17,6 +17,7 @@ const HIGH_SCORE_FILE := "user://highscores.cfg"
 const HIGH_SCORE_LIMIT := 10
 const ABILITY_COOLDOWN := 10.0 # Starts after the shield expires
 const WAVE_DELAY := 5.0
+const LEVEL_TRANSITION_SECONDS := 10.0
 const ENEMIES_PER_WAVE := 10
 const WAVES_PER_LEVEL := 2
 const DOUBLE_DROP_CHANCE := 0.12
@@ -35,7 +36,8 @@ var speed_level := 0
 var ability_level := 1 # 1/2/3 = 2/4/6 seconds
 var ability_time := 0.0
 var ability_cooldown := 0.0
-var state := "playing" # playing, shop, gameover, victory
+var state := "playing" # playing, intermission, shop, gameover, victory
+var level_transition_time := 0.0
 var show_stats_modal := false
 var game_paused := false
 var high_scores: Array[Dictionary] = []
@@ -130,6 +132,16 @@ func start_level() -> void:
 	kills = 0
 	target_kills = WAVES_PER_LEVEL * ENEMIES_PER_WAVE
 	spawn_wave()
+	queue_redraw()
+
+func begin_level_transition() -> void:
+	# Preserve falling rewards throughout the countdown before spawning a new wave.
+	state = "intermission"
+	level_transition_time = LEVEL_TRANSITION_SECONDS
+	player_bullets.clear()
+	enemy_bullets.clear()
+	radial_bullets.clear()
+	explosions.clear()
 	queue_redraw()
 
 func spawn_wave() -> void:
@@ -249,6 +261,17 @@ func launch_boss() -> void:
 
 func _process(delta: float) -> void:
 	if game_paused or show_stats_modal:
+		queue_redraw()
+		return
+	if state == "intermission":
+		# Movement and all reward pickup timers continue while no enemies spawn.
+		update_player(delta)
+		update_pickups(delta)
+		update_multiplier_timers(delta)
+		update_effects(delta)
+		level_transition_time = maxf(0.0, level_transition_time - delta)
+		if level_transition_time <= 0.0:
+			start_level()
 		queue_redraw()
 		return
 	if state != "playing":
@@ -653,7 +676,7 @@ func complete_level() -> void:
 		finish_run(true)
 	else:
 		level += 1
-		start_level()
+		begin_level_transition()
 
 
 func compare_high_scores(a: Dictionary, b: Dictionary) -> bool:
@@ -780,8 +803,8 @@ func _unhandled_key_input(event: InputEvent) -> void:
 					finish_run(true)
 				else:
 					level += 1
-					start_level()
-	elif state == "playing":
+					begin_level_transition()
+	elif state == "playing" or state == "intermission":
 		if event.keycode == KEY_P:
 			game_paused = not game_paused
 			if game_paused:
@@ -870,7 +893,7 @@ func _draw() -> void:
 		draw_rect(Rect2(385, 168, 316, 65), Color(0.17, 0.10, 0.26, 0.90))
 		text_at("SCORE x%d" % score_multiplier(), 399, 195, 24, Color(1.0, 0.85, 0.35))
 		text_at("%.1fs remaining" % multiplier_time_left(), 400, 220, 17, Color(0.95, 0.85, 1.0))
-	if state == "playing":
+	if state == "playing" or state == "intermission":
 		if invulnerable <= 0.0 or int(Time.get_ticks_msec() / 100) % 2 == 0:
 			var ship := PackedVector2Array([Vector2(player_x, PLAYER_Y - 36), Vector2(player_x - 27, PLAYER_Y + 23), Vector2(player_x, PLAYER_Y + 12), Vector2(player_x + 27, PLAYER_Y + 23)])
 			draw_colored_polygon(ship, Color(0.2, 0.8, 1.0))
@@ -945,6 +968,13 @@ func _draw() -> void:
 	for effect in explosions:
 		var pos: Vector2 = effect["pos"]
 		draw_arc(pos, 30.0 * float(effect["time"]) / 0.3 + 8.0, 0, TAU, 20, Color(1.0, 0.68, 0.2), 4.0)
+	if state == "intermission":
+		# HUD title is drawn while all carried-over pickups remain visible.
+		draw_rect(Rect2(125, 345, 470, 178), Color(0.04, 0.10, 0.23, 0.91))
+		draw_rect(Rect2(125, 345, 470, 5), Color(0.25, 0.73, 1.0))
+		text_at("LEVEL %d" % level, 242, 420, 49, Color(0.92, 0.97, 1.0))
+		text_at("STARTING IN %d" % int(ceil(level_transition_time)), 246, 463, 25, Color(0.45, 0.89, 1.0))
+		text_at("COLLECT FALLING REWARDS", 211, 495, 18, Color(0.9, 0.83, 0.54))
 	if state == "shop":
 		draw_rect(Rect2(52, 190, 616, 555), Color(0.07, 0.12, 0.23, 0.96))
 		text_at("MISSION COMPLETE!", 198, 250, 32)
@@ -980,9 +1010,9 @@ func _draw() -> void:
 			text_at("CROATIA CLEARED!", 214, 174, 29, Color(0.45, 1.0, 0.7))
 		else:
 			text_at("GAME OVER", 258, 174, 29, Color(1.0, 0.35, 0.4))
-	if show_stats_modal and state == "playing":
+	if show_stats_modal and (state == "playing" or state == "intermission"):
 		draw_ship_status_modal()
-	if game_paused and state == "playing":
+	if game_paused and (state == "playing" or state == "intermission"):
 		draw_rect(Rect2(0, 0, W, H), Color(0.0, 0.02, 0.06, 0.65))
 		draw_rect(Rect2(124, 362, 472, 212), Color(0.06, 0.12, 0.23, 0.98))
 		text_at("GAME PAUSED", 226, 449, 34, Color(0.9, 0.96, 1.0))
