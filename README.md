@@ -151,3 +151,22 @@ The shop displays the actual purchase price and owned status. This section super
 - Both retain their existing 4-level maximum for balance, but reaching it does not require a specific mission. Previous `LATER STAGE` restrictions are removed.
 - Firing is still one volley per fresh press rather than automatic on holding the button.
 - All weapon, shield and boss mechanics are unchanged. This rule supersedes the previous stage-gated upgrade note above.
+
+## Latest economy balancing: progressively priced upgrades
+Speed and Rate of Fire have no mission gate and may be bought whenever enough Scrap is available, but each successive tier is more expensive:
+
+| Purchased level | Extra Speed cost | Rate of Fire cost |
+|---|---:|---:|
+| 1 | 100 Scrap | 125 Scrap |
+| 2 | 260 Scrap | 325 Scrap |
+| 3 | 520 Scrap | 650 Scrap |
+| 4 (MAX) | 850 Scrap | 1,050 Scrap |
+| **Total** | **1,730 Scrap** | **2,150 Scrap** |
+
+The player receives a guaranteed 25 Scrap per kill (20 enemies per regular stage) plus optional 10-Scrap pickups, so maxing either stat right after stage 1 is unrealistic, but the player is free to save up or specialize. Shop text shows the next level's exact cost and MAX when fully upgraded. Prices do not depend on mission number. Existing direct Double/Triple Shot prices (540/1580), shield prices (900/1800) and boss balance remain the same. This table supersedes earlier fixed-price notes.
+
+### QA
+1. Finish stage 1: the next speed and fire rate purchase costs 100/125 Scrap respectively.
+2. After each purchase verify that the displayed price rises to the next tier, with no mission-based lock.
+3. Once four levels are bought the option shows MAX and no more Scrap is deducted.
+4. Test that one press fires one volley, while holding down fire does not continuously shoot.
