@@ -317,3 +317,19 @@ The Croatia second block now introduces distinct enemy arrangements and projecti
 4. Repeat on mission 4 or 9: the miniboss should wait for wave drops, then start as normal.
 5. Finish mission 5 or 10 with falling Scrap: the shop must wait until rewards resolve, and must reflect the final collected Scrap balance.
 6. Verify P pause and TAB status freeze time while collectibles are falling.
+
+## Immediate next-stage transitions with persistent falling rewards (latest)
+- Clearing the final enemy starts the next mission **immediately**, even when Scrap, score multipliers or Double Shot pickups remain on the screen. There is no longer a COLLECT DROPS wait state.
+- All existing drops survive `start_level()` and retain their position. They continue to fall as soon as the next level is active; the player can collect them while fighting the next wave.
+- Mini-bosses also launch after their wave ends without waiting for pickups to fall. Existing pickups stay visible and collectible during the boss fight.
+- At the scheduled shop after missions 5 and 10, the shop overlay pauses normal gameplay, including falling drops. If there is another stage, remaining items resume falling when that stage begins. Items not yet collected do not count toward Scrap spendable in the shop.
+- Only a completely new run clears lingering drops, along with all other run-specific state.
+- On life loss, Triple still degrades to Double, and Double to Single.
+
+### QA
+1. Destroy the last enemy while multiple Scrap, multiplier, and Double Shot items are falling: the next level should launch at once and all items should continue their downward motion.
+2. Collect a carried Scrap pickup in the following mission and verify Scrap increases exactly once.
+3. On missions 4/9, check that the boss appears immediately after its wave, while any rewards continue falling.
+4. Enter the mission-5 shop with pickups still on screen: purchases use collected Scrap only; after starting mission 6, leftover pickups continue falling.
+5. Restart after Game Over: pickups from the former run must not remain.
+This rule supersedes the previous README section requiring all drops to resolve before a transition.
