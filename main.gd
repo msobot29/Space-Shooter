@@ -343,7 +343,8 @@ func upgrade_cost(kind: int) -> int:
 	match kind:
 		1: return 80 + damage_level * 100
 		2: return 80 + rate_level * 100
-		3: return 120 + (ability_level - 1) * 130
+		3:
+			return 900 if ability_level == 1 else 1800
 	return 99999
 
 func buy_upgrade(kind: int) -> void:
@@ -422,10 +423,18 @@ func _draw() -> void:
 				draw_rect(Rect2(pos.x - 20, pos.y - 7, 40, 16), Color(0.55, 0.16, 0.16))
 				draw_circle(pos + Vector2(-27, 7), 11.0, Color(1.0, 0.48, 0.3))
 				draw_circle(pos + Vector2(27, 7), 11.0, Color(1.0, 0.48, 0.3))
-			2: # Electric eel: narrow zigzag body
-				var body := PackedVector2Array([pos + Vector2(-24, -10), pos + Vector2(3, -19), pos + Vector2(-7, 0), pos + Vector2(24, 10), pos + Vector2(-2, 18), pos + Vector2(7, 2)])
-				draw_colored_polygon(body, Color(0.6, 0.95, 0.35))
-		draw_circle(pos + Vector2(0, -5), 4.0, Color.WHITE)
+			2: # Electric eel: thick connected body instead of a self-intersecting polygon.
+				var wiggle := sin(level_time * 8.0 + pos.x * 0.015) * 7.0
+				var tail := pos + Vector2(-22, 17 + wiggle)
+				var mid := pos + Vector2(5, 5 - wiggle)
+				var head := pos + Vector2(13, -16)
+				draw_line(tail, mid, Color(0.16, 0.36, 0.1), 20.0, true)
+				draw_line(mid, head, Color(0.16, 0.36, 0.1), 21.0, true)
+				draw_line(tail, mid, Color(0.65, 1.0, 0.22), 14.0, true)
+				draw_line(mid, head, Color(0.65, 1.0, 0.22), 15.0, true)
+				draw_circle(head, 11.0, Color(0.65, 1.0, 0.22))
+				draw_circle(head + Vector2(-3, -3), 3.0, Color.WHITE)
+				draw_circle(head + Vector2(-3, -3), 1.2, Color(0.09, 0.16, 0.06))
 	if boss_active and not boss.is_empty():
 		var pos: Vector2 = boss["pos"]
 		draw_circle(pos, 68.0, Color(0.24, 0.62, 0.48))
