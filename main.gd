@@ -39,6 +39,9 @@ var boss_active := false
 var boss_fire_clock := 0.0
 var boss_phase := 1
 var boss_shields := 2
+var boss_attack_index := 0
+var boss_warning_time := 0.0
+var boss_warning_x := 360.0
 var level_time := 0.0
 var kills := 0
 var target_kills := 0
@@ -61,6 +64,9 @@ func start_level() -> void:
 	boss_active = level == 4
 	boss_phase = 1
 	boss_shields = 2
+	boss_attack_index = 0
+	boss_warning_time = 0.0
+	boss_warning_x = W / 2.0
 	drift = 1.0
 	fire_clock = 0.0
 	enemy_fire_clock = 1.1
@@ -167,11 +173,23 @@ func update_boss(delta: float) -> void:
 	boss["pos"] = pos
 	boss["direction"] = direction
 	boss_fire_clock -= delta
+	# Alternating attack patterns: fan volley, then a telegraphed aimed column.
+	var previous_warning := boss_warning_time
+	boss_warning_time = maxf(0.0, boss_warning_time - delta)
+	if previous_warning > 0.0 and boss_warning_time <= 0.0:
+		for lane in range(-1, 2):
+			enemy_bullets.append(Vector2(boss_warning_x + lane * 22.0, pos.y + 38.0))
 	if boss_fire_clock <= 0.0:
-		for lane in range(-2, 3):
-			enemy_bullets.append(pos + Vector2(lane * 42.0, 38.0))
-		boss_fire_clock = 0.95 if boss_phase == 1 else 0.48
-	if float(boss["hp"]) <= 40.0:
+		if boss_attack_index % 2 == 0:
+			for lane in range(-2, 3):
+				enemy_bullets.append(pos + Vector2(lane * 42.0, 38.0))
+		else:
+			boss_warning_x = player_x
+			boss_warning_time = 0.7
+			# The danger column fires after the marker has been visible.
+		boss_attack_index += 1
+		boss_fire_clock = 1.4 if boss_phase == 1 else 1.0
+	if boss_phase == 1 and float(boss["hp"]) <= 40.0:
 		boss_phase = 2
 
 func update_bullets(delta: float) -> void:
@@ -202,8 +220,9 @@ func update_bullets(delta: float) -> void:
 						enemies.remove_at(j)
 						kills += 1
 						score += 100
+						scrap += 25 # Guaranteed mission income; drops are bonus Scrap.
 						explosions.append({"pos": pos, "time": 0.3})
-						if randf() < 0.65:
+						if randf() < 0.85:
 							drop_scrap(pos, 1)
 					break
 		if hit or shot.y < -20.0:
@@ -255,7 +274,7 @@ func upgrade_cost(kind: int) -> int:
 		1: return 80 + damage_level * 100
 		2: return 80 + rate_level * 100
 		3: return 100 + armor_level * 130
-		4: return 160 + (ability_level - 1) * 240
+		4: return 120 + (ability_level - 1) * 130
 	return 99999
 
 func buy_upgrade(kind: int) -> void:
@@ -336,6 +355,9 @@ func _draw() -> void:
 			var p := pos + Vector2(cos(i * TAU / 6.0), sin(i * TAU / 6.0)) * 88.0
 			draw_line(pos, p, Color(0.6, 0.9, 0.65), 13.0)
 		draw_circle(pos, 25.0, Color(0.9, 0.2, 0.2) if boss_shields == 0 else Color(0.2, 0.65, 1.0))
+		if boss_warning_time > 0.0:
+			draw_rect(Rect2(boss_warning_x - 25.0, 215.0, 50.0, H - 295.0), Color(1.0, 0.16, 0.1, 0.16))
+			draw_line(Vector2(boss_warning_x, 215.0), Vector2(boss_warning_x, H - 80.0), Color(1.0, 0.35, 0.25, 0.7), 2.0)
 		draw_rect(Rect2(150, 85, 420, 12), Color(0.25, 0.25, 0.35))
 		draw_rect(Rect2(150, 85, 420 * float(boss["hp"]) / float(boss["max_hp"]), 12), Color(0.9, 0.25, 0.3))
 		text_at("MINI BOSS  |  SHIELD %d" % boss_shields, 226, 118, 18)
