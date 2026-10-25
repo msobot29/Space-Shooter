@@ -39,6 +39,7 @@ var radial_bullets: Array[Dictionary] = []
 var drops: Array[Dictionary] = []
 var explosions: Array[Dictionary] = []
 var fire_clock := 0.0
+var fire_held := false
 var enemy_fire_clock := 1.0
 var spawn_clock := 0.0
 var invulnerable := 0.0
@@ -91,6 +92,7 @@ func start_level() -> void:
 	spin_rotation = 0.0
 	drift = 1.0
 	fire_clock = 0.0
+	fire_held = false
 	enemy_fire_clock = 1.1
 	boss_fire_clock = 1.0
 	spawn_clock = 0.0
@@ -237,10 +239,13 @@ func update_player(delta: float) -> void:
 	if Input.is_key_pressed(KEY_D):
 		move += 1.0
 	player_x = clampf(player_x + clampf(move, -1.0, 1.0) * (BASE_SPEED + speed_level * SPEED_STEP) * delta, 28.0, W - 28.0)
-	fire_clock -= delta
-	if (Input.is_key_pressed(KEY_B) or Input.is_key_pressed(KEY_SPACE) or Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)) and fire_clock <= 0.0:
+	fire_clock = maxf(0.0, fire_clock - delta)
+	var pressed := Input.is_key_pressed(KEY_B) or Input.is_key_pressed(KEY_SPACE) or Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)
+	# Edge-triggered fire: exactly one volley per new press, never continuous fire.
+	if pressed and not fire_held and fire_clock <= 0.0:
 		fire_weapon()
 		fire_clock = maxf(0.12, 0.34 - rate_level * 0.05)
+	fire_held = pressed
 
 func add_player_bullet(offset_x: float, angle_degrees: float) -> void:
 	# Negative angle goes left; positive angle goes right, with up as the forward axis.
@@ -446,8 +451,12 @@ func upgrade_cost(kind: int) -> int:
 		5: return 900 if ability_level == 1 else 1800
 	return 99999
 
+func available_movement_upgrade_level() -> int:
+	# The final tier belongs to later campaign stages; early shops unlock one tier each.
+	return 4 if level >= 10 else mini(3, level)
+
 func buy_upgrade(kind: int) -> void:
-	var capped := (kind == 1 and speed_level >= 4) or (kind == 2 and rate_level >= 4) or (kind == 3 and damage_level >= 3) or (kind == 4 and damage_level >= 6) or (kind == 5 and ability_level >= 3)
+	var capped := (kind == 1 and speed_level >= available_movement_upgrade_level()) or (kind == 2 and rate_level >= available_movement_upgrade_level()) or (kind == 3 and damage_level >= 3) or (kind == 4 and damage_level >= 6) or (kind == 5 and ability_level >= 3)
 	if capped or scrap < upgrade_cost(kind):
 		return
 	scrap -= upgrade_cost(kind)
@@ -622,10 +631,14 @@ func _draw() -> void:
 		text_at("SCRAP: %d" % scrap, 250, 296, 26, Color(0.95, 0.85, 0.3))
 		if speed_level >= 4:
 			text_at("1 - Extra Speed: MAX", 105, 353, 22)
+		elif speed_level >= available_movement_upgrade_level():
+			text_at("1 - Extra Speed Lv.%d/4 (LATER STAGE)" % speed_level, 105, 353, 22, Color(0.65, 0.73, 0.87))
 		else:
 			text_at("1 - Extra Speed Lv.%d/4  (%d)" % [speed_level, upgrade_cost(1)], 105, 353, 22)
 		if rate_level >= 4:
 			text_at("2 - Rate of Fire: MAX", 105, 407, 22)
+		elif rate_level >= available_movement_upgrade_level():
+			text_at("2 - Rate of Fire Lv.%d/4 (LATER STAGE)" % rate_level, 105, 407, 22, Color(0.65, 0.73, 0.87))
 		else:
 			text_at("2 - Rate of Fire Lv.%d/4 (%d)" % [rate_level, upgrade_cost(2)], 105, 407, 22)
 		if damage_level >= 3:
