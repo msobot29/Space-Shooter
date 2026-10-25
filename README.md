@@ -170,3 +170,20 @@ The player receives a guaranteed 25 Scrap per kill (20 enemies per regular stage
 2. After each purchase verify that the displayed price rises to the next tier, with no mission-based lock.
 3. Once four levels are bought the option shows MAX and no more Scrap is deducted.
 4. Test that one press fires one volley, while holding down fire does not continuously shoot.
+
+## Score multiplier pickups (latest)
+- Every **30th enemy kill across the run**, a defeated regular enemy drops one randomly chosen **x2, x4 or x6 SCORE** pickup. The counter carries over between missions, so the first bonus usually appears partway through mission 2 (20 kills per mission).
+- Multipliers activate **only when the ship collects the purple-gold pickup**; they are not automatic on the kill.
+- Each collected multiplier lasts a random **10–15 seconds of active gameplay**. Different pickups have independent timers; when one expires, the remaining multiplier stays active.
+- Active multipliers **add together** rather than multiply (x2 + x6 = x8). If none is active, the normal score multiplier is x1.
+- The multiplier applies to points from regular kills (100 base) and boss defeat (2500 base), **not** to Scrap income.
+- The HUD shows the combined SCORE multiplier and the longest remaining bonus timer. Shop screens, TAB status and P pause do not consume multiplier time. The bonus timer continues into later missions but pauses in the shop.
+- Progress and active bonuses reset when the player starts a completely new run.
+- A single drop appears at the location of each 30th killed enemy and falls toward the player like other pickups.
+
+### Score multiplier QA
+1. Kill 20 enemies in mission 1, then 10 in mission 2: the 30th kill must create exactly one random x2/x4/x6 pickup.
+2. Collect the pickup; check the purple-gold HUD and kill an enemy while it is active (e.g. x4 should grant 400 score).
+3. If a second bonus is picked up before the first expires, confirm additive stacking (x2 + x6 = x8).
+4. Confirm expiry after 10–15 seconds of gameplay, and timers do not advance during P pause, TAB stats or the shop.
+5. Confirm Scrap values and the boss's 200 HP remain unchanged.
