@@ -231,3 +231,15 @@ Engine test still needs confirmation in Godot 4.
 3. Submit enough scores to exceed 10; verify that only the 10 highest remain, and a lower score does not prompt for a name.
 4. Confirm ENTER submits the name first and only restarts after submission.
 5. Verify the BEST number increases when you exceed the record and multiplier-boosted scores are saved.
+
+## Shop cadence — every five levels (latest)
+- The upgrade shop now appears **only after missions 5, 10, 15, ...**, not after each mission. Between those milestones, levels progress automatically as soon as the current mission is cleared.
+- Scrap accumulates across the five-mission block, so the player can save and then make more meaningful upgrade choices. All progressive prices and existing upgrade limits remain unchanged.
+- The current Croatia demo includes **only five missions**. After finishing mission 5, the shop opens so its milestone behavior can be tested. Press **ENTER - View results** to reach the victory screen, enter a qualifying Top 10 score and start another run. Purchases made there cannot affect further gameplay until additional missions are implemented.
+- Once more levels are added and `MAX_LEVEL` is increased, the same `% 5` rule will also open the shop after missions 10, 15, 20, etc.; ENTER then launches the following mission except at the campaign end.
+- This section supersedes older README descriptions saying that the shop opens after every completed level.
+
+### QA
+1. Clear missions 1–4: no shop should appear; each following level starts automatically.
+2. Clear mission 5: shop appears; test pricing and upgrade purchases.
+3. Press ENTER on the mission-5 shop: victory and persistent High Score / name entry appear, not mission 6.
