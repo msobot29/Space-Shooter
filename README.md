@@ -13,7 +13,7 @@ The first five missions are set in Croatia. Each mission starts with 10 enemies 
 ## Controls
 - **A / D**, **Left / Right**: move horizontally
 - **B**, **Space**, or **left mouse**: shoot
-- **X**: activate invulnerability shield (2 seconds at level 1, 4 at level 2, 6 at level 3; 10-second cooldown starting only after invulnerability ends)
+- **R**: activate invulnerability shield (2 seconds at level 1, 4 at level 2, 6 at level 3; 10-second cooldown starting only after invulnerability ends)
 - **1**, **2**, **3**, **4** in the shop: purchase weapon upgrades, fire rate, X shield, and ship speed. Every three weapon purchases unlock the next shot tier.
 - **Enter**: proceed to next level or restart after game over / victory
 
@@ -123,3 +123,14 @@ The shop displays the actual purchase price and owned status. This section super
 1. Press TAB during a mission; check speed and shots/s; confirm enemies stop moving until TAB closes it.
 2. Buy Extra Speed and Rate of Fire separately; verify their values increase in the shop and TAB panel on the next mission.
 3. Confirm the five shop choices still respond to keys 1-5.
+
+## Latest controls: shield and pause
+- **R**: activate the shield when it is available; the 10-second cooldown still starts after it expires. **X no longer activates the shield.**
+- **P**: pause or resume gameplay. A dedicated pause overlay displays while paused; enemies, projectiles, timers and cooldowns do not advance.
+- **TAB**: open or close the Ship Status panel. P takes precedence and closes the status panel when entering pause.
+- **B / Space / left mouse**: fire; **A / D** or arrow keys: move. Shop purchases retain keys 1–5.
+
+### Test
+1. On mission 1 press R: shield begins; X should do nothing.
+2. Press P while enemies are flying or shield is active: all simulation time stops until P is pressed again.
+3. Open TAB then press P to pause; close with P and confirm TAB can be used normally afterward.
