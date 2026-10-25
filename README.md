@@ -363,3 +363,26 @@ This is a total **13.5-second transition** before enemy spawning. Pickups keep f
 - Repeat after level 5 shop, verifying LEVEL 6 timing.
 - Verify Scrap/bonus pickup collection works while waiting and that P/TAB pause both timing phases.
 This section supersedes the earlier README wording describing a visible STARTING IN countdown.
+
+## Croatia campaign: 25 levels, five cities (latest specification)
+**The Croatia chapter now covers 25 levels — exactly five missions for each of five major Croatian cities.** The campaign order is designed to finish with liberation of Zagreb, rather than follow population rank:
+- **Zadar: levels 1–5**
+- **Rijeka: levels 6–10**
+- **Split: levels 11–15**
+- **Osijek: levels 16–20**
+- **Zagreb: levels 21–25**
+
+The city name appears in the live HUD and in the centered next-level introduction. Existing controls, the ten-second silent intermission followed by a 3.5-second city/level title, persistent falling rewards, local High Scores, colored weapons, weapon loss on damage, and shop controls remain in place.
+
+**City bosses:** Each fifth level ends with a guardian after its normal two waves: 5 (Zadar, 200 HP), 10 (Rijeka, 270 HP), 15 (Split, 340 HP), 20 (Osijek, 410 HP). **Level 25 ends with the Croatia campaign FINAL BOSS in Zagreb (650 HP, four initial shield charges, faster movement and firing, faster 360-degree bullets)**. These bosses currently reuse the established procedural boss art and attack families; unique visual designs and new final-boss abilities are future polish rather than implemented content.
+
+**Shop and victory:** The normal upgrade shop opens after each city guardian at 5, 10, 15, 20, and 25. For cities 1–4, pressing ENTER in the shop launches the regular level transition to the next city; after defeating Zagreb's level-25 boss, the last shop leads to the **CROATIA LIBERATED!** victory/Top 10 leaderboard screen. It no longer ends at level 10. Only one Croatia playthrough is 25 stages; no further countries are implemented yet.
+
+**Patterns and difficulty:** The existing five advanced formations/attack types now rotate within each city after Zadar (city-local missions 1–5). Regular enemies slowly gain health by chapter with a cap on HP scaling, and aimed-special projectile speed is capped to avoid unlimited speed increases at high levels. More unique enemies, city-specific backgrounds, environmental art, and final boss visuals remain on the roadmap.
+
+### QA for expanded campaign
+1. Confirm HUD/introductions identify Zadar 1–5, Rijeka 6–10, Split 11–15, Osijek 16–20, Zagreb 21–25.
+2. Confirm bosses trigger **only** on 5/10/15/20/25, and the level-25 boss is visibly labeled FINAL BOSS with 650 HP and four shields.
+3. Confirm the shop opens after every fifth level and that level 25 leads to victory/Top 10 rather than level 26.
+4. Test falling pickups during transitions and the shop-to-city transition, and check that weapon downgrades and boss health decrement remain correct.
+5. Godot 4 end-to-end testing and balancing are required before calling the 25-level campaign production-ready.
