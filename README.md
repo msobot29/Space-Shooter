@@ -187,3 +187,18 @@ The player receives a guaranteed 25 Scrap per kill (20 enemies per regular stage
 3. If a second bonus is picked up before the first expires, confirm additive stacking (x2 + x6 = x8).
 4. Confirm expiry after 10–15 seconds of gameplay, and timers do not advance during P pause, TAB stats or the shop.
 5. Confirm Scrap values and the boss's 200 HP remain unchanged.
+
+## Projectile collision fix (latest)
+- Player bullets use **continuous swept collision detection** along their entire per-frame motion, including the target's movement during the same frame. This prevents fast bullets from skipping across smaller moving enemies between frames.
+- For multiple enemies on the path, the nearest collision is chosen by time of impact. Red front-line crabs intercept bullets before rear enemies when they overlap the bullet's path.
+- Collision sizes now better match visible sprites: regular sea creatures use 29px combined hit radius; armored red crabs 33px; boss 69px.
+- Every successful hit now produces a small impact flash, including nonlethal hits on tougher armored enemies. A destroyed enemy still produces its normal larger explosion, score, Scrap and drop rewards.
+- All weapon types (single, double, Warblade-style triple fan) and boss shield/health are handled through the same continuous collision method.
+
+### Test cases
+1. Shoot a moving jellyfish or eel while it crosses the bullet stream; shots that visually pass through it should register.
+2. Hit a red armored crab repeatedly: verify small impact flashes before it dies, without losing Scrap or score bookkeeping.
+3. Shoot through an aligned formation: front crab should take the hit before creatures behind it.
+4. Test Triple Shot against moving enemies and the 200-HP boss, including boss shield depletion.
+
+Engine test still needs confirmation in Godot 4.
