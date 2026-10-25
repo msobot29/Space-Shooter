@@ -20,6 +20,7 @@ const ABILITY_COOLDOWN := 10.0 # Starts after the shield expires
 const WAVE_DELAY := 5.0
 const LEVEL_TRANSITION_SECONDS := 10.0 # Silent pause before showing the title
 const LEVEL_TITLE_SECONDS := 3.5 # Enemies begin after the title is shown
+const BOSS_INTRO_SECONDS := 3.8
 const ENEMIES_PER_WAVE := 10
 const WAVES_PER_LEVEL := 2
 const DOUBLE_DROP_CHANCE := 0.12
@@ -38,7 +39,8 @@ var speed_level := 0
 var ability_level := 1 # 1/2/3 = 2/4/6 seconds
 var ability_time := 0.0
 var ability_cooldown := 0.0
-var state := "playing" # playing, intermission, shop, gameover, victory
+var state := "playing" # playing, intermission, boss_intro, shop, gameover, victory
+var boss_intro_time := 0.0
 var level_transition_time := 0.0
 var show_stats_modal := false
 var game_paused := false
@@ -118,6 +120,7 @@ func start_level() -> void:
 	boss.clear()
 	boss_active = false
 	boss_pending = level % 5 == 0 # City guardian every 5 levels; final boss at 25
+	boss_intro_time = 0.0
 	waves_spawned = 0
 	wave_path_ids.clear()
 	boss_phase = 1
@@ -256,6 +259,17 @@ func move_enemy(enemy: Dictionary, delta: float) -> void:
 	position.y = clampf(position.y, 55.0, 650.0)
 	enemy["pos"] = position
 
+func begin_boss_intro() -> void:
+	# Give the player a readable story warning before the lieutenant arrives.
+	boss_pending = false
+	state = "boss_intro"
+	boss_intro_time = BOSS_INTRO_SECONDS
+	player_bullets.clear()
+	enemy_bullets.clear()
+	radial_bullets.clear()
+	fire_held = false
+	queue_redraw()
+
 func launch_boss() -> void:
 	boss_pending = false
 	boss_active = true
@@ -272,15 +286,21 @@ func _process(delta: float) -> void:
 	if game_paused or show_stats_modal:
 		queue_redraw()
 		return
-	if state == "intermission":
-		# Movement and falling rewards continue through both intro phases.
+	if state == "intermission" or state == "boss_intro":
+		# Let old rewards fall and remain collectible during both types of intro.
 		update_player(delta)
 		update_pickups(delta)
 		update_multiplier_timers(delta)
 		update_effects(delta)
-		level_transition_time = maxf(0.0, level_transition_time - delta)
-		if level_transition_time <= 0.0:
-			start_level()
+		if state == "intermission":
+			level_transition_time = maxf(0.0, level_transition_time - delta)
+			if level_transition_time <= 0.0:
+				start_level()
+		else:
+			boss_intro_time = maxf(0.0, boss_intro_time - delta)
+			if boss_intro_time <= 0.0:
+				state = "playing"
+				launch_boss()
 		queue_redraw()
 		return
 	if state != "playing":
@@ -312,7 +332,7 @@ func _process(delta: float) -> void:
 			if boss.is_empty():
 				complete_level()
 		elif boss_pending:
-			launch_boss()
+			begin_boss_intro()
 		else:
 			complete_level()
 	queue_redraw()
@@ -326,8 +346,10 @@ func update_player(delta: float) -> void:
 	player_x = clampf(player_x + clampf(move, -1.0, 1.0) * (BASE_SPEED + speed_level * SPEED_STEP) * delta, 28.0, W - 28.0)
 	fire_clock = maxf(0.0, fire_clock - delta)
 	var pressed := Input.is_key_pressed(KEY_B) or Input.is_key_pressed(KEY_SPACE) or Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)
-	# Edge-triggered fire: exactly one volley per new press, never continuous fire.
-	if pressed and not fire_held and fire_clock <= 0.0:
+	# Only fire in active combat. During transitions, firing previously made
+	# frozen projectiles because bullets were drawn but not being updated.
+	# Track held input to avoid an accidental volley when combat resumes.
+	if state == "playing" and pressed and not fire_held and fire_clock <= 0.0:
 		fire_weapon()
 		fire_clock = maxf(0.12, 0.34 - rate_level * 0.05)
 	fire_held = pressed
@@ -814,7 +836,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
 				else:
 					level += 1
 					begin_level_transition()
-	elif state == "playing" or state == "intermission":
+	elif state == "playing" or state == "intermission" or state == "boss_intro":
 		if event.keycode == KEY_P:
 			game_paused = not game_paused
 			if game_paused:
@@ -886,7 +908,11 @@ func _draw() -> void:
 	for star in stars:
 		draw_circle(star, 1.5, Color(0.45, 0.65, 0.9, 0.55))
 	text_at("%s  LVL %d/%d  WAVE %d/2  SCORE %d" % [city_name(), level, MAX_LEVEL, waves_spawned, score], 20, 35, 19)
-	text_at("LIVES %d       SCRAP %d" % [lives, scrap], 20, 66, 21, Color(0.8, 0.95, 0.7))
+	# The same little blue ship silhouette used for the player represents lives.
+	var life_icon := PackedVector2Array([Vector2(36, 43), Vector2(24, 67), Vector2(36, 62), Vector2(48, 67)])
+	draw_colored_polygon(life_icon, Color(0.2, 0.8, 1.0))
+	draw_circle(Vector2(36, 58), 3.2, Color(1.0, 0.9, 0.3))
+	text_at("x%d     SCRAP %d" % [lives, scrap], 61, 66, 21, Color(0.8, 0.95, 0.7))
 	text_at("BEST %d" % maxi(score, int(high_scores[0]["score"]) if not high_scores.is_empty() else 0), 480, 66, 19, Color(1.0, 0.88, 0.5))
 	if ability_time > 0.0:
 		text_at("R SHIELD: %.1fs" % ability_time, 20, 96, 19, Color(0.3, 1.0, 1.0))
@@ -903,7 +929,7 @@ func _draw() -> void:
 		draw_rect(Rect2(385, 168, 316, 65), Color(0.17, 0.10, 0.26, 0.90))
 		text_at("SCORE x%d" % score_multiplier(), 399, 195, 24, Color(1.0, 0.85, 0.35))
 		text_at("%.1fs remaining" % multiplier_time_left(), 400, 220, 17, Color(0.95, 0.85, 1.0))
-	if state == "playing" or state == "intermission":
+	if state == "playing" or state == "intermission" or state == "boss_intro":
 		if invulnerable <= 0.0 or int(Time.get_ticks_msec() / 100) % 2 == 0:
 			var ship := PackedVector2Array([Vector2(player_x, PLAYER_Y - 36), Vector2(player_x - 27, PLAYER_Y + 23), Vector2(player_x, PLAYER_Y + 12), Vector2(player_x + 27, PLAYER_Y + 23)])
 			draw_colored_polygon(ship, Color(0.2, 0.8, 1.0))
@@ -978,6 +1004,13 @@ func _draw() -> void:
 	for effect in explosions:
 		var pos: Vector2 = effect["pos"]
 		draw_arc(pos, 30.0 * float(effect["time"]) / 0.3 + 8.0, 0, TAU, 20, Color(1.0, 0.68, 0.2), 4.0)
+	if state == "boss_intro":
+		# Separate lieutenant announcement instead of an abrupt boss spawn.
+		draw_rect(Rect2(42, 338, 636, 190), Color(0.08, 0.07, 0.17, 0.94))
+		draw_rect(Rect2(42, 338, 636, 5), Color(0.8, 0.36, 0.94))
+		text_at("THE GUARDIAN OF THIS ZONE", 85, 403, 29, Color(0.95, 0.85, 1.0))
+		text_at("HAS SENT HIS LIEUTENANT", 103, 445, 28, Color(0.95, 0.85, 1.0))
+		text_at("TO DEAL WITH YOU", 207, 487, 29, Color(1.0, 0.65, 0.75))
 	if state == "intermission" and level_transition_time <= LEVEL_TITLE_SECONDS:
 		# First 10 seconds are silent; only show the level title near wave entry.
 		draw_rect(Rect2(144, 369, 432, 114), Color(0.04, 0.10, 0.23, 0.87))
@@ -1021,9 +1054,9 @@ func _draw() -> void:
 			text_at("CROATIA LIBERATED!", 186, 174, 29, Color(0.45, 1.0, 0.7))
 		else:
 			text_at("GAME OVER", 258, 174, 29, Color(1.0, 0.35, 0.4))
-	if show_stats_modal and (state == "playing" or state == "intermission"):
+	if show_stats_modal and (state == "playing" or state == "intermission" or state == "boss_intro"):
 		draw_ship_status_modal()
-	if game_paused and (state == "playing" or state == "intermission"):
+	if game_paused and (state == "playing" or state == "intermission" or state == "boss_intro"):
 		draw_rect(Rect2(0, 0, W, H), Color(0.0, 0.02, 0.06, 0.65))
 		draw_rect(Rect2(124, 362, 472, 212), Color(0.06, 0.12, 0.23, 0.98))
 		text_at("GAME PAUSED", 226, 449, 34, Color(0.9, 0.96, 1.0))
