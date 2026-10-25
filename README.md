@@ -422,3 +422,21 @@ The city name appears in the live HUD and in the centered next-level introductio
 - Press O again to restore normal damage. Toggle is in-memory for the current game process (it is not stored with High Scores).
 - This is a **testing convenience**, not a balanced player ability; disable it when evaluating real difficulty or high-score fairness.
 - QA: Turn O on, take several enemy projectiles and confirm lives and weapon tier remain unchanged; turn it off and take one unshielded hit after any temporary invulnerability expires, confirming normal life loss and weapon degradation.
+
+## Croatia campaign balance, life orbs and Zagreb final boss (latest)
+- **Inter-level timing:** silent break shortened by five seconds, from 10 to **5 seconds**. The centered city/LEVEL title still appears for **3.5 seconds** afterward. New enemies start after **8.5 seconds total** (except when a milestone shop is open). No countdown numbers are shown. Firing during the wait still works, and falling pickups persist.
+- **Regular enemy Scrap reduced:** the guaranteed kill reward is now **12 Scrap** (was 25), and the common falling Scrap item is worth **5 Scrap** (was 10). Chance for the pickup remains 85%, score/score multipliers and the **300 Scrap boss defeat reward** are unchanged. This deliberately changes the economy; shop affordability should be retested across a whole 25-level run.
+- **Mini-boss 360 spread:** primary avoidance gap half-angle reduced from 0.145 to **0.125 radians**; secondary from 0.12 to **0.105 radians**. Warning and player shield mechanics remain.
+- **Life orbs:** city mini-boss lieutenants drop one collectible colored orb each: **red (level 5), blue (level 10), green (level 15), yellow (level 20)**. The four small circles in the HUD indicate which colors have been collected. When **all four different colors** have been physically collected in the same run, the player gets **+1 life**. The orb collection resets after the award, and again on a fresh run. Missing any orb means no extra-life reward. Orbs fall like other drops and can carry through the shop and next-level intro.
+- **Zagreb level 25:** redesigned **large Zone Guardian** with **1,000 HP**, enlarged art/collision radius, and **two distinct shield rounds**. It starts with four shield hits to break through; at half HP (500 HP), it activates another four-hit shield, once. Shield attacks still consume incoming shots.
+- **Final boss special: ADRIATIC STORM:** periodically telegraphs dangerous vertical firing lanes for **1.3 seconds**, leaving one open corridor roughly two lanes away from the player's location when warning starts. Then launches **three staggered volleys** in the blocked lanes, spaced by **0.62 seconds**. The safe lane is the same for each volley in that storm, so observation and prompt movement enable dodging. Visual warnings and distinct cyan projectiles mark the attack. Existing spin, spread and targeted attacks continue in the boss's rotation.
+- **Scope:** the first four bosses remain normal city guardian mini-bosses. The level-25 guardian is the campaign-ending zone boss and does not spawn another collectible life orb.
+
+### Suggested Godot QA
+1. Complete a regular level; confirm approximately five silent seconds followed by 3.5 seconds of the city/LEVEL title (no countdown).
+2. Verify each kill gives 12 Scrap and a collected standard Scrap item gives 5; confirm shop costs still feel attainable.
+3. Test regular 360° avoidance lanes and R shield on city lieutenants.
+4. Beat level 5/10/15/20 mini-bosses, collecting each colored orb; HUD must track red/blue/green/yellow, and +1 life happens **only after the fourth distinct orb is collected**. Miss one to verify no award. Ensure orbs persist through the shop.
+5. On level 25, confirm **1,000 HP**, four shield hits at spawn, shield recharge at 500 HP, large collision target, and a real visible/adaptable safe corridor during Adriatic Storm.
+6. Confirm the zone boss defeat still leads to the final shop, then CROATIA LIBERATED / persistent High Score.
+Code changes are committed, but gameplay and Godot parser correctness still need in-editor testing.
