@@ -9,6 +9,9 @@ const SPEED := 470.0
 const BULLET_SPEED := 820.0
 const MAX_LEVEL := 5
 const ABILITY_COOLDOWN := 10.0 # Starts after the shield expires
+const WAVE_DELAY := 5.0
+const ENEMIES_PER_WAVE := 10
+const WAVES_PER_LEVEL := 2
 
 var font: Font
 var stars: Array[Vector2] = []
@@ -45,6 +48,9 @@ var boss_warning_x := 360.0
 var level_time := 0.0
 var kills := 0
 var target_kills := 0
+var waves_spawned := 0
+var wave_path_ids: Array[int] = []
+var boss_pending := false
 
 func _ready() -> void:
 	randomize()
@@ -61,7 +67,10 @@ func start_level() -> void:
 	drops.clear()
 	explosions.clear()
 	boss.clear()
-	boss_active = level == 4
+	boss_active = false
+	boss_pending = level == 4
+	waves_spawned = 0
+	wave_path_ids.clear()
 	boss_phase = 1
 	boss_shields = 2
 	boss_attack_index = 0
@@ -77,17 +86,85 @@ func start_level() -> void:
 	ability_cooldown = 0.0 # Ready again at the beginning of a mission.
 	level_time = 0.0
 	kills = 0
-	target_kills = 8 + level * 4
-	if boss_active:
-		boss = {"pos": Vector2(W / 2.0, 155.0), "hp": 90.0, "max_hp": 90.0, "direction": 1.0}
-	else:
-		spawn_formation()
+	target_kills = WAVES_PER_LEVEL * ENEMIES_PER_WAVE
+	spawn_wave()
 	queue_redraw()
 
-func spawn_formation() -> void:
-	for row in range(2):
-		for col in range(5):
-			enemies.append({"pos": Vector2(120.0 + col * 118.0, 118.0 + row * 76.0), "hp": 2 + int(level / 3), "kind": (row + col) % 2})
+func spawn_wave() -> void:
+	# Exactly five attackers enter from each side; each wave has an independent route.
+	waves_spawned += 1
+	var path_id := randi_range(0, 3)
+	wave_path_ids.append(path_id)
+	for side in range(2):
+		for index in range(5):
+			var left := side == 0
+			var row_y := 170.0 + float(index) * 70.0
+			var formation_x := (128.0 + float(index) * 46.0) if left else (592.0 - float(index) * 46.0)
+			var from_x := (-65.0 - float(index) * 52.0) if left else (W + 65.0 + float(index) * 52.0)
+			var start_pos := Vector2(from_x, row_y - 105.0)
+			var target_pos := Vector2(formation_x, row_y + (waves_spawned - 1) * 27.0)
+			enemies.append({
+				"pos": start_pos,
+				"start": start_pos,
+				"target": target_pos,
+				"age": 0.0,
+				"path": path_id,
+				"side": -1.0 if left else 1.0,
+				"offset": float(index) * 0.26,
+				"hp": 2 + int(level / 3),
+				"kind": (side + index + waves_spawned) % 2
+			})
+
+func move_enemy(enemy: Dictionary, delta: float) -> void:
+	var age: float = float(enemy["age"]) + delta
+	enemy["age"] = age
+	var entrance_time := 1.55 + float(enemy["offset"])
+	var fraction := clampf(age / entrance_time, 0.0, 1.0)
+	var eased := fraction * fraction * (3.0 - 2.0 * fraction)
+	var source: Vector2 = enemy["start"]
+	var target: Vector2 = enemy["target"]
+	var side: float = enemy["side"]
+	var offset: float = enemy["offset"]
+	var route: int = enemy["path"]
+	var position := source.lerp(target, eased)
+	if fraction < 1.0:
+		# Different arcs and swerves while entering from opposite screen edges.
+		match route:
+			0:
+				position.y -= sin(PI * fraction) * 100.0
+			1:
+				position.y += sin(PI * fraction) * 115.0
+			2:
+				position.x += side * sin(TAU * fraction) * 92.0
+			3:
+				position.x -= side * sin(PI * fraction) * 110.0
+	else:
+		# Enemies keep flying in curved paths instead of staying static.
+		var t := age - entrance_time
+		match route:
+			0:
+				position.x += sin(t * 1.2 + offset * 3.0) * 70.0
+				position.y += sin(t * 1.7 + offset) * 35.0
+			1:
+				position.x += cos(t * 1.7 + offset * 2.0) * 85.0
+				position.y += sin(t * 1.1 + offset) * 54.0
+			2:
+				position.x += sin(t * 2.0 + offset) * 96.0
+				position.y += sin(t * 1.0 + offset * 2.0) * 50.0
+			3:
+				position.x += side * sin(t * 1.3 + offset * 2.0) * 110.0
+				position.y += cos(t * 1.6 + offset) * 36.0
+	position.x = clampf(position.x, -360.0, W + 360.0)
+	position.y = clampf(position.y, 55.0, 650.0)
+	enemy["pos"] = position
+
+func launch_boss() -> void:
+	boss_pending = false
+	boss_active = true
+	enemy_bullets.clear()
+	boss = {"pos": Vector2(W / 2.0, 155.0), "hp": 90.0, "max_hp": 90.0, "direction": 1.0}
+	boss_fire_clock = 1.4
+
 
 func _process(delta: float) -> void:
 	if state != "playing":
@@ -101,6 +178,8 @@ func _process(delta: float) -> void:
 			ability_cooldown = ABILITY_COOLDOWN
 	elif ability_cooldown > 0.0:
 		ability_cooldown = maxf(0.0, ability_cooldown - delta)
+	if waves_spawned == 1 and level_time >= WAVE_DELAY:
+		spawn_wave()
 	update_player(delta)
 	update_enemies(delta)
 	update_boss(delta)
@@ -109,11 +188,14 @@ func _process(delta: float) -> void:
 	update_effects(delta)
 	if lives <= 0:
 		state = "gameover"
-	elif boss_active:
-		if boss.is_empty():
+	elif waves_spawned == WAVES_PER_LEVEL and enemies.is_empty():
+		if boss_active:
+			if boss.is_empty():
+				complete_level()
+		elif boss_pending:
+			launch_boss()
+		else:
 			complete_level()
-	elif kills >= target_kills and enemies.is_empty():
-		complete_level()
 	queue_redraw()
 
 func update_player(delta: float) -> void:
@@ -131,35 +213,14 @@ func update_player(delta: float) -> void:
 func update_enemies(delta: float) -> void:
 	if boss_active:
 		return
-	var edge := false
-	for enemy in enemies:
-		var pos: Vector2 = enemy["pos"]
-		if pos.x + drift * (95.0 + level * 12.0) * delta > W - 32.0 or pos.x + drift * (95.0 + level * 12.0) * delta < 32.0:
-			edge = true
-			break
-	if edge:
-		drift *= -1.0
 	for i in range(enemies.size()):
-		var pos: Vector2 = enemies[i]["pos"]
-		pos.x += drift * (95.0 + level * 12.0) * delta
-		if edge:
-			pos.y += 20.0
-		enemies[i]["pos"] = pos
-	for i in range(enemies.size() - 1, -1, -1):
-		var pos: Vector2 = enemies[i]["pos"]
-		if pos.y >= PLAYER_Y - 25.0:
-			enemies.remove_at(i)
-			take_damage()
+		move_enemy(enemies[i], delta)
 	enemy_fire_clock -= delta
 	if enemy_fire_clock <= 0.0 and not enemies.is_empty():
 		var source: Vector2 = enemies[randi_range(0, enemies.size() - 1)]["pos"]
-		enemy_bullets.append(source + Vector2(0, 18))
+		if source.x > 15.0 and source.x < W - 15.0:
+			enemy_bullets.append(source + Vector2(0, 18))
 		enemy_fire_clock = maxf(0.45, 1.4 - level * 0.12)
-	if enemies.is_empty() and kills < target_kills:
-		spawn_clock += delta
-		if spawn_clock >= 0.5:
-			spawn_clock = 0.0
-			spawn_formation()
 
 func update_boss(delta: float) -> void:
 	if not boss_active or boss.is_empty():
@@ -323,7 +384,7 @@ func text_at(value: String, x: float, y: float, size: int = 22, color: Color = C
 func _draw() -> void:
 	for star in stars:
 		draw_circle(star, 1.5, Color(0.45, 0.65, 0.9, 0.55))
-	text_at("CROATIA  %d/5       SCORE %d" % [level, score], 20, 35)
+	text_at("CROATIA %d/5  WAVE %d/2  SCORE %d" % [level, waves_spawned, score], 20, 35)
 	text_at("LIVES %d       SCRAP %d" % [lives, scrap], 20, 66, 21, Color(0.8, 0.95, 0.7))
 	if ability_time > 0.0:
 		text_at("X SHIELD: %.1fs" % ability_time, 20, 96, 19, Color(0.3, 1.0, 1.0))
