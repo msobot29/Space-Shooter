@@ -632,7 +632,7 @@ func update_bullets(delta: float) -> void:
 					score += 2500 * score_multiplier()
 					scrap += 300
 					if level < MAX_LEVEL:
-						drop_life_orb(boss_current)
+						drop_life_orb(Vector2(boss["pos"]))
 					boss.clear()
 			else:
 				enemies[target_index]["hp"] = int(enemies[target_index]["hp"]) - (1 + damage_level)
