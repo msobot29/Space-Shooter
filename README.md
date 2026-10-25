@@ -281,3 +281,19 @@ The Croatia second block now introduces distinct enemy arrangements and projecti
 **Design constraints:** Every wave still contains five enemies from each side, with **two red armored crabs per side in the foremost rows**. Existing smooth entrances and swept projectile hit-detection stay in place. Special bullets are launched only after attackers are on screen. Level-specific shots have colored projectile bodies so attacks are readable, and the player can dodge aimed fire. Damage, life loss, shield invulnerability and pause behavior use the existing bullet collision system. Shop remains after missions 5 and 10, with High Score after the last shop.
 
 **QA checklist:** Play levels 6, 7, 8, 9, 10 to compare formations and bullet patterns. Confirm red crabs stay forward, entrance motion remains smooth, angled projectiles can be dodged or shielded with R, TAB/P freeze simulation, and the level-9 mini-boss and level-10 High Score sequence still trigger. Newly authored gameplay must be tested inside Godot 4 before release.
+
+## Random Double Shot pickups (latest)
+- While the player only has **Single Shot**, each destroyed regular enemy has a **12% chance** to drop a blue **D (Double Shot)** pickup.
+- To avoid unlucky runs leading into the mini-boss with only Single Shot, a drop is **guaranteed on the 18th eligible kill without a Double Shot drop**. Kill counts persist across missions; this guarantee concerns the *drop*, not automatically receiving the weapon. Players must physically collect it.
+- Only one Double Shot pickup can be on screen at a time. If the player misses one, another may drop after later kills.
+- The pickup falls at 230 px/s, is shown as a blue ring containing **D**, and immediately upgrades Single Shot to the existing permanent blue Double Shot. No Scrap is charged.
+- **Between-level shop integration:** once Double Shot is picked up, the shop shows **Double Shot: OWNED** and charges the existing reduced price for upgrading to Triple Shot. Triple Shot is unaffected and remains lilac.
+- If a Double Shot pickup is falling when the final enemy of a stage dies, stage completion waits until it is collected or has fallen off screen. This prevents the last kill's drop from disappearing on an immediate level transition.
+- No weapon pickups spawn after Double Shot or Triple Shot has already been obtained. Existing Scrap, Score multiplier, boss mechanics and High Score calculation are unchanged.
+
+### QA
+1. Start with Single Shot and kill enemies: verify random blue D drops can appear, and a drop appears by the 18th eligible enemy kill at the latest.
+2. Move the ship to collect D: Double Shot starts immediately, bullets are blue, and the shop later says OWNED.
+3. Miss a D pickup: verify the game can generate another one on later kills.
+4. Trigger D from the final enemy in a mission: verify the level waits for pickup collection or exit.
+5. After owning Double Shot, verify no further D pickups appear and Triple Shot remains purchasable at its upgrade difference price.
