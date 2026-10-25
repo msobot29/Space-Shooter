@@ -425,7 +425,7 @@ func _draw() -> void:
 			2: # Electric eel: narrow zigzag body
 				var body := PackedVector2Array([pos + Vector2(-24, -10), pos + Vector2(3, -19), pos + Vector2(-7, 0), pos + Vector2(24, 10), pos + Vector2(-2, 18), pos + Vector2(7, 2)])
 				draw_colored_polygon(body, Color(0.6, 0.95, 0.35))
-			draw_circle(pos + Vector2(0, -5), 4.0, Color.WHITE)
+		draw_circle(pos + Vector2(0, -5), 4.0, Color.WHITE)
 	if boss_active and not boss.is_empty():
 		var pos: Vector2 = boss["pos"]
 		draw_circle(pos, 68.0, Color(0.24, 0.62, 0.48))
