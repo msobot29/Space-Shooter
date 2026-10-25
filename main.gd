@@ -9,8 +9,8 @@ const BASE_SPEED := 295.0
 const SPEED_STEP := 48.0
 const SPIN_WARNING := 1.5
 const SPIN_PROJECTILES := 48
-const SPIN_GAP_PRIMARY := 0.145 # Smaller dodge corridor than the original 0.22
-const SPIN_GAP_SECONDARY := 0.12 # Smaller than original 0.19
+const SPIN_GAP_PRIMARY := 0.105 # Narrower dodge lane for the 360-degree attack
+const SPIN_GAP_SECONDARY := 0.09 # Secondary gap is narrower too
 const BULLET_SPEED := 820.0
 const MAX_LEVEL := 25
 const CITY_NAMES := ["ZADAR", "RIJEKA", "SPLIT", "OSIJEK", "ZAGREB"]
@@ -18,9 +18,12 @@ const HIGH_SCORE_FILE := "user://highscores.cfg"
 const HIGH_SCORE_LIMIT := 10
 const ABILITY_COOLDOWN := 10.0 # Starts after the shield expires
 const WAVE_DELAY := 5.0
-const LEVEL_TRANSITION_SECONDS := 10.0 # Silent pause before showing the title
+const LEVEL_TRANSITION_SECONDS := 5.0 # Silent pause before showing the title
 const LEVEL_TITLE_SECONDS := 3.5 # Enemies begin after the title is shown
 const BOSS_INTRO_SECONDS := 3.8
+const STORM_WARNING_SECONDS := 1.3
+const STORM_PULSE_INTERVAL := 0.62
+const ORB_COLORS := [Color(1.0, 0.28, 0.3), Color(0.3, 0.68, 1.0), Color(0.38, 1.0, 0.52), Color(1.0, 0.78, 0.22)]
 const ENEMIES_PER_WAVE := 10
 const WAVES_PER_LEVEL := 2
 const DOUBLE_DROP_CHANCE := 0.12
@@ -66,6 +69,12 @@ var boss_active := false
 var boss_fire_clock := 0.0
 var boss_phase := 1
 var boss_shields := 2
+var boss_shield_round := 1
+var storm_warning_time := 0.0
+var storm_pulses_remaining := 0
+var storm_pulse_time := 0.0
+var storm_safe_lane := 4
+var collected_orb_mask := 0
 var boss_attack_index := 0
 var boss_warning_time := 0.0
 var boss_warning_x := 360.0
@@ -126,6 +135,10 @@ func start_level() -> void:
 	wave_path_ids.clear()
 	boss_phase = 1
 	boss_shields = 4 if level == MAX_LEVEL else 2
+	boss_shield_round = 1
+	storm_warning_time = 0.0
+	storm_pulses_remaining = 0
+	storm_pulse_time = 0.0
 	boss_attack_index = 0
 	boss_warning_time = 0.0
 	boss_warning_x = W / 2.0
@@ -276,7 +289,7 @@ func launch_boss() -> void:
 	boss_active = true
 	enemy_bullets.clear()
 	# Each liberated city has a stronger guardian; Zagreb is the final fight.
-	var boss_hp := 650.0 if level == MAX_LEVEL else 200.0 + float(int((level - 1) / 5)) * 70.0
+	var boss_hp := 1000.0 if level == MAX_LEVEL else 200.0 + float(int((level - 1) / 5)) * 70.0
 	boss = {"pos": Vector2(W / 2.0, 155.0), "prev_pos": Vector2(W / 2.0, 155.0), "hp": boss_hp, "max_hp": boss_hp, "direction": 1.0}
 	boss_fire_clock = 1.4
 	spin_countdown = 0.0
@@ -476,6 +489,17 @@ func update_boss(delta: float) -> void:
 	boss["pos"] = pos
 	boss["direction"] = direction
 	boss_fire_clock -= delta
+	# Zagreb final boss: storm warning is visible before three successive volleys.
+	if level == MAX_LEVEL and (storm_warning_time > 0.0 or storm_pulses_remaining > 0):
+		if storm_warning_time > 0.0:
+			storm_warning_time = maxf(0.0, storm_warning_time - delta)
+		else:
+			storm_pulse_time -= delta
+			if storm_pulse_time <= 0.0:
+				fire_adriatic_storm_pulse()
+				storm_pulses_remaining -= 1
+				storm_pulse_time = STORM_PULSE_INTERVAL
+		return
 	# 360-degree spin telegraph. The radial barrage is released when the rotation ends.
 	if spin_countdown > 0.0:
 		spin_rotation += TAU * delta / SPIN_WARNING
@@ -490,7 +514,9 @@ func update_boss(delta: float) -> void:
 		for lane in range(-1, 2):
 			enemy_bullets.append(Vector2(boss_warning_x + lane * 22.0, pos.y + 38.0))
 	if boss_fire_clock <= 0.0:
-		if boss_attack_index % 3 == 0:
+		if level == MAX_LEVEL and boss_attack_index % 4 == 3:
+			begin_adriatic_storm()
+		elif boss_attack_index % 3 == 0:
 			for lane in range(-2, 3):
 				enemy_bullets.append(pos + Vector2(lane * 42.0, 38.0))
 		elif boss_attack_index % 3 == 2:
@@ -502,8 +528,34 @@ func update_boss(delta: float) -> void:
 			# The next volley begins only after the warning and rotation.
 		boss_attack_index += 1
 		boss_fire_clock = (1.20 if boss_phase == 1 else 0.98) if level == MAX_LEVEL else (1.5 if boss_phase == 1 else 1.2)
+	if level == MAX_LEVEL and boss_shield_round == 1 and boss_shields == 0 and float(boss["hp"]) <= 500.0:
+		# Distinct second shield round at half health, once only.
+		boss_shield_round = 2
+		boss_shields = 4
 	if boss_phase == 1 and float(boss["hp"]) <= float(boss["max_hp"]) * 0.475:
 		boss_phase = 2
+
+func begin_adriatic_storm() -> void:
+	# The safe lane is two columns away from the player: reachable after warning.
+	var player_lane := clampi(int(round((player_x - 40.0) / 80.0)), 0, 8)
+	storm_safe_lane = clampi(player_lane + (2 if player_lane <= 4 else -2), 0, 8)
+	storm_warning_time = STORM_WARNING_SECONDS
+	storm_pulses_remaining = 3
+	storm_pulse_time = 0.0
+
+
+func fire_adriatic_storm_pulse() -> void:
+	# One clear corridor across all three barrages; remaining lanes are dangerous.
+	for lane in range(9):
+		if lane == storm_safe_lane:
+			continue
+		var origin := Vector2(40.0 + float(lane) * 80.0, 195.0)
+		radial_bullets.append({
+			"pos": origin,
+			"velocity": Vector2(0.0, 420.0),
+			"color": Color(0.42, 0.85, 1.0)
+		})
+
 
 func fire_radial_barrage(origin: Vector2) -> void:
 	# 360-degree ring with two deliberate, wider dodge corridors.
@@ -578,6 +630,8 @@ func update_bullets(delta: float) -> void:
 				if boss_shields == 0 and float(boss["hp"]) <= 0.0:
 					score += 2500 * score_multiplier()
 					scrap += 300
+					if level < MAX_LEVEL:
+						drop_life_orb(boss_current)
 					boss.clear()
 			else:
 				enemies[target_index]["hp"] = int(enemies[target_index]["hp"]) - (1 + damage_level)
@@ -590,7 +644,7 @@ func update_bullets(delta: float) -> void:
 					score += 100 * score_multiplier()
 					if total_kills % 30 == 0:
 						drop_score_multiplier(enemy_pos)
-					scrap += 25
+					scrap += 12
 					explosions.append({"pos": enemy_pos, "time": 0.3})
 					if randf() < 0.85:
 						drop_scrap(enemy_pos, 1)
@@ -628,7 +682,31 @@ func take_damage() -> void:
 
 func drop_scrap(pos: Vector2, amount: int) -> void:
 	for i in range(amount):
-		drops.append({"pos": pos + Vector2(randf_range(-25.0, 25.0), randf_range(-20.0, 20.0)), "value": 10 if amount == 1 else 20})
+		drops.append({"pos": pos + Vector2(randf_range(-25.0, 25.0), randf_range(-20.0, 20.0)), "value": 5 if amount == 1 else 10})
+
+func drop_life_orb(pos: Vector2) -> void:
+	# Four guardian lieutenants grant four uniquely colored parts of one life.
+	var orb_index := int(level / 5) - 1
+	if orb_index < 0 or orb_index >= 4:
+		return
+	drops.append({
+		"pos": Vector2(clampf(pos.x, 65.0, W - 65.0), 350.0),
+		"kind": "life_orb",
+		"orb_index": orb_index,
+		"fall_speed": 120.0
+	})
+
+
+func collect_life_orb(orb_index: int) -> void:
+	var bit := 1 << orb_index
+	if collected_orb_mask & bit != 0:
+		return
+	collected_orb_mask |= bit
+	if collected_orb_mask == 15:
+		lives += 1
+		collected_orb_mask = 0 # Start a new four-color collection.
+		explosions.append({"pos": Vector2(player_x, PLAYER_Y), "time": 0.5})
+
 
 func has_double_shot_drop() -> bool:
 	for pickup in drops:
@@ -688,6 +766,8 @@ func update_pickups(delta: float) -> void:
 					damage_level = 3 # Permanent unlock: shop now shows OWNED.
 					single_shot_kills_since_drop = 0
 					explosions.append({"pos": Vector2(player_x, PLAYER_Y), "time": 0.32})
+			elif drops[i].get("kind", "scrap") == "life_orb":
+				collect_life_orb(int(drops[i]["orb_index"]))
 			elif drops[i].get("kind", "scrap") == "multiplier":
 				active_multipliers.append({
 					"factor": int(drops[i]["factor"]),
@@ -870,6 +950,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			total_kills = 0
 			single_shot_kills_since_drop = 0
 			active_multipliers.clear()
+			collected_orb_mask = 0
 			drops.clear() # A new run must not inherit old rewards.
 			level = 1
 			damage_level = 0
@@ -926,6 +1007,9 @@ func _draw() -> void:
 	text_at("BEST %d" % maxi(score, int(high_scores[0]["score"]) if not high_scores.is_empty() else 0), 480, 66, 19, Color(1.0, 0.88, 0.5))
 	if god_mode:
 		text_at("GOD MODE [O]", 475, 101, 18, Color(0.35, 1.0, 0.68))
+	for orb_i in range(4):
+		var orb_color: Color = ORB_COLORS[orb_i]
+		draw_circle(Vector2(360.0 + float(orb_i) * 24.0, 59.0), 8.0, orb_color if (collected_orb_mask & (1 << orb_i)) != 0 else Color(0.2, 0.25, 0.34))
 	if ability_time > 0.0:
 		text_at("R SHIELD: %.1fs" % ability_time, 20, 96, 19, Color(0.3, 1.0, 1.0))
 	elif ability_cooldown > 0.0:
@@ -985,6 +1069,10 @@ func _draw() -> void:
 				draw_circle(head + Vector2(-3, -3), 1.2, Color(0.09, 0.16, 0.06))
 	if boss_active and not boss.is_empty():
 		var pos: Vector2 = boss["pos"]
+		if level == MAX_LEVEL:
+			# Massive central body and orbiting armored plates for Zagreb's guardian.
+			draw_circle(pos, 112.0, Color(0.12, 0.25, 0.36))
+			draw_arc(pos, 116.0, 0.0, TAU, 64, Color(0.35, 0.9, 1.0), 7.0)
 		draw_circle(pos, 68.0, Color(0.24, 0.62, 0.48))
 		for i in range(6):
 			var angle := i * TAU / 6.0 + spin_rotation
@@ -999,13 +1087,25 @@ func _draw() -> void:
 			draw_line(Vector2(boss_warning_x, 215.0), Vector2(boss_warning_x, H - 80.0), Color(1.0, 0.35, 0.25, 0.7), 2.0)
 		draw_rect(Rect2(150, 85, 420, 12), Color(0.25, 0.25, 0.35))
 		draw_rect(Rect2(150, 85, 420 * float(boss["hp"]) / float(boss["max_hp"]), 12), Color(0.9, 0.25, 0.3))
-		text_at("%s  |  SHIELD %d" % ["FINAL BOSS" if level == MAX_LEVEL else "CITY GUARDIAN", boss_shields], 215, 118, 18)
+		text_at("ZONE GUARDIAN  |  SHIELD %d/2: %d" % [boss_shield_round, boss_shields] if level == MAX_LEVEL else "CITY GUARDIAN  |  SHIELD %d" % boss_shields, 160, 118, 18)
+		if level == MAX_LEVEL and storm_warning_time > 0.0:
+			for lane in range(9):
+				if lane == storm_safe_lane:
+					continue
+				var x := 40.0 + float(lane) * 80.0
+				draw_rect(Rect2(x - 22.0, 180.0, 44.0, H - 250.0), Color(1.0, 0.3, 0.22, 0.20))
+			text_at("ADRIATIC STORM! FIND THE OPEN LANE", 85, 264, 22, Color(1.0, 0.75, 0.33))
 	for drop in drops:
 		var pos: Vector2 = drop["pos"]
 		if drop.get("kind", "scrap") == "multiplier":
 			draw_circle(pos, 21.0, Color(0.75, 0.32, 0.97))
 			draw_arc(pos, 20.0, 0.0, TAU, 28, Color(1.0, 0.84, 0.3), 3.0)
 			text_at("x%d" % int(drop["factor"]), pos.x - 15.0, pos.y + 7.0, 22, Color.WHITE)
+		elif drop.get("kind", "scrap") == "life_orb":
+			var orb_color: Color = ORB_COLORS[int(drop["orb_index"])]
+			draw_circle(pos, 19.0, orb_color.darkened(0.45))
+			draw_circle(pos, 13.0, orb_color)
+			draw_circle(pos + Vector2(-4.0, -5.0), 4.0, Color(1.0, 1.0, 1.0, 0.9))
 		elif drop.get("kind", "scrap") == "double_shot":
 			draw_circle(pos, 22.0, Color(0.08, 0.27, 0.52))
 			draw_arc(pos, 21.0, 0.0, TAU, 32, Color(0.35, 0.78, 1.0), 4.0)
