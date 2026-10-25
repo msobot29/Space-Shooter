@@ -27,7 +27,7 @@ var ability_time := 0.0
 var ability_cooldown := 0.0
 var state := "playing" # playing, shop, gameover, victory
 var enemies: Array[Dictionary] = []
-var player_bullets: Array[Vector2] = []
+var player_bullets: Array[Dictionary] = [] # Each shot stores pos and velocity
 var enemy_bullets: Array[Vector2] = []
 var drops: Array[Dictionary] = []
 var explosions: Array[Dictionary] = []
@@ -215,17 +215,23 @@ func update_player(delta: float) -> void:
 		fire_weapon()
 		fire_clock = maxf(0.085, 0.22 - rate_level * 0.035)
 
+func add_player_bullet(offset_x: float, angle_degrees: float) -> void:
+	# Negative angle goes left; positive angle goes right, with up as the forward axis.
+	var radians := deg_to_rad(angle_degrees)
+	var velocity := Vector2(sin(radians), -cos(radians)) * BULLET_SPEED
+	player_bullets.append({"pos": Vector2(player_x + offset_x, PLAYER_Y - 34.0), "velocity": velocity})
+
 func fire_weapon() -> void:
-	# Each tier shoots its projectiles in parallel, with consistent damage per bullet.
-	var muzzle_y := PLAYER_Y - 34.0
+	# Warblade-inspired wide fan: center flies up, outer shots diverge.
 	if damage_level >= 6:
-		for offset in [-25.0, 0.0, 25.0]:
-			player_bullets.append(Vector2(player_x + offset, muzzle_y))
+		add_player_bullet(-17.0, -22.0)
+		add_player_bullet(0.0, 0.0)
+		add_player_bullet(17.0, 22.0)
 	elif damage_level >= 3:
-		for offset in [-17.0, 17.0]:
-			player_bullets.append(Vector2(player_x + offset, muzzle_y))
+		add_player_bullet(-17.0, 0.0)
+		add_player_bullet(17.0, 0.0)
 	else:
-		player_bullets.append(Vector2(player_x, muzzle_y))
+		add_player_bullet(0.0, 0.0)
 
 func weapon_label() -> String:
 	if damage_level >= 6:
@@ -290,8 +296,9 @@ func update_boss(delta: float) -> void:
 
 func update_bullets(delta: float) -> void:
 	for i in range(player_bullets.size() - 1, -1, -1):
-		var shot := player_bullets[i] + Vector2(0, -BULLET_SPEED * delta)
-		player_bullets[i] = shot
+		var bullet: Dictionary = player_bullets[i]
+		var shot: Vector2 = bullet["pos"] + Vector2(bullet["velocity"]) * delta
+		bullet["pos"] = shot
 		var hit := false
 		if boss_active and not boss.is_empty():
 			var boss_pos: Vector2 = boss["pos"]
@@ -321,7 +328,7 @@ func update_bullets(delta: float) -> void:
 						if randf() < 0.85:
 							drop_scrap(pos, 1)
 					break
-		if hit or shot.y < -20.0:
+		if hit or shot.y < -20.0 or shot.x < -25.0 or shot.x > W + 25.0:
 			player_bullets.remove_at(i)
 	for i in range(enemy_bullets.size() - 1, -1, -1):
 		enemy_bullets[i].y += (240.0 + level * 18.0) * delta
@@ -432,8 +439,11 @@ func _draw() -> void:
 			draw_circle(Vector2(player_x, PLAYER_Y + 3), 7.0, Color(1.0, 0.9, 0.3))
 		if ability_time > 0.0:
 			draw_arc(Vector2(player_x, PLAYER_Y), 43.0, 0.0, TAU, 48, Color(0.3, 0.95, 1.0, 0.95), 5.0)
-	for shot in player_bullets:
-		draw_rect(Rect2(shot.x - 3.0, shot.y - 13.0, 6.0, 22.0), Color(1.0, 0.92, 0.25))
+	for bullet in player_bullets:
+		var shot_pos: Vector2 = bullet["pos"]
+		var shot_velocity: Vector2 = bullet["velocity"]
+		var direction := shot_velocity.normalized()
+		draw_line(shot_pos - direction * 11.0, shot_pos + direction * 11.0, Color(1.0, 0.92, 0.25), 6.0, true)
 	for shot in enemy_bullets:
 		draw_circle(shot, 7.0, Color(1.0, 0.3, 0.18))
 	for enemy in enemies:
