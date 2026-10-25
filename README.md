@@ -12,8 +12,9 @@ The first five missions are set in Croatia. Missions 1–3 and 5 feature enemy f
 
 ## Controls
 - **A / D**, **Left / Right**: move horizontally
-- **Space** or **left mouse**: shoot
-- **1**, **2**, **3** on the shop screen: purchase upgrades with Scrap
+- **B**, **Space**, or **left mouse**: shoot
+- **X**: activate invulnerability shield (2 seconds at level 1, 4 at level 2, 6 at level 3; 18-second cooldown from activation)
+- **1**, **2**, **3**, **4** on the shop screen: purchase upgrades with Scrap (4 improves the X shield up to level 3)
 - **Enter**: proceed to next level or restart after game over / victory
 
 ## Systems in this version
@@ -22,6 +23,7 @@ The first five missions are set in Croatia. Missions 1–3 and 5 feature enemy f
 - Scrap drops, collected by flying over them
 - Weapon damage, fire rate and armor/invulnerability upgrades
 - Mini-boss in level 4; 300 Scrap awarded for defeating it
+- Active shield: initial level 1, upgrade costs 160 and 400 Scrap; resets on a new game, refreshes at the start of each mission
 - Score, Scrap and levels shown in the HUD
 
 All graphics are procedural placeholders, no artwork downloads required.
