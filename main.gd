@@ -31,6 +31,7 @@ var ability_time := 0.0
 var ability_cooldown := 0.0
 var state := "playing" # playing, shop, gameover, victory
 var show_stats_modal := false
+var game_paused := false
 var enemies: Array[Dictionary] = []
 var player_bullets: Array[Dictionary] = [] # Each shot stores pos and velocity
 var enemy_bullets: Array[Vector2] = []
@@ -69,6 +70,7 @@ func _ready() -> void:
 func start_level() -> void:
 	state = "playing"
 	show_stats_modal = false
+	game_paused = false
 	enemies.clear()
 	player_bullets.clear()
 	enemy_bullets.clear()
@@ -194,7 +196,7 @@ func launch_boss() -> void:
 
 
 func _process(delta: float) -> void:
-	if show_stats_modal:
+	if game_paused or show_stats_modal:
 		queue_redraw()
 		return
 	if state != "playing":
@@ -471,11 +473,17 @@ func _unhandled_key_input(event: InputEvent) -> void:
 				level += 1
 				start_level()
 	elif state == "playing":
-		if event.keycode == KEY_TAB:
+		if event.keycode == KEY_P:
+			game_paused = not game_paused
+			if game_paused:
+				show_stats_modal = false
+		elif game_paused:
+			return
+		elif event.keycode == KEY_TAB:
 			show_stats_modal = not show_stats_modal
 		elif show_stats_modal:
 			return
-		elif event.keycode == KEY_X and ability_time <= 0.0 and ability_cooldown <= 0.0:
+		elif event.keycode == KEY_R and ability_time <= 0.0 and ability_cooldown <= 0.0:
 			ability_time = float(ability_level * 2)
 			ability_cooldown = 0.0
 	elif state == "gameover" or state == "victory":
@@ -645,4 +653,9 @@ func _draw() -> void:
 		text_at("Press ENTER to play again", 193, 490, 24)
 	if show_stats_modal and state == "playing":
 		draw_ship_status_modal()
-	text_at("A/D: move    B/SPACE: fire    X: shield", 22, H - 22, 19, Color(0.65, 0.8, 0.95))
+	if game_paused and state == "playing":
+		draw_rect(Rect2(0, 0, W, H), Color(0.0, 0.02, 0.06, 0.65))
+		draw_rect(Rect2(124, 362, 472, 212), Color(0.06, 0.12, 0.23, 0.98))
+		text_at("GAME PAUSED", 226, 449, 34, Color(0.9, 0.96, 1.0))
+		text_at("Press P to resume", 228, 508, 23, Color(0.45, 0.9, 1.0))
+	text_at("A/D: move  B/SPACE: fire  R: shield  P: pause", 14, H - 22, 17, Color(0.65, 0.8, 0.95))
