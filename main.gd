@@ -9,6 +9,8 @@ const BASE_SPEED := 295.0
 const SPEED_STEP := 48.0
 const SPIN_WARNING := 1.5
 const SPIN_PROJECTILES := 48
+const SPIN_GAP_PRIMARY := 0.145 # Smaller dodge corridor than the original 0.22
+const SPIN_GAP_SECONDARY := 0.12 # Smaller than original 0.19
 const BULLET_SPEED := 820.0
 const MAX_LEVEL := 5
 const ABILITY_COOLDOWN := 10.0 # Starts after the shield expires
@@ -252,11 +254,18 @@ func update_player(delta: float) -> void:
 		fire_clock = maxf(0.12, 0.34 - rate_level * 0.05)
 	fire_held = pressed
 
+func weapon_projectile_color() -> Color:
+	if damage_level >= 6:
+		return Color(0.78, 0.55, 1.0) # Lilac: Triple Shot
+	if damage_level >= 3:
+		return Color(0.25, 0.66, 1.0) # Blue: Double Shot
+	return Color(1.0, 0.92, 0.25) # Yellow: Single Shot
+
 func add_player_bullet(offset_x: float, angle_degrees: float) -> void:
 	# Negative angle goes left; positive angle goes right, with up as the forward axis.
 	var radians := deg_to_rad(angle_degrees)
 	var velocity := Vector2(sin(radians), -cos(radians)) * BULLET_SPEED
-	player_bullets.append({"pos": Vector2(player_x + offset_x, PLAYER_Y - 34.0), "velocity": velocity})
+	player_bullets.append({"pos": Vector2(player_x + offset_x, PLAYER_Y - 34.0), "velocity": velocity, "color": weapon_projectile_color()})
 
 func fire_weapon() -> void:
 	# Warblade-inspired wide fan: center flies up, outer shots diverge.
@@ -351,8 +360,8 @@ func fire_radial_barrage(origin: Vector2) -> void:
 	var second_gap := aimed_angle + 0.62
 	for i in range(SPIN_PROJECTILES):
 		var angle := TAU * float(i) / float(SPIN_PROJECTILES)
-		var near_player_gap := absf(wrapf(angle - aimed_angle, -PI, PI)) < 0.22
-		var secondary_gap := absf(wrapf(angle - second_gap, -PI, PI)) < 0.19
+		var near_player_gap := absf(wrapf(angle - aimed_angle, -PI, PI)) < SPIN_GAP_PRIMARY
+		var secondary_gap := absf(wrapf(angle - second_gap, -PI, PI)) < SPIN_GAP_SECONDARY
 		if near_player_gap or secondary_gap:
 			continue
 		var velocity := Vector2(cos(angle), sin(angle)) * (350.0 if boss_phase == 1 else 410.0)
@@ -656,7 +665,7 @@ func _draw() -> void:
 		var shot_pos: Vector2 = bullet["pos"]
 		var shot_velocity: Vector2 = bullet["velocity"]
 		var direction := shot_velocity.normalized()
-		draw_line(shot_pos - direction * 11.0, shot_pos + direction * 11.0, Color(1.0, 0.92, 0.25), 6.0, true)
+		draw_line(shot_pos - direction * 11.0, shot_pos + direction * 11.0, bullet.get("color", Color(1.0, 0.92, 0.25)), 6.0, true)
 	for shot in enemy_bullets:
 		draw_circle(shot, 7.0, Color(1.0, 0.3, 0.18))
 	for bullet in radial_bullets:
@@ -729,13 +738,13 @@ func _draw() -> void:
 		else:
 			text_at("2 - Rate of Fire Lv.%d/4 (%d)" % [rate_level, upgrade_cost(2)], 105, 407, 22)
 		if damage_level >= 3:
-			text_at("3 - Double Shot: OWNED", 105, 461, 22, Color(0.5, 1.0, 0.7))
+			text_at("3 - Double Shot: OWNED", 105, 461, 22, Color(0.25, 0.66, 1.0))
 		else:
-			text_at("3 - Double Shot (%d Scrap)" % upgrade_cost(3), 105, 461, 22)
+			text_at("3 - Double Shot (%d Scrap)" % upgrade_cost(3), 105, 461, 22, Color(0.25, 0.66, 1.0))
 		if damage_level >= 6:
-			text_at("4 - Triple Shot: OWNED", 105, 515, 22, Color(0.5, 1.0, 0.7))
+			text_at("4 - Triple Shot: OWNED", 105, 515, 22, Color(0.78, 0.55, 1.0))
 		else:
-			text_at("4 - Triple Shot (%d Scrap)" % upgrade_cost(4), 105, 515, 22)
+			text_at("4 - Triple Shot (%d Scrap)" % upgrade_cost(4), 105, 515, 22, Color(0.78, 0.55, 1.0))
 		if ability_level >= 3:
 			text_at("5 - Shield Upgrade: MAX", 105, 569, 22)
 		else:
