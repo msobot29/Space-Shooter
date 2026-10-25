@@ -333,3 +333,19 @@ The Croatia second block now introduces distinct enemy arrangements and projecti
 4. Enter the mission-5 shop with pickups still on screen: purchases use collected Scrap only; after starting mission 6, leftover pickups continue falling.
 5. Restart after Game Over: pickups from the former run must not remain.
 This rule supersedes the previous README section requiring all drops to resolve before a transition.
+
+## 10-second level introductions with falling rewards (latest)
+- Between **regular mission transitions** (level 1 → 2, 2 → 3, etc.), a **10-second intermission** appears in place of immediately spawning enemies.
+- A centered announcement shows **LEVEL 2**, **LEVEL 3** and so forth, plus an updating **STARTING IN N** countdown.
+- The player may still steer their ship to gather leftover **Scrap, score multipliers and Double Shot pickups**. All existing drops keep falling and retain their positions, even as the new mission begins. They never gate or delay stage progression.
+- No new enemies spawn or attack during the countdown. When the timer expires, the next mission starts automatically and the first enemy wave enters normally.
+- The scheduled shop still opens at the end of levels 5 and 10. After buying upgrades and pressing ENTER after level 5, the same ten-second **LEVEL 6** introduction plays. The final shop after level 10 still goes directly to the victory/High Score screen.
+- **P pause** and **TAB status** remain accessible during the intermission and freeze the countdown and falling pickups while active. This is separate from the shop screen.
+- A completely new run begins with Level 1 immediately and no introductory countdown.
+
+### QA
+1. Clear level 1 with Scrap in flight: confirm a centered LEVEL 2 countdown of approximately 10 seconds, with all pickups still falling and collectible.
+2. Move the ship during the countdown to collect a reward, and confirm the Scrap/multiplier/Double Shot updates immediately.
+3. Confirm level 2 enemies start only after the countdown and existing drops that remain in view persist.
+4. Pause with P during countdown; verify the number and falling rewards freeze, then resume.
+5. After level 5 shop, press ENTER and verify LEVEL 6 intro; after level 10 shop, confirm victory/High Score rather than level 11.
