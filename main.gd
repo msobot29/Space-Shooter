@@ -5,7 +5,10 @@ extends Node2D
 const W := 720.0
 const H := 960.0
 const PLAYER_Y := 840.0
-const SPEED := 470.0
+const BASE_SPEED := 295.0
+const SPEED_STEP := 48.0
+const SPIN_WARNING := 1.5
+const SPIN_PROJECTILES := 32
 const BULLET_SPEED := 820.0
 const MAX_LEVEL := 5
 const ABILITY_COOLDOWN := 10.0 # Starts after the shield expires
@@ -22,6 +25,7 @@ var scrap := 0
 var level := 1
 var damage_level := 0 # 0-2 single, 3-5 double, 6 triple
 var rate_level := 0
+var speed_level := 0
 var ability_level := 1 # 1/2/3 = 2/4/6 seconds
 var ability_time := 0.0
 var ability_cooldown := 0.0
@@ -29,6 +33,7 @@ var state := "playing" # playing, shop, gameover, victory
 var enemies: Array[Dictionary] = []
 var player_bullets: Array[Dictionary] = [] # Each shot stores pos and velocity
 var enemy_bullets: Array[Vector2] = []
+var radial_bullets: Array[Dictionary] = []
 var drops: Array[Dictionary] = []
 var explosions: Array[Dictionary] = []
 var fire_clock := 0.0
@@ -44,6 +49,8 @@ var boss_shields := 2
 var boss_attack_index := 0
 var boss_warning_time := 0.0
 var boss_warning_x := 360.0
+var spin_countdown := 0.0
+var spin_rotation := 0.0
 var level_time := 0.0
 var kills := 0
 var target_kills := 0
@@ -63,6 +70,7 @@ func start_level() -> void:
 	enemies.clear()
 	player_bullets.clear()
 	enemy_bullets.clear()
+	radial_bullets.clear()
 	drops.clear()
 	explosions.clear()
 	boss.clear()
@@ -75,6 +83,8 @@ func start_level() -> void:
 	boss_attack_index = 0
 	boss_warning_time = 0.0
 	boss_warning_x = W / 2.0
+	spin_countdown = 0.0
+	spin_rotation = 0.0
 	drift = 1.0
 	fire_clock = 0.0
 	enemy_fire_clock = 1.1
@@ -169,6 +179,8 @@ func launch_boss() -> void:
 	enemy_bullets.clear()
 	boss = {"pos": Vector2(W / 2.0, 155.0), "hp": 90.0, "max_hp": 90.0, "direction": 1.0}
 	boss_fire_clock = 1.4
+	spin_countdown = 0.0
+	spin_rotation = 0.0
 
 
 func _process(delta: float) -> void:
@@ -209,11 +221,11 @@ func update_player(delta: float) -> void:
 		move -= 1.0
 	if Input.is_key_pressed(KEY_D):
 		move += 1.0
-	player_x = clampf(player_x + clampf(move, -1.0, 1.0) * SPEED * delta, 28.0, W - 28.0)
+	player_x = clampf(player_x + clampf(move, -1.0, 1.0) * (BASE_SPEED + speed_level * SPEED_STEP) * delta, 28.0, W - 28.0)
 	fire_clock -= delta
 	if (Input.is_key_pressed(KEY_B) or Input.is_key_pressed(KEY_SPACE) or Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)) and fire_clock <= 0.0:
 		fire_weapon()
-		fire_clock = maxf(0.085, 0.22 - rate_level * 0.035)
+		fire_clock = maxf(0.12, 0.34 - rate_level * 0.05)
 
 func add_player_bullet(offset_x: float, angle_degrees: float) -> void:
 	# Negative angle goes left; positive angle goes right, with up as the forward axis.
@@ -275,7 +287,14 @@ func update_boss(delta: float) -> void:
 	boss["pos"] = pos
 	boss["direction"] = direction
 	boss_fire_clock -= delta
-	# Alternating attack patterns: fan volley, then a telegraphed aimed column.
+	# 360-degree spin telegraph. The radial barrage is released when the rotation ends.
+	if spin_countdown > 0.0:
+		spin_rotation += TAU * delta / SPIN_WARNING
+		spin_countdown = maxf(0.0, spin_countdown - delta)
+		if spin_countdown == 0.0:
+			fire_radial_barrage(pos)
+		return
+	# Alternate ordinary attacks with the special spin every third attack.
 	var previous_warning := boss_warning_time
 	boss_warning_time = maxf(0.0, boss_warning_time - delta)
 	if previous_warning > 0.0 and boss_warning_time <= 0.0:
@@ -285,14 +304,25 @@ func update_boss(delta: float) -> void:
 		if boss_attack_index % 2 == 0:
 			for lane in range(-2, 3):
 				enemy_bullets.append(pos + Vector2(lane * 42.0, 38.0))
-		else:
+		elif boss_attack_index % 3 == 1:
 			boss_warning_x = player_x
 			boss_warning_time = 0.7
-			# The danger column fires after the marker has been visible.
+		else:
+			spin_countdown = SPIN_WARNING
+			spin_rotation = 0.0
+			# The next volley begins only after the warning and rotation.
 		boss_attack_index += 1
-		boss_fire_clock = 1.4 if boss_phase == 1 else 1.0
+		boss_fire_clock = 2.2 if boss_phase == 1 else 1.7
 	if boss_phase == 1 and float(boss["hp"]) <= 40.0:
 		boss_phase = 2
+
+func fire_radial_barrage(origin: Vector2) -> void:
+	# An evenly spaced full 360-degree ring; all bullets have their own velocity.
+	# The visual warning is long enough to let the player prepare X Shield.
+	for i in range(SPIN_PROJECTILES):
+		var angle := TAU * float(i) / float(SPIN_PROJECTILES)
+		var velocity := Vector2(cos(angle), sin(angle)) * (390.0 if boss_phase == 1 else 460.0)
+		radial_bullets.append({"pos": origin, "velocity": velocity})
 
 func update_bullets(delta: float) -> void:
 	for i in range(player_bullets.size() - 1, -1, -1):
@@ -330,6 +360,15 @@ func update_bullets(delta: float) -> void:
 					break
 		if hit or shot.y < -20.0 or shot.x < -25.0 or shot.x > W + 25.0:
 			player_bullets.remove_at(i)
+	for i in range(radial_bullets.size() - 1, -1, -1):
+		var bullet: Dictionary = radial_bullets[i]
+		var pos: Vector2 = bullet["pos"] + Vector2(bullet["velocity"]) * delta
+		bullet["pos"] = pos
+		if pos.x < -25.0 or pos.x > W + 25.0 or pos.y < -25.0 or pos.y > H + 25.0:
+			radial_bullets.remove_at(i)
+		elif pos.distance_to(Vector2(player_x, PLAYER_Y)) < 26.0:
+			radial_bullets.remove_at(i)
+			take_damage()
 	for i in range(enemy_bullets.size() - 1, -1, -1):
 		enemy_bullets[i].y += (240.0 + level * 18.0) * delta
 		if enemy_bullets[i].y > H + 20.0:
@@ -376,18 +415,20 @@ func upgrade_cost(kind: int) -> int:
 	match kind:
 		1: return 80 + damage_level * 100
 		2: return 80 + rate_level * 100
+		4: return 120 + speed_level * 130
 		3:
 			return 900 if ability_level == 1 else 1800
 	return 99999
 
 func buy_upgrade(kind: int) -> void:
-	var capped := (kind == 1 and damage_level >= 6) or (kind == 2 and rate_level >= 4) or (kind == 3 and ability_level >= 3)
+	var capped := (kind == 1 and damage_level >= 6) or (kind == 2 and rate_level >= 4) or (kind == 4 and speed_level >= 4) or (kind == 3 and ability_level >= 3)
 	if capped or scrap < upgrade_cost(kind):
 		return
 	scrap -= upgrade_cost(kind)
 	match kind:
 		1: damage_level += 1
 		2: rate_level += 1
+		4: speed_level += 1
 		3: ability_level += 1
 		   
 func _unhandled_key_input(event: InputEvent) -> void:
@@ -398,6 +439,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			KEY_1: buy_upgrade(1)
 			KEY_2: buy_upgrade(2)
 			KEY_3: buy_upgrade(3)
+			KEY_4: buy_upgrade(4)
 
 			KEY_ENTER, KEY_KP_ENTER:
 				level += 1
@@ -414,6 +456,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			level = 1
 			damage_level = 0
 			rate_level = 0
+			speed_level = 0
 			ability_level = 1
 			start_level()
 	queue_redraw()
@@ -446,6 +489,9 @@ func _draw() -> void:
 		draw_line(shot_pos - direction * 11.0, shot_pos + direction * 11.0, Color(1.0, 0.92, 0.25), 6.0, true)
 	for shot in enemy_bullets:
 		draw_circle(shot, 7.0, Color(1.0, 0.3, 0.18))
+	for bullet in radial_bullets:
+		draw_circle(bullet["pos"], 9.0, Color(1.0, 0.35, 0.65))
+		draw_circle(bullet["pos"], 4.0, Color(1.0, 0.85, 0.45))
 	for enemy in enemies:
 		var pos: Vector2 = enemy["pos"]
 		match int(enemy["kind"]):
@@ -475,9 +521,13 @@ func _draw() -> void:
 		var pos: Vector2 = boss["pos"]
 		draw_circle(pos, 68.0, Color(0.24, 0.62, 0.48))
 		for i in range(6):
-			var p := pos + Vector2(cos(i * TAU / 6.0), sin(i * TAU / 6.0)) * 88.0
+			var angle := i * TAU / 6.0 + spin_rotation
+			var p := pos + Vector2(cos(angle), sin(angle)) * 88.0
 			draw_line(pos, p, Color(0.6, 0.9, 0.65), 13.0)
 		draw_circle(pos, 25.0, Color(0.9, 0.2, 0.2) if boss_shields == 0 else Color(0.2, 0.65, 1.0))
+		if spin_countdown > 0.0:
+			draw_arc(pos, 106.0, 0.0, TAU, 64, Color(1.0, 0.25, 0.65, 0.9), 5.0)
+			text_at("360 ATTACK!  X SHIELD!", 201, 230, 25, Color(1.0, 0.5, 0.65))
 		if boss_warning_time > 0.0:
 			draw_rect(Rect2(boss_warning_x - 25.0, 215.0, 50.0, H - 295.0), Color(1.0, 0.16, 0.1, 0.16))
 			draw_line(Vector2(boss_warning_x, 215.0), Vector2(boss_warning_x, H - 80.0), Color(1.0, 0.35, 0.25, 0.7), 2.0)
@@ -501,7 +551,11 @@ func _draw() -> void:
 			text_at("1 - %s  (%d)" % [weapon_label(), upgrade_cost(1)], 120, 430, 23)
 		text_at("Next: %s" % next_weapon_label(), 120, 457, 17, Color(0.6, 0.85, 0.98))
 		text_at("2 - Fire rate Lv.%d       (%d)" % [rate_level, upgrade_cost(2)], 120, 490, 23)
-		text_at("3 - X shield Lv.%d / 3   (%d)" % [ability_level, upgrade_cost(3)], 120, 555, 23)
+		text_at("3 - X shield Lv.%d / 3   (%d)" % [ability_level, upgrade_cost(3)], 120, 545, 23)
+		if speed_level >= 4:
+			text_at("4 - Ship speed MAX", 120, 590, 23)
+		else:
+			text_at("4 - Ship speed Lv.%d / 4 (%d)" % [speed_level, upgrade_cost(4)], 120, 590, 23)
 		text_at("ENTER - Next mission", 185, 660, 26, Color(0.4, 0.9, 1.0))
 	elif state == "gameover":
 		text_at("GAME OVER", 195, 440, 52, Color(1.0, 0.35, 0.4))
