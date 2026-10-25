@@ -202,3 +202,15 @@ The player receives a guaranteed 25 Scrap per kill (20 enemies per regular stage
 4. Test Triple Shot against moving enemies and the 200-HP boss, including boss shield depletion.
 
 Engine test still needs confirmation in Godot 4.
+
+## Latest projectile colors and mini-boss 360 balance
+- Single Shot player projectiles remain yellow.
+- Double Shot projectiles and the shop label are now blue (`Color(0.25, 0.66, 1.0)`).
+- Triple Shot projectiles and the shop label are now lilac (`Color(0.78, 0.55, 1.0)`). Each bullet stores its color when fired, so projectiles already in flight keep their color even if weapon state changes.
+- The level-4 mini-boss's 360-degree attack still releases 48 evenly spaced projectile slots and keeps both dodge corridors, but the player-oriented angular half-gap narrows from 0.22 to 0.145 radians and the secondary half-gap from 0.19 to 0.12 radians. This means more shots remain in the ring and dodging requires better positioning, without removing the intentionally safe openings.
+- Other boss parameters (200 HP, spin warning, projectile velocity, shield) remain unchanged.
+
+### QA
+1. Confirm Single Shot yellow, Double Shot blue, and Triple Shot lilac projectiles, including in-motion fan shots.
+2. Confirm the mini-boss 360 ring has visibly narrower passages while still allowing skilled dodges.
+3. Confirm regular hit detection, pause and shields still work.
