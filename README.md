@@ -402,3 +402,16 @@ The city name appears in the live HUD and in the centered next-level introductio
 3. Clear all waves on stage 5: verify the announced sentence stays visible for about 3.8 seconds, with no early boss attack, then the guardian appears.
 4. Move and catch a falling reward during the announcement; confirm it counts and resumes normally on P unpause.
 5. Check regular boss and final boss after the announcement and verify shop and next level transitions still work.
+
+## Firing during between-level waiting periods (latest)
+- The player **can shoot during the silent 10-second gap and the following 3.5-second LEVEL title**, while moving and collecting falling rewards.
+- Player bullets are now updated normally during this intermission, travel upward and disappear when off-screen rather than freezing around the ship.
+- Shooting keeps its existing single-volley-per-fresh-press behavior, bullet colors and upgraded fire rate.
+- The separate 3.8-second city-guardian/lieutenant announcement remains non-combat with shooting disabled. P and TAB still pause the intermission, including bullets and falling rewards.
+- When the next level starts, its existing start/reset logic clears any bullets remaining from the transition so gameplay begins cleanly.
+
+### QA
+1. Finish a non-shop level and repeatedly tap B/Space in the 10-second silent wait and LEVEL title: all bullets must move upward, never form a frozen cluster.
+2. Confirm shooting does not auto-repeat when B/Space is held down.
+3. Confirm bonus pickup collection, P pause, and next-wave timing still work.
+4. On a city guardian stage, confirm boss-announcement shots are disabled and restart correctly after the boss appears.
