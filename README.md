@@ -134,3 +134,14 @@ The shop displays the actual purchase price and owned status. This section super
 1. On mission 1 press R: shield begins; X should do nothing.
 2. Press P while enemies are flying or shield is active: all simulation time stops until P is pressed again.
 3. Open TAB then press P to pause; close with P and confirm TAB can be used normally afterward.
+
+## Fire input and staged upgrades (latest)
+- Firing with **B**, **Space** or **left mouse** now triggers exactly one volley per new button press. Holding a fire control does not auto-repeat; release and press again for another shot. Fire Rate levels shorten the minimum interval between deliberate presses.
+- **Extra Speed** still costs **50 Scrap** per upgrade and **Rate of Fire** still costs **75 Scrap** per upgrade. However, upgrading is stage-gated: after mission 1, tier 1 is available; after mission 2, tier 2; after mission 3, tier 3. Their fourth/final tier unlocks at campaign level 10, outside the current 5-level prototype. The shop labels unavailable tiers `LATER STAGE`; no Scrap is deducted for locked tiers.
+- This ensures players cannot reach maximum ship speed or maximum fire rate within the first five missions, even with a large Scrap balance.
+
+### QA
+1. Hold B/Space/left mouse for several seconds: only one volley should fire. Release and press again: another volley.
+2. Buy Fire Rate; repeated taps may fire faster, but holding remains single-volley.
+3. With enough Scrap in the first shop, purchase speed and fire rate once each; a second purchase should be blocked until the next cleared level.
+4. Verify final tier remains locked throughout the five-level demo and ship/shield/boss behavior is unchanged.
