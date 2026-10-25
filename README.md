@@ -103,3 +103,10 @@ Double Shot and Triple Shot are now **single-purchase unlocks**, with no interme
 - Once Triple Shot is purchased, Double Shot is marked owned too and neither can be bought again.
 - Existing speed, fire-rate, shield prices, boss HP (200) and shield cooldown remain unchanged.
 The shop displays the actual purchase price and owned status. This section supersedes previous descriptions of needing three purchases for each shot type.
+
+## Smooth enemy formations (latest)
+- Each 10-enemy wave still enters from both sides (five left, five right), now with staggered entry timing and a 2.8-second smooth arrival.
+- Four random flight-path variants remain; their post-entry sways start at zero displacement, preventing the earlier visible jumps at the path transition.
+- Two **red armored crabs per side** enter each wave and remain closer to the player than the jellyfish and eels. They have 5 + level/3 HP and act as a defensive front line that intercepts upward fire before it reaches the rear ranks.
+- Other enemies occupy the same firing lanes behind them; red crabs are tougher but can be destroyed to expose the formation.
+- Test wave 1 and wave 2: no screen-crossing teleports; front-line red crabs absorb incoming shots, with the remaining sea creatures flying behind.
