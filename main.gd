@@ -8,7 +8,7 @@ const PLAYER_Y := 840.0
 const SPEED := 470.0
 const BULLET_SPEED := 820.0
 const MAX_LEVEL := 5
-const ABILITY_COOLDOWN := 18.0 # Seconds from activation until X is ready again
+const ABILITY_COOLDOWN := 10.0 # Seconds from activation until X is ready again
 
 var font: Font
 var stars: Array[Vector2] = []
