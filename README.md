@@ -19,13 +19,13 @@ The first five missions are set in Croatia. Each mission starts with 10 enemies 
 
 ## Systems in this version
 - 3 lives and temporary post-hit invulnerability
-- Three distinct procedural sea creatures: dual-shot jellyfish, tougher armored crabs, and evasive zigzagging electric eels
+- Three distinct procedural sea creatures: dual-shot jellyfish, tougher armored crabs, and evasive zigzagging electric eels (eel body rendered as thick connected segments, avoiding the invisible self-intersecting polygon bug)
 - Enemy bullets and procedural explosion effects
 - Two timed 10-enemy waves per mission, each with random flight routes (20 opponents per mission)
 - Guaranteed 25 Scrap per enemy kill plus collectible bonus Scrap drops (85% drop chance, worth 10 each)
 - Weapon damage, fire rate, and X shield upgrades (Armor removed)
 - Mini-boss in level 4; 300 Scrap awarded for defeating it
-- Active shield: initial level 1, upgrade costs 120 and 250 Scrap; resets on a new game, can be reactivated repeatedly after each full 10-second cooldown following the shield duration; ready at the start of each mission
+- Active shield: initial level 1, upgrade costs 900 and 1800 Scrap; resets on a new game, can be reactivated repeatedly after each full 10-second cooldown following the shield duration; ready at the start of each mission
 - Score, Scrap and levels shown in the HUD
 
 All graphics are procedural placeholders, no artwork downloads required.
@@ -37,8 +37,8 @@ Changes are not yet tested in the Godot editor, so please report errors with the
 
 ## Test checklist for the next run
 1. Finish mission 1: 20 enemies defeated award **at least 500 Scrap**, even without catching pickups.
-2. In the shop press **3** once (120 Scrap); X should provide 4 seconds of invulnerability.
-3. Complete mission 2 (20 enemies, at least 500 more Scrap), then buy X level 3 with **3** for 250 Scrap; verify 6-second duration.
+2. In the shop save at least 900 Scrap and press **3** once; X should provide 4 seconds of invulnerability.
+3. Complete mission 2 (20 enemies, at least 500 more Scrap), then buy X level 3 with **3** for 1800 Scrap; verify 6-second duration.
 4. Each X activation must finish before its 10-second cooldown begins.
 5. On mission 4, dodge the new red target warning stripe; the boss alternates attack patterns.
 
@@ -51,6 +51,9 @@ Changes are not yet tested in the Godot editor, so please report errors with the
 
 ## New test checklist
 - Shop displays only **1 Damage**, **2 Fire rate**, and **3 X Shield**; no Armor purchase.
-- Key **3** buys X Shield level 2 for 120 Scrap and level 3 for 250 Scrap.
+- Key **3** buys X Shield level 2 for 120 Scrap and level 3 for 1800 Scrap.
 - Jellyfish fire two offset bullets, crabs have extra HP, and electric eels weave faster.
 - Both waves still contain 10 enemies; mini-boss still begins after both waves in mission 4.
+
+## Shield economy update
+Shield Lv1 is unlocked by default (2 seconds). Lv2 costs 900 Scrap (4 seconds), and Lv3 costs 1800 Scrap (6 seconds). It is intentional that buying the maximum shield upgrade after mission 1 is no longer possible. The cooldown remains 10 seconds **after** protection ends. Test higher tiers later in the campaign; the five-level demo may not provide enough Scrap for both upgrades unless the player saves it.
