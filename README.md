@@ -297,3 +297,23 @@ The Croatia second block now introduces distinct enemy arrangements and projecti
 3. Miss a D pickup: verify the game can generate another one on later kills.
 4. Trigger D from the final enemy in a mission: verify the level waits for pickup collection or exit.
 5. After owning Double Shot, verify no further D pickups appear and Triple Shot remains purchasable at its upgrade difference price.
+
+## Weapon downgrade on life loss and safe reward transitions (latest)
+- Each **actual life lost** reduces the player's weapon by one tier:
+  - **Triple Shot (lilac) -> Double Shot (blue)**;
+  - **Double Shot (blue) -> Single Shot (yellow)**;
+  - **Single Shot stays Single Shot**.
+- Damage successfully blocked by R Shield or the post-hit invulnerability window does **not** cost a life or downgrade the weapon. Speed, Rate of Fire, shield upgrade levels, score and Scrap are unaffected by the weapon penalty.
+- The change affects the next fired volley immediately. Double Shot can be recovered through the existing random blue **D** pickup, or repurchased from the shop; Triple Shot can be regained in the shop.
+- When the last enemy in a mission dies, the game **keeps the stage active until all falling collectibles are resolved**, rather than wiping them on the next-stage load. This applies to Scrap, x2/x4/x6 score multipliers and Double Shot pickups.
+- A collectible resolves when picked up by the ship or after it falls off the bottom of the screen. The player can continue to move and collect rewards while waiting; a short **COLLECT DROPS** notice is shown.
+- If a mission ends with a miniboss, the miniboss waits for remaining wave drops to resolve before spawning. After the miniboss is defeated, the same collection rule applies before transitioning to the next mission, the shop or the final High Score screen.
+- The shop still only appears after missions 5 and 10; level progression and previously implemented difficulty balancing remain unchanged.
+
+### QA smoke tests
+1. Acquire Triple Shot; take one unshielded hit and confirm Double Shot, then another and confirm Single Shot. Check bullet colors and counts.
+2. Take damage while R Shield or invulnerability is active: no life lost and no weapon downgrade.
+3. Kill the last regular enemy while Scrap + a multiplier + Double Shot are falling: none should disappear, and the stage advances automatically only after all are collected or exit the bottom.
+4. Repeat on mission 4 or 9: the miniboss should wait for wave drops, then start as normal.
+5. Finish mission 5 or 10 with falling Scrap: the shop must wait until rewards resolve, and must reflect the final collected Scrap balance.
+6. Verify P pause and TAB status freeze time while collectibles are falling.
