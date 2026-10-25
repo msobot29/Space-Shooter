@@ -273,14 +273,18 @@ func _process(delta: float) -> void:
 	update_effects(delta)
 	if lives <= 0:
 		finish_run(false)
-	elif waves_spawned == WAVES_PER_LEVEL and enemies.is_empty() and not has_double_shot_drop():
-		if boss_active:
-			if boss.is_empty():
+	elif waves_spawned == WAVES_PER_LEVEL and enemies.is_empty():
+		# Finish falling Scrap, Double Shot and score bonus pickups before
+		# entering the boss fight, the next mission, or the shop.
+		# This also handles rewards from the final enemy or boss.
+		if drops.is_empty():
+			if boss_active:
+				if boss.is_empty():
+					complete_level()
+			elif boss_pending:
+				launch_boss()
+			else:
 				complete_level()
-		elif boss_pending:
-			launch_boss()
-		else:
-			complete_level()
 	queue_redraw()
 
 func update_player(delta: float) -> void:
@@ -555,6 +559,12 @@ func take_damage() -> void:
 	if invulnerable > 0.0 or ability_time > 0.0:
 		return
 	lives -= 1
+	# Weapon power drops exactly one tier on each actual life lost.
+	# Triple -> Double -> Single; shields/invulnerability prevent the loss.
+	if damage_level >= 6:
+		damage_level = 3
+	elif damage_level >= 3:
+		damage_level = 0
 	invulnerable = 1.7
 	explosions.append({"pos": Vector2(player_x, PLAYER_Y), "time": 0.45})
 
@@ -857,6 +867,8 @@ func _draw() -> void:
 	draw_stat_meter("SPEED", speed_level, 4, 25, 135, Color(0.24, 0.7, 1.0))
 	draw_stat_meter("FIRE", rate_level, 4, 25, 162, Color(1.0, 0.38, 0.3))
 	text_at("TAB - SHIP STATUS", 27, 183, 14, Color(0.7, 0.85, 0.98))
+	if state == "playing" and waves_spawned == WAVES_PER_LEVEL and enemies.is_empty() and not drops.is_empty() and (not boss_active or boss.is_empty()):
+		text_at("COLLECT DROPS - %d REMAINING" % drops.size(), 187, 286, 20, Color(1.0, 0.86, 0.46))
 	if not active_multipliers.is_empty():
 		draw_rect(Rect2(385, 168, 316, 65), Color(0.17, 0.10, 0.26, 0.90))
 		text_at("SCORE x%d" % score_multiplier(), 399, 195, 24, Color(1.0, 0.85, 0.35))
