@@ -177,7 +177,7 @@ func launch_boss() -> void:
 	boss_pending = false
 	boss_active = true
 	enemy_bullets.clear()
-	boss = {"pos": Vector2(W / 2.0, 155.0), "hp": 90.0, "max_hp": 90.0, "direction": 1.0}
+	boss = {"pos": Vector2(W / 2.0, 155.0), "hp": 160.0, "max_hp": 160.0, "direction": 1.0}
 	boss_fire_clock = 1.4
 	spin_countdown = 0.0
 	spin_rotation = 0.0
@@ -296,17 +296,17 @@ func update_boss(delta: float) -> void:
 		if spin_countdown == 0.0:
 			fire_radial_barrage(pos)
 		return
-	# Alternate ordinary attacks with the special spin every third attack.
+	# Rotate through spread, 360 spin, aimed shot: spin happens every 3 attacks.
 	var previous_warning := boss_warning_time
 	boss_warning_time = maxf(0.0, boss_warning_time - delta)
 	if previous_warning > 0.0 and boss_warning_time <= 0.0:
 		for lane in range(-1, 2):
 			enemy_bullets.append(Vector2(boss_warning_x + lane * 22.0, pos.y + 38.0))
 	if boss_fire_clock <= 0.0:
-		if boss_attack_index % 2 == 0:
+		if boss_attack_index % 3 == 0:
 			for lane in range(-2, 3):
 				enemy_bullets.append(pos + Vector2(lane * 42.0, 38.0))
-		elif boss_attack_index % 3 == 1:
+		elif boss_attack_index % 3 == 2:
 			boss_warning_x = player_x
 			boss_warning_time = 0.7
 		else:
@@ -314,16 +314,22 @@ func update_boss(delta: float) -> void:
 			spin_rotation = 0.0
 			# The next volley begins only after the warning and rotation.
 		boss_attack_index += 1
-		boss_fire_clock = 2.2 if boss_phase == 1 else 1.7
-	if boss_phase == 1 and float(boss["hp"]) <= 40.0:
+		boss_fire_clock = 1.5 if boss_phase == 1 else 1.2
+	if boss_phase == 1 and float(boss["hp"]) <= 75.0:
 		boss_phase = 2
 
 func fire_radial_barrage(origin: Vector2) -> void:
-	# An evenly spaced full 360-degree ring; all bullets have their own velocity.
-	# The visual warning is long enough to let the player prepare X Shield.
+	# 360-degree ring with two deliberate, wider dodge corridors.
+	# Aim one corridor near the player and offset another to provide a choice.
+	var aimed_angle := (Vector2(player_x, PLAYER_Y) - origin).angle()
+	var second_gap := aimed_angle + 0.62
 	for i in range(SPIN_PROJECTILES):
 		var angle := TAU * float(i) / float(SPIN_PROJECTILES)
-		var velocity := Vector2(cos(angle), sin(angle)) * (390.0 if boss_phase == 1 else 460.0)
+		var near_player_gap := absf(wrapf(angle - aimed_angle, -PI, PI)) < 0.22
+		var secondary_gap := absf(wrapf(angle - second_gap, -PI, PI)) < 0.19
+		if near_player_gap or secondary_gap:
+			continue
+		var velocity := Vector2(cos(angle), sin(angle)) * (350.0 if boss_phase == 1 else 410.0)
 		radial_bullets.append({"pos": origin, "velocity": velocity})
 
 func update_bullets(delta: float) -> void:
