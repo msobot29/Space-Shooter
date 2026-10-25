@@ -124,6 +124,7 @@ func spawn_wave() -> void:
 			var start_pos := Vector2(-85.0 - float(index) * 35.0 if left else W + 85.0 + float(index) * 35.0, 110.0 + float(index) * 38.0)
 			enemies.append({
 				"pos": start_pos,
+				"prev_pos": start_pos,
 				"start": start_pos,
 				"target": target_pos,
 				"age": 0.0,
@@ -136,6 +137,7 @@ func spawn_wave() -> void:
 			})
 
 func move_enemy(enemy: Dictionary, delta: float) -> void:
+	enemy["prev_pos"] = enemy["pos"]
 	# Continuous path: no offset jumps when an enemy finishes entering.
 	var age: float = float(enemy["age"]) + delta
 	enemy["age"] = age
@@ -193,7 +195,7 @@ func launch_boss() -> void:
 	boss_pending = false
 	boss_active = true
 	enemy_bullets.clear()
-	boss = {"pos": Vector2(W / 2.0, 155.0), "hp": 200.0, "max_hp": 200.0, "direction": 1.0}
+	boss = {"pos": Vector2(W / 2.0, 155.0), "prev_pos": Vector2(W / 2.0, 155.0), "hp": 200.0, "max_hp": 200.0, "direction": 1.0}
 	boss_fire_clock = 1.4
 	spin_countdown = 0.0
 	spin_rotation = 0.0
@@ -302,6 +304,7 @@ func update_boss(delta: float) -> void:
 	if not boss_active or boss.is_empty():
 		return
 	var pos: Vector2 = boss["pos"]
+	boss["prev_pos"] = pos
 	var direction: float = boss["direction"]
 	pos.x += direction * (100.0 if boss_phase == 1 else 165.0) * delta
 	if pos.x >= W - 110.0 or pos.x <= 110.0:
@@ -355,43 +358,79 @@ func fire_radial_barrage(origin: Vector2) -> void:
 		var velocity := Vector2(cos(angle), sin(angle)) * (350.0 if boss_phase == 1 else 410.0)
 		radial_bullets.append({"pos": origin, "velocity": velocity})
 
+func swept_hit_fraction(from_pos: Vector2, to_pos: Vector2, target_before: Vector2, target_after: Vector2, radius: float) -> float:
+	# Continuous collision detection: check bullet travel RELATIVE to enemy motion.
+	# Returns the earliest entry fraction [0..1], or -1 if it misses.
+	var start: Vector2 = from_pos - target_before
+	var movement: Vector2 = (to_pos - from_pos) - (target_after - target_before)
+	var a: float = movement.length_squared()
+	var c: float = start.length_squared() - radius * radius
+	if c <= 0.0:
+		return 0.0
+	if a <= 0.00001:
+		return -1.0
+	var b: float = 2.0 * start.dot(movement)
+	var discriminant: float = b * b - 4.0 * a * c
+	if discriminant < 0.0:
+		return -1.0
+	var t: float = (-b - sqrt(discriminant)) / (2.0 * a)
+	return t if t >= 0.0 and t <= 1.0 else -1.0
+
 func update_bullets(delta: float) -> void:
 	for i in range(player_bullets.size() - 1, -1, -1):
 		var bullet: Dictionary = player_bullets[i]
-		var shot: Vector2 = bullet["pos"] + Vector2(bullet["velocity"]) * delta
+		var previous: Vector2 = bullet["pos"]
+		var shot: Vector2 = previous + Vector2(bullet["velocity"]) * delta
 		bullet["pos"] = shot
-		var hit := false
+		var target_index := -1
+		var first_hit := 2.0
+		var boss_hit := false
 		if boss_active and not boss.is_empty():
-			var boss_pos: Vector2 = boss["pos"]
-			if shot.distance_to(boss_pos) < 66.0:
-				hit = true
+			var boss_previous: Vector2 = boss.get("prev_pos", boss["pos"])
+			var boss_current: Vector2 = boss["pos"]
+			var hit_t := swept_hit_fraction(previous, shot, boss_previous, boss_current, 69.0)
+			if hit_t >= 0.0:
+				boss_hit = true
+				first_hit = hit_t
+		elif not boss_active:
+			# Use earliest collision along the path, not array order. Red front guards
+			# intercept shots aimed at enemies behind them.
+			for j in range(enemies.size()):
+				var enemy: Dictionary = enemies[j]
+				var target_previous: Vector2 = enemy.get("prev_pos", enemy["pos"])
+				var target_current: Vector2 = enemy["pos"]
+				var hit_radius := 33.0 if int(enemy["kind"]) == 1 else 29.0
+				var hit_t := swept_hit_fraction(previous, shot, target_previous, target_current, hit_radius)
+				if hit_t >= 0.0 and hit_t < first_hit:
+					first_hit = hit_t
+					target_index = j
+		var hit := boss_hit or target_index >= 0
+		if hit:
+			var impact := previous.lerp(shot, first_hit)
+			explosions.append({"pos": impact, "time": 0.16})
+			if boss_hit:
 				if boss_shields > 0:
 					boss_shields -= 1
 				else:
 					boss["hp"] = maxf(0.0, float(boss["hp"]) - (2.0 + damage_level))
-				explosions.append({"pos": shot, "time": 0.25})
 				if boss_shields == 0 and float(boss["hp"]) <= 0.0:
 					score += 2500 * score_multiplier()
-					scrap += 300 # Award immediately because the stage ends on victory.
+					scrap += 300
 					boss.clear()
-		elif not boss_active:
-			for j in range(enemies.size() - 1, -1, -1):
-				var pos: Vector2 = enemies[j]["pos"]
-				if shot.distance_to(pos) < 26.0:
-					hit = true
-					enemies[j]["hp"] = int(enemies[j]["hp"]) - (1 + damage_level)
-					if int(enemies[j]["hp"]) <= 0:
-						enemies.remove_at(j)
-						kills += 1
-						total_kills += 1
-						score += 100 * score_multiplier()
-						if total_kills % 30 == 0:
-							drop_score_multiplier(pos)
-						scrap += 25 # Guaranteed mission income; drops are bonus Scrap.
-						explosions.append({"pos": pos, "time": 0.3})
-						if randf() < 0.85:
-							drop_scrap(pos, 1)
-					break
+			else:
+				enemies[target_index]["hp"] = int(enemies[target_index]["hp"]) - (1 + damage_level)
+				if int(enemies[target_index]["hp"]) <= 0:
+					var enemy_pos: Vector2 = enemies[target_index]["pos"]
+					enemies.remove_at(target_index)
+					kills += 1
+					total_kills += 1
+					score += 100 * score_multiplier()
+					if total_kills % 30 == 0:
+						drop_score_multiplier(enemy_pos)
+					scrap += 25
+					explosions.append({"pos": enemy_pos, "time": 0.3})
+					if randf() < 0.85:
+						drop_scrap(enemy_pos, 1)
 		if hit or shot.y < -20.0 or shot.x < -25.0 or shot.x > W + 25.0:
 			player_bullets.remove_at(i)
 	for i in range(radial_bullets.size() - 1, -1, -1):
