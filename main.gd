@@ -8,7 +8,7 @@ const PLAYER_Y := 840.0
 const SPEED := 470.0
 const BULLET_SPEED := 820.0
 const MAX_LEVEL := 5
-const ABILITY_COOLDOWN := 10.0 # Seconds from activation until X is ready again
+const ABILITY_COOLDOWN := 10.0 # Starts after the shield expires
 
 var font: Font
 var stars: Array[Vector2] = []
@@ -89,8 +89,12 @@ func _process(delta: float) -> void:
 		return
 	level_time += delta
 	invulnerable = maxf(0.0, invulnerable - delta)
-	ability_time = maxf(0.0, ability_time - delta)
-	ability_cooldown = maxf(0.0, ability_cooldown - delta)
+	if ability_time > 0.0:
+		ability_time = maxf(0.0, ability_time - delta)
+		if ability_time <= 0.0:
+			ability_cooldown = ABILITY_COOLDOWN
+	elif ability_cooldown > 0.0:
+		ability_cooldown = maxf(0.0, ability_cooldown - delta)
 	update_player(delta)
 	update_enemies(delta)
 	update_boss(delta)
@@ -278,9 +282,9 @@ func _unhandled_key_input(event: InputEvent) -> void:
 				level += 1
 				start_level()
 	elif state == "playing":
-		if event.keycode == KEY_X and ability_cooldown <= 0.0:
+		if event.keycode == KEY_X and ability_time <= 0.0 and ability_cooldown <= 0.0:
 			ability_time = float(ability_level * 2)
-			ability_cooldown = ABILITY_COOLDOWN
+			ability_cooldown = 0.0
 	elif state == "gameover" or state == "victory":
 		if event.keycode == KEY_ENTER or event.keycode == KEY_KP_ENTER:
 			lives = 3
