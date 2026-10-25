@@ -741,6 +741,7 @@ func _draw() -> void:
 		draw_circle(star, 1.5, Color(0.45, 0.65, 0.9, 0.55))
 	text_at("CROATIA %d/5  WAVE %d/2  SCORE %d" % [level, waves_spawned, score], 20, 35)
 	text_at("LIVES %d       SCRAP %d" % [lives, scrap], 20, 66, 21, Color(0.8, 0.95, 0.7))
+	text_at("BEST %d" % maxi(score, int(high_scores[0]["score"]) if not high_scores.is_empty() else 0), 480, 66, 19, Color(1.0, 0.88, 0.5))
 	if ability_time > 0.0:
 		text_at("R SHIELD: %.1fs" % ability_time, 20, 96, 19, Color(0.3, 1.0, 1.0))
 	elif ability_cooldown > 0.0:
