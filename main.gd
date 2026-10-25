@@ -30,6 +30,7 @@ var ability_level := 1 # 1/2/3 = 2/4/6 seconds
 var ability_time := 0.0
 var ability_cooldown := 0.0
 var state := "playing" # playing, shop, gameover, victory
+var show_stats_modal := false
 var enemies: Array[Dictionary] = []
 var player_bullets: Array[Dictionary] = [] # Each shot stores pos and velocity
 var enemy_bullets: Array[Vector2] = []
@@ -67,6 +68,7 @@ func _ready() -> void:
 
 func start_level() -> void:
 	state = "playing"
+	show_stats_modal = false
 	enemies.clear()
 	player_bullets.clear()
 	enemy_bullets.clear()
@@ -192,6 +194,9 @@ func launch_boss() -> void:
 
 
 func _process(delta: float) -> void:
+	if show_stats_modal:
+		queue_redraw()
+		return
 	if state != "playing":
 		queue_redraw()
 		return
@@ -466,7 +471,11 @@ func _unhandled_key_input(event: InputEvent) -> void:
 				level += 1
 				start_level()
 	elif state == "playing":
-		if event.keycode == KEY_X and ability_time <= 0.0 and ability_cooldown <= 0.0:
+		if event.keycode == KEY_TAB:
+			show_stats_modal = not show_stats_modal
+		elif show_stats_modal:
+			return
+		elif event.keycode == KEY_X and ability_time <= 0.0 and ability_cooldown <= 0.0:
 			ability_time = float(ability_level * 2)
 			ability_cooldown = 0.0
 	elif state == "gameover" or state == "victory":
@@ -499,6 +508,24 @@ func equipped_weapon_name() -> String:
 		return "DOUBLE"
 	return "SINGLE"
 
+func shots_per_second() -> float:
+	return 1.0 / maxf(0.12, 0.34 - float(rate_level) * 0.05)
+
+func draw_ship_status_modal() -> void:
+	# Status overview opened with TAB; simulation pauses while viewing it.
+	draw_rect(Rect2(0, 0, W, H), Color(0.0, 0.02, 0.06, 0.70))
+	draw_rect(Rect2(95, 255, 530, 426), Color(0.06, 0.12, 0.23, 0.98))
+	draw_rect(Rect2(95, 255, 530, 8), Color(0.24, 0.72, 1.0))
+	text_at("SHIP STATUS", 245, 319, 34, Color(0.95, 0.98, 1.0))
+	text_at("S - SPEED", 126, 379, 23, Color(0.35, 0.76, 1.0))
+	draw_stat_meter("LEVEL", speed_level, 4, 127, 411, Color(0.24, 0.7, 1.0))
+	text_at("%d px/s    (+%d each upgrade)" % [int(BASE_SPEED + speed_level * SPEED_STEP), int(SPEED_STEP)], 128, 443, 19)
+	text_at("F - RATE OF FIRE", 126, 496, 23, Color(1.0, 0.55, 0.45))
+	draw_stat_meter("LEVEL", rate_level, 4, 127, 528, Color(1.0, 0.38, 0.3))
+	text_at("%.2f shots/s    (%.2fs between shots)" % [shots_per_second(), 1.0 / shots_per_second()], 128, 560, 18)
+	text_at("WEAPON: %s  |  SHIELD Lv.%d" % [equipped_weapon_name(), ability_level], 126, 612, 20, Color(0.70, 0.95, 0.8))
+	text_at("TAB - CLOSE / RESUME", 230, 652, 19, Color(0.80, 0.91, 1.0))
+
 func _draw() -> void:
 	for star in stars:
 		draw_circle(star, 1.5, Color(0.45, 0.65, 0.9, 0.55))
@@ -510,12 +537,11 @@ func _draw() -> void:
 		text_at("X RECHARGE: %.1fs" % ability_cooldown, 20, 96, 19, Color(0.9, 0.75, 0.5))
 	else:
 		text_at("X SHIELD READY (Lv.%d)" % ability_level, 20, 96, 19, Color(0.4, 1.0, 0.7))
-	# Status overlay shows owned equipment during every stage and in the shop.
-	draw_rect(Rect2(445, 130, 261, 133), Color(0.05, 0.11, 0.2, 0.86))
-	draw_stat_meter("SPEED", speed_level, 4, 458, 154, Color(0.24, 0.7, 1.0))
-	draw_stat_meter("FIRE", rate_level, 4, 458, 179, Color(1.0, 0.38, 0.3))
-	text_at("WEAPON: %s" % equipped_weapon_name(), 458, 209, 17, Color(1.0, 0.87, 0.48))
-	text_at("SHIELD Lv.%d | %ds" % [ability_level, ability_level * 2], 458, 239, 17, Color(0.4, 0.95, 0.8))
+	# Compact Warblade-inspired S/F status indicators; no large box obscuring enemies.
+	draw_rect(Rect2(14, 111, 291, 82), Color(0.05, 0.11, 0.2, 0.80))
+	draw_stat_meter("SPEED", speed_level, 4, 25, 135, Color(0.24, 0.7, 1.0))
+	draw_stat_meter("FIRE", rate_level, 4, 25, 162, Color(1.0, 0.38, 0.3))
+	text_at("TAB - SHIP STATUS", 27, 183, 14, Color(0.7, 0.85, 0.98))
 	if state == "playing":
 		if invulnerable <= 0.0 or int(Time.get_ticks_msec() / 100) % 2 == 0:
 			var ship := PackedVector2Array([Vector2(player_x, PLAYER_Y - 36), Vector2(player_x - 27, PLAYER_Y + 23), Vector2(player_x, PLAYER_Y + 12), Vector2(player_x + 27, PLAYER_Y + 23)])
@@ -606,8 +632,10 @@ func _draw() -> void:
 			text_at("5 - Shield Upgrade: MAX", 105, 569, 22)
 		else:
 			text_at("5 - Shield Upgrade Lv.%d/3 (%d)" % [ability_level, upgrade_cost(5)], 105, 569, 22)
-		text_at("OWNED: SPD %d/4  FIRE %d/4  %s" % [speed_level, rate_level, equipped_weapon_name()], 105, 626, 18, Color(0.7, 0.88, 1.0))
-		text_at("SHIELD Lv.%d/3  (%ds active)" % [ability_level, ability_level * 2], 105, 653, 18, Color(0.5, 0.95, 0.85))
+		# In-shop ship stats are live and update immediately after a purchase.
+		text_at("SHIP SPEED  %d px/s  Lv.%d/4" % [int(BASE_SPEED + speed_level * SPEED_STEP), speed_level], 105, 616, 17, Color(0.55, 0.83, 1.0))
+		text_at("FIRE RATE  %.2f shots/s  Lv.%d/4" % [shots_per_second(), rate_level], 105, 640, 17, Color(1.0, 0.65, 0.5))
+		text_at("%s SHOT  |  SHIELD Lv.%d/3" % [equipped_weapon_name(), ability_level], 105, 664, 17, Color(0.6, 0.96, 0.76))
 		text_at("ENTER - Next mission", 185, 707, 26, Color(0.4, 0.9, 1.0))
 	elif state == "gameover":
 		text_at("GAME OVER", 195, 440, 52, Color(1.0, 0.35, 0.4))
@@ -615,4 +643,6 @@ func _draw() -> void:
 	elif state == "victory":
 		text_at("CROATIA PROTOTYPE CLEARED!", 85, 435, 31, Color(0.45, 1.0, 0.7))
 		text_at("Press ENTER to play again", 193, 490, 24)
+	if show_stats_modal and state == "playing":
+		draw_ship_status_modal()
 	text_at("A/D: move    B/SPACE: fire    X: shield", 22, H - 22, 19, Color(0.65, 0.8, 0.95))
