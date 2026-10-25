@@ -415,3 +415,10 @@ The city name appears in the live HUD and in the centered next-level introductio
 2. Confirm shooting does not auto-repeat when B/Space is held down.
 3. Confirm bonus pickup collection, P pause, and next-wave timing still work.
 4. On a city guardian stage, confirm boss-announcement shots are disabled and restart correctly after the boss appears.
+
+## QA God Mode hotkey (latest)
+- Press **O** at any time to toggle **GOD MODE** ON/OFF for local testing. A green **GOD MODE [O]** message appears in the upper-right HUD when enabled.
+- While enabled, enemy shots and collisions cannot remove a life, nor can they trigger the associated one-tier weapon downgrade. Existing R shield mechanics, weapon pickups, Scrap, score, enemies and bosses continue to operate normally.
+- Press O again to restore normal damage. Toggle is in-memory for the current game process (it is not stored with High Scores).
+- This is a **testing convenience**, not a balanced player ability; disable it when evaluating real difficulty or high-score fairness.
+- QA: Turn O on, take several enemy projectiles and confirm lives and weapon tier remain unchanged; turn it off and take one unshielded hit after any temporary invulnerability expires, confirming normal life loss and weapon degradation.
