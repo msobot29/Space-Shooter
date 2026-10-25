@@ -44,6 +44,7 @@ var boss_intro_time := 0.0
 var level_transition_time := 0.0
 var show_stats_modal := false
 var game_paused := false
+var god_mode := false # Local QA toggle (O key), blocks actual life and weapon loss
 var high_scores: Array[Dictionary] = []
 var score_name_field: LineEdit
 var awaiting_score_name := false
@@ -613,7 +614,7 @@ func update_bullets(delta: float) -> void:
 			take_damage()
 
 func take_damage() -> void:
-	if invulnerable > 0.0 or ability_time > 0.0:
+	if god_mode or invulnerable > 0.0 or ability_time > 0.0:
 		return
 	lives -= 1
 	# Weapon power drops exactly one tier on each actual life lost.
@@ -826,6 +827,11 @@ func buy_upgrade(kind: int) -> void:
 func _unhandled_key_input(event: InputEvent) -> void:
 	if not event is InputEventKey or not event.pressed or event.echo:
 		return
+	# Test-only invulnerability hotkey: available in any game state.
+	if event.keycode == KEY_O:
+		god_mode = not god_mode
+		queue_redraw()
+		return
 	if state == "shop":
 		match event.keycode:
 			KEY_1: buy_upgrade(1)
@@ -918,6 +924,8 @@ func _draw() -> void:
 	draw_circle(Vector2(36, 58), 3.2, Color(1.0, 0.9, 0.3))
 	text_at("x%d     SCRAP %d" % [lives, scrap], 61, 66, 21, Color(0.8, 0.95, 0.7))
 	text_at("BEST %d" % maxi(score, int(high_scores[0]["score"]) if not high_scores.is_empty() else 0), 480, 66, 19, Color(1.0, 0.88, 0.5))
+	if god_mode:
+		text_at("GOD MODE [O]", 475, 101, 18, Color(0.35, 1.0, 0.68))
 	if ability_time > 0.0:
 		text_at("R SHIELD: %.1fs" % ability_time, 20, 96, 19, Color(0.3, 1.0, 1.0))
 	elif ability_cooldown > 0.0:
