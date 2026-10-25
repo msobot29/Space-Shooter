@@ -266,3 +266,18 @@ The playable Croatia prototype now covers **missions 1–10**, while the long-te
 6. Confirm the P pause, R shield, TAB Ship Status and colored Double/Triple Shot remain usable.
 
 This section supersedes earlier references to a five-level maximum in the README. The actual game logic has been updated, but the new 10-level progression still requires an in-engine Godot test.
+
+## Unique formations and attack patterns: missions 6–10 (latest)
+The Croatia second block now introduces distinct enemy arrangements and projectiles, rather than only boosting health and fire rate:
+
+| Mission | Formation | Attack |
+|---|---|---|
+| 6 | Mirrored V wedge with armored crabs in front | Electric eels fire aimed green bolts; other enemies keep simple vertical shots |
+| 7 | Tight paired columns with rear layers | Jellyfish fire a crossing pair of blue angled shots |
+| 8 | Wide crescent, compact red forward guards | Red crabs launch a three-projectile orange fan |
+| 9 | Wide pincer with flank positions | Eels fire two narrow green aimed bolts; the existing 270-HP mini-boss follows the waves |
+| 10 | Crown formation, red guards shielding the center | Jellyfish fire paired purple-blue arcs, with aimed orange-red shots from other units |
+
+**Design constraints:** Every wave still contains five enemies from each side, with **two red armored crabs per side in the foremost rows**. Existing smooth entrances and swept projectile hit-detection stay in place. Special bullets are launched only after attackers are on screen. Level-specific shots have colored projectile bodies so attacks are readable, and the player can dodge aimed fire. Damage, life loss, shield invulnerability and pause behavior use the existing bullet collision system. Shop remains after missions 5 and 10, with High Score after the last shop.
+
+**QA checklist:** Play levels 6, 7, 8, 9, 10 to compare formations and bullet patterns. Confirm red crabs stay forward, entrance motion remains smooth, angled projectiles can be dodged or shielded with R, TAB/P freeze simulation, and the level-9 mini-boss and level-10 High Score sequence still trigger. Newly authored gameplay must be tested inside Godot 4 before release.
