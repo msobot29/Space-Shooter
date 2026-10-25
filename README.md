@@ -8,13 +8,13 @@ Godot 4.x vertical arcade shooter prototype, inspired by the planned four-countr
 3. Run with **F5**.
 
 ## Prototype missions
-The first five missions are set in Croatia. Each mission starts with 10 enemies (five entering from the left and five from the right); a second wave of 10 arrives exactly 5 seconds later. Each wave randomly selects one of four curved entrance/flight paths. Enemies continue weaving after entering and return fire. Mission 4 has a mini-boss **after both waves are cleared** with shield hits, two phases, alternating spread volleys and a telegraphed aimed column (red warning zone). Finishing a mission opens the shop (except after level 5).
+The first five missions are set in Croatia. Each mission starts with 10 enemies (five entering from the left and five from the right); a second wave of 10 arrives exactly 5 seconds later. Each wave randomly selects one of four curved entrance/flight paths. Enemies continue weaving after entering and return fire. Mission 4 has a mini-boss **after both waves are cleared** with shield hits, two phases, spread volleys, a telegraphed aimed column (red warning zone), and a telegraphed 360-degree spin attack. Finishing a mission opens the shop (except after level 5).
 
 ## Controls
 - **A / D**, **Left / Right**: move horizontally
 - **B**, **Space**, or **left mouse**: shoot
 - **X**: activate invulnerability shield (2 seconds at level 1, 4 at level 2, 6 at level 3; 10-second cooldown starting only after invulnerability ends)
-- **1**, **2**, **3** in the shop: purchase weapon upgrades, fire rate and X shield (3 upgrades the shield). Every three weapon purchases unlock the next shot tier.
+- **1**, **2**, **3**, **4** in the shop: purchase weapon upgrades, fire rate, X shield, and ship speed. Every three weapon purchases unlock the next shot tier.
 - **Enter**: proceed to next level or restart after game over / victory
 
 ## Systems in this version
@@ -50,7 +50,7 @@ Changes are not yet tested in the Godot editor, so please report errors with the
 5. On mission 4 clear both waves, then fight the mini-boss; mission completion requires defeating it.
 
 ## New test checklist
-- Shop displays only **1 Damage**, **2 Fire rate**, and **3 X Shield**; no Armor purchase.
+- Shop displays **1 Damage**, **2 Fire rate**, **3 X Shield**, **4 Ship speed**; no Armor purchase.
 - Key **3** buys X Shield level 2 for 120 Scrap and level 3 for 1800 Scrap.
 - Jellyfish fire two offset bullets, crabs have extra HP, and electric eels weave faster.
 - Both waves still contain 10 enemies; mini-boss still begins after both waves in mission 4.
@@ -69,3 +69,18 @@ Note: This 5-level demo may not provide enough Scrap to buy six weapon upgrades 
 
 ## Warblade-inspired Triple Shot
 At weapon upgrade 6, the outer projectiles spread **22 degrees** left/right while the central projectile goes straight up, increasing coverage and reducing the chance that all three projectiles hit one small target. Double Shot keeps two parallel forward projectiles. Shot positions, velocity and collision are handled per projectile. Test the spread at level 6.
+
+## Movement, fire-rate and boss spin update
+- Initial ship movement is **295 px/s** (was 470); shop key **4** buys up to four speed levels, +48 px/s each, costing 120 / 250 / 380 / 510 Scrap.
+- Initial firing interval is **0.34 s** (was 0.22); rate upgrades shorten it by 0.05 s per level, down to **0.14 s** at level 4 (effective floor 0.12 s).
+- Mission-4 mini-boss now periodically dives toward the player and rotates a full 360 degrees during a **1.5 s** warning, then fires **48** projectiles outward in every direction. A distinct purple-pink circle and on-screen warning signal the attack. Activating X Shield ahead of the incoming ring should be a strong defensive option; avoiding it without the shield may still be possible with careful positioning.
+- X Shield duration and its 10-second cooldown after deactivation have not changed.
+
+### Test checklist
+1. Verify the initial ship and fire rate are slower.
+2. Buy ship speed using **4** and observe higher horizontal movement speed in the next mission.
+3. Buy Fire Rate using **2** and observe faster shooting.
+4. On mission 4, observe the red aimed warning and the separate pink 360-degree warning, boss dive/spin, and radial attack.
+5. Confirm X Shield blocks the radial projectiles when timed correctly.
+
+Godot editor validation remains pending.
