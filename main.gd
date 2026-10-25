@@ -503,11 +503,11 @@ func _draw() -> void:
 	else:
 		text_at("X SHIELD READY (Lv.%d)" % ability_level, 20, 96, 19, Color(0.4, 1.0, 0.7))
 	# Status overlay shows owned equipment during every stage and in the shop.
-	draw_rect(Rect2(445, 74, 261, 133), Color(0.05, 0.11, 0.2, 0.86))
-	draw_stat_meter("SPEED", speed_level, 4, 458, 98, Color(0.24, 0.7, 1.0))
-	draw_stat_meter("FIRE", rate_level, 4, 458, 123, Color(1.0, 0.38, 0.3))
-	text_at("WEAPON: %s" % equipped_weapon_name(), 458, 153, 17, Color(1.0, 0.87, 0.48))
-	text_at("SHIELD Lv.%d | %ds" % [ability_level, ability_level * 2], 458, 183, 17, Color(0.4, 0.95, 0.8))
+	draw_rect(Rect2(445, 130, 261, 133), Color(0.05, 0.11, 0.2, 0.86))
+	draw_stat_meter("SPEED", speed_level, 4, 458, 154, Color(0.24, 0.7, 1.0))
+	draw_stat_meter("FIRE", rate_level, 4, 458, 179, Color(1.0, 0.38, 0.3))
+	text_at("WEAPON: %s" % equipped_weapon_name(), 458, 209, 17, Color(1.0, 0.87, 0.48))
+	text_at("SHIELD Lv.%d | %ds" % [ability_level, ability_level * 2], 458, 239, 17, Color(0.4, 0.95, 0.8))
 	if state == "playing":
 		if invulnerable <= 0.0 or int(Time.get_ticks_msec() / 100) % 2 == 0:
 			var ship := PackedVector2Array([Vector2(player_x, PLAYER_Y - 36), Vector2(player_x - 27, PLAYER_Y + 23), Vector2(player_x, PLAYER_Y + 12), Vector2(player_x + 27, PLAYER_Y + 23)])
