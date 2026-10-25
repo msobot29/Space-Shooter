@@ -94,3 +94,12 @@ Godot editor validation remains pending.
 ## Current shop layout
 Keys: 1 Extra Speed, 2 Rate of Fire, 3 Double Shot, 4 Triple Shot, 5 Shield Upgrade.
 Double Shot requires three purchases; then Triple Shot requires three more purchases. Boss health is now 200 HP, with phase two starting at 95 HP. This section supersedes earlier shop key mappings and HP numbers above.
+
+## Latest shop rule: direct weapon purchases
+Double Shot and Triple Shot are now **single-purchase unlocks**, with no intermediate weapon levels or prerequisite.
+- **3 Double Shot:** costs **540 Scrap** and immediately unlocks two parallel bullets.
+- **4 Triple Shot:** costs **1980 Scrap** if bought directly from Single Shot, immediately unlocking three fan-spread bullets.
+- If Double Shot is already owned, Triple Shot costs **1440 Scrap** (the difference), so the total cost is identical in either purchase order.
+- Once Triple Shot is purchased, Double Shot is marked owned too and neither can be bought again.
+- Existing speed, fire-rate, shield prices, boss HP (200) and shield cooldown remain unchanged.
+The shop displays the actual purchase price and owned status. This section supersedes previous descriptions of needing three purchases for each shot type.
