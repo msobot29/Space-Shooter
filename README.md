@@ -14,7 +14,7 @@ The first five missions are set in Croatia. Each mission starts with 10 enemies 
 - **A / D**, **Left / Right**: move horizontally
 - **B**, **Space**, or **left mouse**: shoot
 - **X**: activate invulnerability shield (2 seconds at level 1, 4 at level 2, 6 at level 3; 10-second cooldown starting only after invulnerability ends)
-- **1**, **2**, **3** in the shop: purchase weapon damage, fire rate and X shield upgrades (3 upgrades the shield)
+- **1**, **2**, **3** in the shop: purchase weapon upgrades, fire rate and X shield (3 upgrades the shield). Every three weapon purchases unlock the next shot tier.
 - **Enter**: proceed to next level or restart after game over / victory
 
 ## Systems in this version
@@ -23,7 +23,7 @@ The first five missions are set in Croatia. Each mission starts with 10 enemies 
 - Enemy bullets and procedural explosion effects
 - Two timed 10-enemy waves per mission, each with random flight routes (20 opponents per mission)
 - Guaranteed 25 Scrap per enemy kill plus collectible bonus Scrap drops (85% drop chance, worth 10 each)
-- Weapon damage, fire rate, and X shield upgrades (Armor removed)
+- Weapon progression: buy weapon upgrade 3 times for Double Shot (2 parallel bullets); buy 3 more times for Triple Shot (3 parallel bullets). Weapon damage also increases with each purchase, capped at level 6. Fire rate and X shield are independent.
 - Mini-boss in level 4; 300 Scrap awarded for defeating it
 - Active shield: initial level 1, upgrade costs 900 and 1800 Scrap; resets on a new game, can be reactivated repeatedly after each full 10-second cooldown following the shield duration; ready at the start of each mission
 - Score, Scrap and levels shown in the HUD
@@ -57,3 +57,12 @@ Changes are not yet tested in the Godot editor, so please report errors with the
 
 ## Shield economy update
 Shield Lv1 is unlocked by default (2 seconds). Lv2 costs 900 Scrap (4 seconds), and Lv3 costs 1800 Scrap (6 seconds). It is intentional that buying the maximum shield upgrade after mission 1 is no longer possible. The cooldown remains 10 seconds **after** protection ends. Test higher tiers later in the campaign; the five-level demo may not provide enough Scrap for both upgrades unless the player saves it.
+
+## Weapon progression test checklist
+1. Start with one bullet per shot (weapon 0/3).
+2. Buy weapon damage three times using shop key **1** to unlock two bullets per shot (Double Shot).
+3. Buy weapon damage three more times to unlock three bullets per shot (Triple Shot).
+4. After level 6 the shop displays `TRIPLE SHOT MAX` and takes no more Scrap for weapon purchases.
+5. All shots remain parallel; B and Space controls work as before. Prices rise by 100 Scrap per weapon purchase (80, 180, 280, 380, 480, 580).
+
+Note: This 5-level demo may not provide enough Scrap to buy six weapon upgrades and shield upgrades in the same run. A full campaign will make longer progression possible.
