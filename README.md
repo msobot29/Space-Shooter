@@ -8,7 +8,7 @@ Godot 4.x vertical arcade shooter prototype, inspired by the planned four-countr
 3. Run with **F5**.
 
 ## Prototype missions
-The first five missions are set in Croatia. Missions 1–3 and 5 feature enemy formations and return fire. Mission 4 has a mini-boss with shield hits, two phases, alternating spread volleys and a telegraphed aimed column (red warning zone). Finishing a mission opens the shop (except after level 5).
+The first five missions are set in Croatia. Each mission starts with 10 enemies (five entering from the left and five from the right); a second wave of 10 arrives exactly 5 seconds later. Each wave randomly selects one of four curved entrance/flight paths. Enemies continue weaving after entering and return fire. Mission 4 has a mini-boss **after both waves are cleared** with shield hits, two phases, alternating spread volleys and a telegraphed aimed column (red warning zone). Finishing a mission opens the shop (except after level 5).
 
 ## Controls
 - **A / D**, **Left / Right**: move horizontally
@@ -20,6 +20,7 @@ The first five missions are set in Croatia. Missions 1–3 and 5 feature enemy f
 ## Systems in this version
 - 3 lives and temporary post-hit invulnerability
 - Enemy bullets and procedural explosion effects
+- Two timed 10-enemy waves per mission, each with random flight routes (20 opponents per mission)
 - Guaranteed 25 Scrap per enemy kill plus collectible bonus Scrap drops (85% drop chance, worth 10 each)
 - Weapon damage, fire rate and armor/invulnerability upgrades
 - Mini-boss in level 4; 300 Scrap awarded for defeating it
@@ -39,3 +40,10 @@ Changes are not yet tested in the Godot editor, so please report errors with the
 3. Complete mission 2 (16 enemies, at least 400 more Scrap), then buy X level 3 for 250 Scrap; verify 6-second duration.
 4. Each X activation must finish before its 10-second cooldown begins.
 5. On mission 4, dodge the new red target warning stripe; the boss alternates attack patterns.
+
+## Wave test checklist
+1. In mission 1 verify five enemies appear from each side (10 total).
+2. Without finishing the first wave, verify a second group of ten starts arriving after 5 seconds.
+3. Restart and compare flight paths: each wave randomly picks one of four patterns; directions vary between runs.
+4. Clear all 20 enemies; only then should the shop open.
+5. On mission 4 clear both waves, then fight the mini-boss; mission completion requires defeating it.
