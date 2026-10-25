@@ -22,7 +22,6 @@ var scrap := 0
 var level := 1
 var damage_level := 0
 var rate_level := 0
-var armor_level := 0
 var ability_level := 1 # 1/2/3 = 2/4/6 seconds
 var ability_time := 0.0
 var ability_cooldown := 0.0
@@ -111,8 +110,8 @@ func spawn_wave() -> void:
 				"path": path_id,
 				"side": -1.0 if left else 1.0,
 				"offset": float(index) * 0.26,
-				"hp": 2 + int(level / 3),
-				"kind": (side + index + waves_spawned) % 2
+				"hp": (2 + int(level / 3)) + (1 if (side + index + waves_spawned) % 3 == 1 else 0),
+				"kind": (side + index + waves_spawned) % 3
 			})
 
 func move_enemy(enemy: Dictionary, delta: float) -> void:
@@ -154,6 +153,12 @@ func move_enemy(enemy: Dictionary, delta: float) -> void:
 			3:
 				position.x += side * sin(t * 1.3 + offset * 2.0) * 110.0
 				position.y += cos(t * 1.6 + offset) * 36.0
+	# Eels are fast evasive attackers; crabs are tougher and move more steadily.
+	var kind: int = int(enemy["kind"])
+	if kind == 2 and fraction >= 1.0:
+		position.x += sin(age * 4.2 + offset * 5.0) * 36.0
+	elif kind == 1 and fraction >= 1.0:
+		position.y += sin(age * 0.9 + offset) * 18.0
 	position.x = clampf(position.x, -360.0, W + 360.0)
 	position.y = clampf(position.y, 55.0, 650.0)
 	enemy["pos"] = position
@@ -217,9 +222,13 @@ func update_enemies(delta: float) -> void:
 		move_enemy(enemies[i], delta)
 	enemy_fire_clock -= delta
 	if enemy_fire_clock <= 0.0 and not enemies.is_empty():
-		var source: Vector2 = enemies[randi_range(0, enemies.size() - 1)]["pos"]
+		var attacker: Dictionary = enemies[randi_range(0, enemies.size() - 1)]
+		var source: Vector2 = attacker["pos"]
 		if source.x > 15.0 and source.x < W - 15.0:
 			enemy_bullets.append(source + Vector2(0, 18))
+			# Jellyfish fire an additional offset projectile.
+			if int(attacker["kind"]) == 0:
+				enemy_bullets.append(source + Vector2(22, 18))
 		enemy_fire_clock = maxf(0.45, 1.4 - level * 0.12)
 
 func update_boss(delta: float) -> void:
@@ -300,7 +309,7 @@ func take_damage() -> void:
 	if invulnerable > 0.0 or ability_time > 0.0:
 		return
 	lives -= 1
-	invulnerable = 1.7 + armor_level * 0.4
+	invulnerable = 1.7
 	explosions.append({"pos": Vector2(player_x, PLAYER_Y), "time": 0.45})
 
 func drop_scrap(pos: Vector2, amount: int) -> void:
@@ -334,20 +343,18 @@ func upgrade_cost(kind: int) -> int:
 	match kind:
 		1: return 80 + damage_level * 100
 		2: return 80 + rate_level * 100
-		3: return 100 + armor_level * 130
-		4: return 120 + (ability_level - 1) * 130
+		3: return 120 + (ability_level - 1) * 130
 	return 99999
 
 func buy_upgrade(kind: int) -> void:
-	var capped := (kind == 1 and damage_level >= 4) or (kind == 2 and rate_level >= 4) or (kind == 3 and armor_level >= 3) or (kind == 4 and ability_level >= 3)
+	var capped := (kind == 1 and damage_level >= 4) or (kind == 2 and rate_level >= 4) or (kind == 3 and ability_level >= 3)
 	if capped or scrap < upgrade_cost(kind):
 		return
 	scrap -= upgrade_cost(kind)
 	match kind:
 		1: damage_level += 1
 		2: rate_level += 1
-		3: armor_level += 1
-		4: ability_level += 1
+		3: ability_level += 1
 		   
 func _unhandled_key_input(event: InputEvent) -> void:
 	if not event is InputEventKey or not event.pressed or event.echo:
@@ -357,7 +364,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			KEY_1: buy_upgrade(1)
 			KEY_2: buy_upgrade(2)
 			KEY_3: buy_upgrade(3)
-			KEY_4: buy_upgrade(4)
+
 			KEY_ENTER, KEY_KP_ENTER:
 				level += 1
 				start_level()
@@ -373,7 +380,6 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			level = 1
 			damage_level = 0
 			rate_level = 0
-			armor_level = 0
 			ability_level = 1
 			start_level()
 	queue_redraw()
@@ -405,10 +411,21 @@ func _draw() -> void:
 		draw_circle(shot, 7.0, Color(1.0, 0.3, 0.18))
 	for enemy in enemies:
 		var pos: Vector2 = enemy["pos"]
-		draw_circle(pos, 23.0, Color(0.95, 0.25, 0.48) if int(enemy["kind"]) == 0 else Color(0.6, 0.35, 0.95))
-		draw_rect(Rect2(pos.x - 14, pos.y - 6, 28, 12), Color(0.15, 0.08, 0.35))
-		draw_circle(pos + Vector2(-8, -5), 3.5, Color.WHITE)
-		draw_circle(pos + Vector2(8, -5), 3.5, Color.WHITE)
+		match int(enemy["kind"]):
+			0: # Jellyfish: glowing bell and trailing tentacles
+				draw_circle(pos + Vector2(0, -5), 23.0, Color(0.45, 0.75, 1.0))
+				draw_arc(pos + Vector2(0, -5), 22.0, PI, TAU, 20, Color(0.75, 0.95, 1.0), 4.0)
+				for t in range(-2, 3):
+					draw_line(pos + Vector2(t * 8.0, 8), pos + Vector2(t * 8.0 + sin(level_time * 4.0 + t) * 6.0, 31), Color(0.5, 0.9, 1.0), 3.0)
+			1: # Armored crab: broad shell and pincers
+				draw_circle(pos, 22.0, Color(0.95, 0.35, 0.22))
+				draw_rect(Rect2(pos.x - 20, pos.y - 7, 40, 16), Color(0.55, 0.16, 0.16))
+				draw_circle(pos + Vector2(-27, 7), 11.0, Color(1.0, 0.48, 0.3))
+				draw_circle(pos + Vector2(27, 7), 11.0, Color(1.0, 0.48, 0.3))
+			2: # Electric eel: narrow zigzag body
+				var body := PackedVector2Array([pos + Vector2(-24, -10), pos + Vector2(3, -19), pos + Vector2(-7, 0), pos + Vector2(24, 10), pos + Vector2(-2, 18), pos + Vector2(7, 2)])
+				draw_colored_polygon(body, Color(0.6, 0.95, 0.35))
+			draw_circle(pos + Vector2(0, -5), 4.0, Color.WHITE)
 	if boss_active and not boss.is_empty():
 		var pos: Vector2 = boss["pos"]
 		draw_circle(pos, 68.0, Color(0.24, 0.62, 0.48))
@@ -435,8 +452,7 @@ func _draw() -> void:
 		text_at("SCRAP: %d" % scrap, 265, 360, 26, Color(0.95, 0.85, 0.3))
 		text_at("1 - Weapon damage Lv.%d   (%d)" % [damage_level, upgrade_cost(1)], 120, 430, 23)
 		text_at("2 - Fire rate Lv.%d       (%d)" % [rate_level, upgrade_cost(2)], 120, 490, 23)
-		text_at("3 - Armor Lv.%d           (%d)" % [armor_level, upgrade_cost(3)], 120, 540, 23)
-		text_at("4 - X shield Lv.%d / 3   (%d)" % [ability_level, upgrade_cost(4)], 120, 590, 23)
+		text_at("3 - X shield Lv.%d / 3   (%d)" % [ability_level, upgrade_cost(3)], 120, 555, 23)
 		text_at("ENTER - Next mission", 185, 660, 26, Color(0.4, 0.9, 1.0))
 	elif state == "gameover":
 		text_at("GAME OVER", 195, 440, 52, Color(1.0, 0.35, 0.4))
