@@ -8,7 +8,7 @@ Godot 4.x vertical arcade shooter prototype, inspired by the planned four-countr
 3. Run with **F5**.
 
 ## Prototype missions
-The first five missions are set in Croatia. Missions 1–3 and 5 feature enemy formations and return fire. Mission 4 has a mini-boss with shield hits, two phases, and multiple projectiles. Finishing a mission opens the shop (except after level 5).
+The first five missions are set in Croatia. Missions 1–3 and 5 feature enemy formations and return fire. Mission 4 has a mini-boss with shield hits, two phases, alternating spread volleys and a telegraphed aimed column (red warning zone). Finishing a mission opens the shop (except after level 5).
 
 ## Controls
 - **A / D**, **Left / Right**: move horizontally
@@ -20,10 +20,10 @@ The first five missions are set in Croatia. Missions 1–3 and 5 feature enemy f
 ## Systems in this version
 - 3 lives and temporary post-hit invulnerability
 - Enemy bullets and procedural explosion effects
-- Scrap drops, collected by flying over them
+- Guaranteed 25 Scrap per enemy kill plus collectible bonus Scrap drops (85% drop chance, worth 10 each)
 - Weapon damage, fire rate and armor/invulnerability upgrades
 - Mini-boss in level 4; 300 Scrap awarded for defeating it
-- Active shield: initial level 1, upgrade costs 160 and 400 Scrap; resets on a new game, can be reactivated repeatedly after each full 10-second cooldown following the shield duration; ready at the start of each mission
+- Active shield: initial level 1, upgrade costs 120 and 250 Scrap; resets on a new game, can be reactivated repeatedly after each full 10-second cooldown following the shield duration; ready at the start of each mission
 - Score, Scrap and levels shown in the HUD
 
 All graphics are procedural placeholders, no artwork downloads required.
@@ -31,4 +31,11 @@ All graphics are procedural placeholders, no artwork downloads required.
 ## Known scope limitations
 This is an early prototype. Scrap, upgrades and progress **do not save between sessions** yet.
 The fifth level ends the current playable chapter demo; it is not the full 25-level Croatia campaign.
-No local Godot runtime was available for automated validation, so please report errors with the line number or a screenshot.
+Changes are not yet tested in the Godot editor, so please report errors with the line number or a screenshot.
+
+## Test checklist for the next run
+1. Finish mission 1: 12 enemies defeated awards **at least 300 Scrap**, even without catching pickups.
+2. In the shop press **4** once (120 Scrap); X should provide 4 seconds of invulnerability.
+3. Complete mission 2 (16 enemies, at least 400 more Scrap), then buy X level 3 for 250 Scrap; verify 6-second duration.
+4. Each X activation must finish before its 10-second cooldown begins.
+5. On mission 4, dodge the new red target warning stripe; the boss alternates attack patterns.
