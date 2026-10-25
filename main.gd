@@ -542,10 +542,14 @@ func update_effects(delta: float) -> void:
 			explosions.remove_at(i)
 
 func complete_level() -> void:
-	if level == MAX_LEVEL:
+	# Shop only after each group of five missions, never after ordinary stages.
+	if level % 5 == 0:
+		state = "shop"
+	elif level >= MAX_LEVEL:
 		finish_run(true)
 	else:
-		state = "shop"
+		level += 1
+		start_level()
 
 
 func compare_high_scores(a: Dictionary, b: Dictionary) -> bool:
@@ -668,8 +672,11 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			KEY_5: buy_upgrade(5)
 
 			KEY_ENTER, KEY_KP_ENTER:
-				level += 1
-				start_level()
+				if level >= MAX_LEVEL:
+					finish_run(true)
+				else:
+					level += 1
+					start_level()
 	elif state == "playing":
 		if event.keycode == KEY_P:
 			game_paused = not game_paused
@@ -856,7 +863,7 @@ func _draw() -> void:
 		text_at("SHIP SPEED  %d px/s  Lv.%d/4" % [int(BASE_SPEED + speed_level * SPEED_STEP), speed_level], 105, 616, 17, Color(0.55, 0.83, 1.0))
 		text_at("FIRE RATE  %.2f shots/s  Lv.%d/4" % [shots_per_second(), rate_level], 105, 640, 17, Color(1.0, 0.65, 0.5))
 		text_at("%s SHOT  |  SHIELD Lv.%d/3" % [equipped_weapon_name(), ability_level], 105, 664, 17, Color(0.6, 0.96, 0.76))
-		text_at("ENTER - Next mission", 185, 707, 26, Color(0.4, 0.9, 1.0))
+		text_at("ENTER - View results" if level >= MAX_LEVEL else "ENTER - Next mission", 160, 707, 26, Color(0.4, 0.9, 1.0))
 	elif state == "gameover" or state == "victory":
 		draw_leaderboard()
 		if state == "victory":
