@@ -420,12 +420,12 @@ func complete_level() -> void:
 		state = "shop"
 
 const DOUBLE_SHOT_PRICE := 540
-const TRIPLE_SHOT_PRICE := 1980
+const TRIPLE_SHOT_PRICE := 1580
 
 func upgrade_cost(kind: int) -> int:
 	match kind:
-		1: return 120 + speed_level * 130
-		2: return 80 + rate_level * 100
+		1: return 50
+		2: return 75
 		3: return DOUBLE_SHOT_PRICE
 		4: return TRIPLE_SHOT_PRICE - (DOUBLE_SHOT_PRICE if damage_level >= 3 else 0)
 		5: return 900 if ability_level == 1 else 1800
@@ -477,6 +477,20 @@ func _unhandled_key_input(event: InputEvent) -> void:
 func text_at(value: String, x: float, y: float, size: int = 22, color: Color = Color.WHITE) -> void:
 	draw_string(font, Vector2(x, y), value, HORIZONTAL_ALIGNMENT_LEFT, -1, size, color)
 
+func draw_stat_meter(name: String, current: int, maximum: int, x: float, y: float, bar_color: Color) -> void:
+	# Warblade-inspired compact ship status bars, adapted to our own upgrades.
+	text_at("%s %d/%d" % [name, current, maximum], x, y, 17, Color(0.83, 0.89, 1.0))
+	draw_rect(Rect2(x + 119, y - 13, 110, 11), Color(0.16, 0.21, 0.31))
+	if current > 0:
+		draw_rect(Rect2(x + 119, y - 13, 110.0 * float(current) / float(maximum), 11), bar_color)
+
+func equipped_weapon_name() -> String:
+	if damage_level >= 6:
+		return "TRIPLE"
+	if damage_level >= 3:
+		return "DOUBLE"
+	return "SINGLE"
+
 func _draw() -> void:
 	for star in stars:
 		draw_circle(star, 1.5, Color(0.45, 0.65, 0.9, 0.55))
@@ -488,6 +502,12 @@ func _draw() -> void:
 		text_at("X RECHARGE: %.1fs" % ability_cooldown, 20, 96, 19, Color(0.9, 0.75, 0.5))
 	else:
 		text_at("X SHIELD READY (Lv.%d)" % ability_level, 20, 96, 19, Color(0.4, 1.0, 0.7))
+	# Status overlay shows owned equipment during every stage and in the shop.
+	draw_rect(Rect2(445, 74, 261, 133), Color(0.05, 0.11, 0.2, 0.86))
+	draw_stat_meter("SPEED", speed_level, 4, 458, 98, Color(0.24, 0.7, 1.0))
+	draw_stat_meter("FIRE", rate_level, 4, 458, 123, Color(1.0, 0.38, 0.3))
+	text_at("WEAPON: %s" % equipped_weapon_name(), 458, 153, 17, Color(1.0, 0.87, 0.48))
+	text_at("SHIELD Lv.%d | %ds" % [ability_level, ability_level * 2], 458, 183, 17, Color(0.4, 0.95, 0.8))
 	if state == "playing":
 		if invulnerable <= 0.0 or int(Time.get_ticks_msec() / 100) % 2 == 0:
 			var ship := PackedVector2Array([Vector2(player_x, PLAYER_Y - 36), Vector2(player_x - 27, PLAYER_Y + 23), Vector2(player_x, PLAYER_Y + 12), Vector2(player_x + 27, PLAYER_Y + 23)])
@@ -578,7 +598,9 @@ func _draw() -> void:
 			text_at("5 - Shield Upgrade: MAX", 105, 569, 22)
 		else:
 			text_at("5 - Shield Upgrade Lv.%d/3 (%d)" % [ability_level, upgrade_cost(5)], 105, 569, 22)
-		text_at("ENTER - Next mission", 185, 687, 26, Color(0.4, 0.9, 1.0))
+		text_at("OWNED: SPD %d/4  FIRE %d/4  %s" % [speed_level, rate_level, equipped_weapon_name()], 105, 626, 18, Color(0.7, 0.88, 1.0))
+		text_at("SHIELD Lv.%d/3  (%ds active)" % [ability_level, ability_level * 2], 105, 653, 18, Color(0.5, 0.95, 0.85))
+		text_at("ENTER - Next mission", 185, 707, 26, Color(0.4, 0.9, 1.0))
 	elif state == "gameover":
 		text_at("GAME OVER", 195, 440, 52, Color(1.0, 0.35, 0.4))
 		text_at("Press ENTER to restart", 205, 500, 24)
