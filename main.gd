@@ -19,6 +19,8 @@ const ABILITY_COOLDOWN := 10.0 # Starts after the shield expires
 const WAVE_DELAY := 5.0
 const ENEMIES_PER_WAVE := 10
 const WAVES_PER_LEVEL := 2
+const DOUBLE_DROP_CHANCE := 0.12
+const DOUBLE_DROP_PITY_KILLS := 18
 
 var font: Font
 var stars: Array[Vector2] = []
@@ -65,6 +67,7 @@ var spin_rotation := 0.0
 var level_time := 0.0
 var kills := 0
 var total_kills := 0 # Campaign-wide, does not reset between missions
+var single_shot_kills_since_drop := 0
 var active_multipliers: Array[Dictionary] = [] # Each pickup has its own expiry
 var target_kills := 0
 var waves_spawned := 0
@@ -270,7 +273,7 @@ func _process(delta: float) -> void:
 	update_effects(delta)
 	if lives <= 0:
 		finish_run(false)
-	elif waves_spawned == WAVES_PER_LEVEL and enemies.is_empty():
+	elif waves_spawned == WAVES_PER_LEVEL and enemies.is_empty() and not has_double_shot_drop():
 		if boss_active:
 			if boss.is_empty():
 				complete_level()
@@ -521,6 +524,7 @@ func update_bullets(delta: float) -> void:
 					enemies.remove_at(target_index)
 					kills += 1
 					total_kills += 1
+					try_drop_double_shot(enemy_pos)
 					score += 100 * score_multiplier()
 					if total_kills % 30 == 0:
 						drop_score_multiplier(enemy_pos)
@@ -558,6 +562,25 @@ func drop_scrap(pos: Vector2, amount: int) -> void:
 	for i in range(amount):
 		drops.append({"pos": pos + Vector2(randf_range(-25.0, 25.0), randf_range(-20.0, 20.0)), "value": 10 if amount == 1 else 20})
 
+func has_double_shot_drop() -> bool:
+	for pickup in drops:
+		if pickup.get("kind", "scrap") == "double_shot":
+			return true
+	return false
+
+func try_drop_double_shot(pos: Vector2) -> void:
+	# Limited to the single-shot stage; no duplicate Double Shot pickups.
+	if damage_level >= 3 or has_double_shot_drop():
+		return
+	single_shot_kills_since_drop += 1
+	if randf() < DOUBLE_DROP_CHANCE or single_shot_kills_since_drop >= DOUBLE_DROP_PITY_KILLS:
+		single_shot_kills_since_drop = 0
+		drops.append({
+			"kind": "double_shot",
+			"pos": pos,
+			"fall_speed": 230.0
+		})
+
 func score_multiplier() -> int:
 	# Stack additively: x2 plus x6 results in x8, never x12.
 	var total := 0
@@ -592,7 +615,12 @@ func update_pickups(delta: float) -> void:
 		pos.y += float(drops[i].get("fall_speed", 115.0)) * delta
 		drops[i]["pos"] = pos
 		if pos.distance_to(Vector2(player_x, PLAYER_Y)) < 34.0:
-			if drops[i].get("kind", "scrap") == "multiplier":
+			if drops[i].get("kind", "scrap") == "double_shot":
+				if damage_level < 3:
+					damage_level = 3 # Permanent unlock: shop now shows OWNED.
+					single_shot_kills_since_drop = 0
+					explosions.append({"pos": Vector2(player_x, PLAYER_Y), "time": 0.32})
+			elif drops[i].get("kind", "scrap") == "multiplier":
 				active_multipliers.append({
 					"factor": int(drops[i]["factor"]),
 					"time": randf_range(10.0, 15.0)
@@ -767,6 +795,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			score = 0
 			scrap = 0
 			total_kills = 0
+			single_shot_kills_since_drop = 0
 			active_multipliers.clear()
 			level = 1
 			damage_level = 0
@@ -897,6 +926,10 @@ func _draw() -> void:
 			draw_circle(pos, 21.0, Color(0.75, 0.32, 0.97))
 			draw_arc(pos, 20.0, 0.0, TAU, 28, Color(1.0, 0.84, 0.3), 3.0)
 			text_at("x%d" % int(drop["factor"]), pos.x - 15.0, pos.y + 7.0, 22, Color.WHITE)
+		elif drop.get("kind", "scrap") == "double_shot":
+			draw_circle(pos, 22.0, Color(0.08, 0.27, 0.52))
+			draw_arc(pos, 21.0, 0.0, TAU, 32, Color(0.35, 0.78, 1.0), 4.0)
+			text_at("D", pos.x - 9.0, pos.y + 9.0, 28, Color(0.65, 0.94, 1.0))
 		else:
 			draw_circle(pos, 9.0, Color(0.95, 0.82, 0.25))
 			draw_circle(pos, 4.0, Color(0.45, 0.3, 0.08))
