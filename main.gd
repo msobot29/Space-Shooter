@@ -56,6 +56,8 @@ var spin_countdown := 0.0
 var spin_rotation := 0.0
 var level_time := 0.0
 var kills := 0
+var total_kills := 0 # Campaign-wide, does not reset between missions
+var active_multipliers: Array[Dictionary] = [] # Each pickup has its own expiry
 var target_kills := 0
 var waves_spawned := 0
 var wave_path_ids: Array[int] = []
@@ -219,6 +221,7 @@ func _process(delta: float) -> void:
 	update_boss(delta)
 	update_bullets(delta)
 	update_pickups(delta)
+	update_multiplier_timers(delta)
 	update_effects(delta)
 	if lives <= 0:
 		state = "gameover"
@@ -368,7 +371,7 @@ func update_bullets(delta: float) -> void:
 					boss["hp"] = maxf(0.0, float(boss["hp"]) - (2.0 + damage_level))
 				explosions.append({"pos": shot, "time": 0.25})
 				if boss_shields == 0 and float(boss["hp"]) <= 0.0:
-					score += 2500
+					score += 2500 * score_multiplier()
 					scrap += 300 # Award immediately because the stage ends on victory.
 					boss.clear()
 		elif not boss_active:
@@ -380,7 +383,10 @@ func update_bullets(delta: float) -> void:
 					if int(enemies[j]["hp"]) <= 0:
 						enemies.remove_at(j)
 						kills += 1
-						score += 100
+						total_kills += 1
+						score += 100 * score_multiplier()
+						if total_kills % 30 == 0:
+							drop_score_multiplier(pos)
 						scrap += 25 # Guaranteed mission income; drops are bonus Scrap.
 						explosions.append({"pos": pos, "time": 0.3})
 						if randf() < 0.85:
@@ -416,13 +422,47 @@ func drop_scrap(pos: Vector2, amount: int) -> void:
 	for i in range(amount):
 		drops.append({"pos": pos + Vector2(randf_range(-25.0, 25.0), randf_range(-20.0, 20.0)), "value": 10 if amount == 1 else 20})
 
+func score_multiplier() -> int:
+	# Stack additively: x2 plus x6 results in x8, never x12.
+	var total := 0
+	for bonus in active_multipliers:
+		total += int(bonus["factor"])
+	return maxi(1, total)
+
+func multiplier_time_left() -> float:
+	var remaining := 0.0
+	for bonus in active_multipliers:
+		remaining = maxf(remaining, float(bonus["time"]))
+	return remaining
+
+func drop_score_multiplier(pos: Vector2) -> void:
+	var factor: int = [2, 4, 6].pick_random()
+	drops.append({
+		"pos": pos,
+		"kind": "multiplier",
+		"factor": factor,
+		"fall_speed": 135.0
+	})
+
+func update_multiplier_timers(delta: float) -> void:
+	for i in range(active_multipliers.size() - 1, -1, -1):
+		active_multipliers[i]["time"] = float(active_multipliers[i]["time"]) - delta
+		if float(active_multipliers[i]["time"]) <= 0.0:
+			active_multipliers.remove_at(i)
+
 func update_pickups(delta: float) -> void:
 	for i in range(drops.size() - 1, -1, -1):
 		var pos: Vector2 = drops[i]["pos"]
-		pos.y += 115.0 * delta
+		pos.y += float(drops[i].get("fall_speed", 115.0)) * delta
 		drops[i]["pos"] = pos
 		if pos.distance_to(Vector2(player_x, PLAYER_Y)) < 34.0:
-			scrap += int(drops[i]["value"])
+			if drops[i].get("kind", "scrap") == "multiplier":
+				active_multipliers.append({
+					"factor": int(drops[i]["factor"]),
+					"time": randf_range(10.0, 15.0)
+				})
+			else:
+				scrap += int(drops[i]["value"])
 			drops.remove_at(i)
 		elif pos.y > H:
 			drops.remove_at(i)
@@ -501,6 +541,8 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			lives = 3
 			score = 0
 			scrap = 0
+			total_kills = 0
+			active_multipliers.clear()
 			level = 1
 			damage_level = 0
 			rate_level = 0
@@ -550,16 +592,20 @@ func _draw() -> void:
 	text_at("CROATIA %d/5  WAVE %d/2  SCORE %d" % [level, waves_spawned, score], 20, 35)
 	text_at("LIVES %d       SCRAP %d" % [lives, scrap], 20, 66, 21, Color(0.8, 0.95, 0.7))
 	if ability_time > 0.0:
-		text_at("X SHIELD: %.1fs" % ability_time, 20, 96, 19, Color(0.3, 1.0, 1.0))
+		text_at("R SHIELD: %.1fs" % ability_time, 20, 96, 19, Color(0.3, 1.0, 1.0))
 	elif ability_cooldown > 0.0:
-		text_at("X RECHARGE: %.1fs" % ability_cooldown, 20, 96, 19, Color(0.9, 0.75, 0.5))
+		text_at("R RECHARGE: %.1fs" % ability_cooldown, 20, 96, 19, Color(0.9, 0.75, 0.5))
 	else:
-		text_at("X SHIELD READY (Lv.%d)" % ability_level, 20, 96, 19, Color(0.4, 1.0, 0.7))
+		text_at("R SHIELD READY (Lv.%d)" % ability_level, 20, 96, 19, Color(0.4, 1.0, 0.7))
 	# Compact Warblade-inspired S/F status indicators; no large box obscuring enemies.
 	draw_rect(Rect2(14, 111, 291, 82), Color(0.05, 0.11, 0.2, 0.80))
 	draw_stat_meter("SPEED", speed_level, 4, 25, 135, Color(0.24, 0.7, 1.0))
 	draw_stat_meter("FIRE", rate_level, 4, 25, 162, Color(1.0, 0.38, 0.3))
 	text_at("TAB - SHIP STATUS", 27, 183, 14, Color(0.7, 0.85, 0.98))
+	if not active_multipliers.is_empty():
+		draw_rect(Rect2(369, 108, 334, 61), Color(0.17, 0.10, 0.26, 0.90))
+		text_at("SCORE x%d" % score_multiplier(), 382, 135, 24, Color(1.0, 0.85, 0.35))
+		text_at("%.1fs remaining" % multiplier_time_left(), 383, 158, 17, Color(0.95, 0.85, 1.0))
 	if state == "playing":
 		if invulnerable <= 0.0 or int(Time.get_ticks_msec() / 100) % 2 == 0:
 			var ship := PackedVector2Array([Vector2(player_x, PLAYER_Y - 36), Vector2(player_x - 27, PLAYER_Y + 23), Vector2(player_x, PLAYER_Y + 12), Vector2(player_x + 27, PLAYER_Y + 23)])
@@ -612,7 +658,7 @@ func _draw() -> void:
 		draw_circle(pos, 25.0, Color(0.9, 0.2, 0.2) if boss_shields == 0 else Color(0.2, 0.65, 1.0))
 		if spin_countdown > 0.0:
 			draw_arc(pos, 106.0, 0.0, TAU, 64, Color(1.0, 0.25, 0.65, 0.9), 5.0)
-			text_at("360 ATTACK!  X SHIELD!", 201, 230, 25, Color(1.0, 0.5, 0.65))
+			text_at("360 ATTACK!  R SHIELD!", 201, 230, 25, Color(1.0, 0.5, 0.65))
 		if boss_warning_time > 0.0:
 			draw_rect(Rect2(boss_warning_x - 25.0, 215.0, 50.0, H - 295.0), Color(1.0, 0.16, 0.1, 0.16))
 			draw_line(Vector2(boss_warning_x, 215.0), Vector2(boss_warning_x, H - 80.0), Color(1.0, 0.35, 0.25, 0.7), 2.0)
@@ -621,8 +667,13 @@ func _draw() -> void:
 		text_at("MINI BOSS  |  SHIELD %d" % boss_shields, 226, 118, 18)
 	for drop in drops:
 		var pos: Vector2 = drop["pos"]
-		draw_circle(pos, 9.0, Color(0.95, 0.82, 0.25))
-		draw_circle(pos, 4.0, Color(0.45, 0.3, 0.08))
+		if drop.get("kind", "scrap") == "multiplier":
+			draw_circle(pos, 21.0, Color(0.75, 0.32, 0.97))
+			draw_arc(pos, 20.0, 0.0, TAU, 28, Color(1.0, 0.84, 0.3), 3.0)
+			text_at("x%d" % int(drop["factor"]), pos.x - 15.0, pos.y + 7.0, 22, Color.WHITE)
+		else:
+			draw_circle(pos, 9.0, Color(0.95, 0.82, 0.25))
+			draw_circle(pos, 4.0, Color(0.45, 0.3, 0.08))
 	for effect in explosions:
 		var pos: Vector2 = effect["pos"]
 		draw_arc(pos, 30.0 * float(effect["time"]) / 0.3 + 8.0, 0, TAU, 20, Color(1.0, 0.68, 0.2), 4.0)
