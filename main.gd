@@ -13,6 +13,8 @@ const SPIN_GAP_PRIMARY := 0.145 # Smaller dodge corridor than the original 0.22
 const SPIN_GAP_SECONDARY := 0.12 # Smaller than original 0.19
 const BULLET_SPEED := 820.0
 const MAX_LEVEL := 5
+const HIGH_SCORE_FILE := "user://highscores.cfg"
+const HIGH_SCORE_LIMIT := 10
 const ABILITY_COOLDOWN := 10.0 # Starts after the shield expires
 const WAVE_DELAY := 5.0
 const ENEMIES_PER_WAVE := 10
@@ -34,6 +36,10 @@ var ability_cooldown := 0.0
 var state := "playing" # playing, shop, gameover, victory
 var show_stats_modal := false
 var game_paused := false
+var high_scores: Array[Dictionary] = []
+var score_name_field: LineEdit
+var awaiting_score_name := false
+var new_personal_record := false
 var enemies: Array[Dictionary] = []
 var player_bullets: Array[Dictionary] = [] # Each shot stores pos and velocity
 var enemy_bullets: Array[Vector2] = []
@@ -68,6 +74,15 @@ var boss_pending := false
 func _ready() -> void:
 	randomize()
 	font = ThemeDB.fallback_font
+	load_high_scores()
+	score_name_field = LineEdit.new()
+	score_name_field.position = Vector2(226, 724)
+	score_name_field.size = Vector2(268, 43)
+	score_name_field.placeholder_text = "Your pilot name"
+	score_name_field.max_length = 12
+	score_name_field.text_submitted.connect(_on_score_name_submitted)
+	add_child(score_name_field)
+	score_name_field.hide()
 	for i in range(110):
 		stars.append(Vector2(randf_range(0.0, W), randf_range(0.0, H)))
 	start_level()
@@ -76,6 +91,11 @@ func start_level() -> void:
 	state = "playing"
 	show_stats_modal = false
 	game_paused = false
+	awaiting_score_name = false
+	new_personal_record = false
+	if score_name_field != null:
+		score_name_field.hide()
+	score_name_field.release_focus()
 	enemies.clear()
 	player_bullets.clear()
 	enemy_bullets.clear()
@@ -228,7 +248,7 @@ func _process(delta: float) -> void:
 	update_multiplier_timers(delta)
 	update_effects(delta)
 	if lives <= 0:
-		state = "gameover"
+		finish_run(false)
 	elif waves_spawned == WAVES_PER_LEVEL and enemies.is_empty():
 		if boss_active:
 			if boss.is_empty():
@@ -523,9 +543,89 @@ func update_effects(delta: float) -> void:
 
 func complete_level() -> void:
 	if level == MAX_LEVEL:
-		state = "victory"
+		finish_run(true)
 	else:
 		state = "shop"
+
+
+func compare_high_scores(a: Dictionary, b: Dictionary) -> bool:
+	return int(a["score"]) > int(b["score"])
+
+func load_high_scores() -> void:
+	high_scores.clear()
+	var config := ConfigFile.new()
+	if config.load(HIGH_SCORE_FILE) != OK:
+		return
+	var stored: Variant = config.get_value("leaderboard", "entries", [])
+	if not stored is Array:
+		return
+	for item in stored:
+		if not item is Dictionary:
+			continue
+		if not item.has("name") or not item.has("score"):
+			continue
+		var points := maxi(0, int(item["score"]))
+		var pilot := String(item["name"]).strip_edges().substr(0, 12)
+		if points > 0 and not pilot.is_empty():
+			high_scores.append({"name": pilot, "score": points})
+	high_scores.sort_custom(compare_high_scores)
+	if high_scores.size() > HIGH_SCORE_LIMIT:
+		high_scores.resize(HIGH_SCORE_LIMIT)
+
+func save_high_scores() -> void:
+	var config := ConfigFile.new()
+	config.set_value("leaderboard", "entries", high_scores)
+	var error := config.save(HIGH_SCORE_FILE)
+	if error != OK:
+		push_warning("Could not save local high scores: %d" % error)
+
+func qualifies_for_high_scores(points: int) -> bool:
+	return points > 0 and (high_scores.size() < HIGH_SCORE_LIMIT or points > int(high_scores[HIGH_SCORE_LIMIT - 1]["score"]))
+
+func finish_run(won: bool) -> void:
+	state = "victory" if won else "gameover"
+	new_personal_record = score > 0 and (high_scores.is_empty() or score > int(high_scores[0]["score"]))
+	awaiting_score_name = qualifies_for_high_scores(score)
+	if awaiting_score_name:
+		score_name_field.text = ""
+		score_name_field.show()
+		score_name_field.grab_focus()
+
+func _on_score_name_submitted(player_name: String) -> void:
+	if not awaiting_score_name:
+		return
+	var clean_name := player_name.strip_edges().substr(0, 12)
+	if clean_name.is_empty():
+		clean_name = "PILOT"
+	high_scores.append({"name": clean_name, "score": score})
+	high_scores.sort_custom(compare_high_scores)
+	if high_scores.size() > HIGH_SCORE_LIMIT:
+		high_scores.resize(HIGH_SCORE_LIMIT)
+	save_high_scores()
+	awaiting_score_name = false
+	score_name_field.hide()
+	score_name_field.release_focus()
+	queue_redraw()
+
+func draw_leaderboard() -> void:
+	draw_rect(Rect2(75, 208, 570, 605), Color(0.04, 0.09, 0.20, 0.97))
+	text_at("TOP 10 HIGH SCORES", 175, 258, 30, Color(1.0, 0.85, 0.42))
+	text_at("RANK      PILOT               SCORE", 118, 306, 18, Color(0.60, 0.80, 1.0))
+	for index in range(HIGH_SCORE_LIMIT):
+		var y := 343 + index * 32
+		if index < high_scores.size():
+			var item: Dictionary = high_scores[index]
+			text_at("%02d" % (index + 1), 122, y, 18, Color(0.78, 0.86, 1.0))
+			text_at(String(item["name"]), 223, y, 18, Color(0.88, 1.0, 0.85))
+			text_at("%d" % int(item["score"]), 486, y, 18, Color(1.0, 0.91, 0.55))
+		else:
+			text_at("%02d        ---" % (index + 1), 122, y, 18, Color(0.38, 0.48, 0.62))
+	if awaiting_score_name:
+		text_at("NEW HIGH SCORE!" if new_personal_record else "TOP 10 QUALIFIED!", 235, 698, 23, Color(0.50, 1.0, 0.72))
+		text_at("Enter name and press ENTER", 213, 792, 19, Color(0.75, 0.91, 1.0))
+	else:
+		text_at("Your score: %d" % score, 254, 738, 22, Color(1.0, 0.87, 0.60))
+		text_at("ENTER - New game", 257, 781, 21, Color(0.55, 0.89, 1.0))
 
 const DOUBLE_SHOT_PRICE := 540
 const TRIPLE_SHOT_PRICE := 1580
@@ -585,6 +685,8 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			ability_time = float(ability_level * 2)
 			ability_cooldown = 0.0
 	elif state == "gameover" or state == "victory":
+		if awaiting_score_name:
+			return
 		if event.keycode == KEY_ENTER or event.keycode == KEY_KP_ENTER:
 			lives = 3
 			score = 0
@@ -754,12 +856,12 @@ func _draw() -> void:
 		text_at("FIRE RATE  %.2f shots/s  Lv.%d/4" % [shots_per_second(), rate_level], 105, 640, 17, Color(1.0, 0.65, 0.5))
 		text_at("%s SHOT  |  SHIELD Lv.%d/3" % [equipped_weapon_name(), ability_level], 105, 664, 17, Color(0.6, 0.96, 0.76))
 		text_at("ENTER - Next mission", 185, 707, 26, Color(0.4, 0.9, 1.0))
-	elif state == "gameover":
-		text_at("GAME OVER", 195, 440, 52, Color(1.0, 0.35, 0.4))
-		text_at("Press ENTER to restart", 205, 500, 24)
-	elif state == "victory":
-		text_at("CROATIA PROTOTYPE CLEARED!", 85, 435, 31, Color(0.45, 1.0, 0.7))
-		text_at("Press ENTER to play again", 193, 490, 24)
+	elif state == "gameover" or state == "victory":
+		draw_leaderboard()
+		if state == "victory":
+			text_at("CROATIA CLEARED!", 214, 174, 29, Color(0.45, 1.0, 0.7))
+		else:
+			text_at("GAME OVER", 258, 174, 29, Color(1.0, 0.35, 0.4))
 	if show_stats_modal and state == "playing":
 		draw_ship_status_modal()
 	if game_paused and state == "playing":
