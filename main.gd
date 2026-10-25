@@ -8,6 +8,7 @@ const PLAYER_Y := 840.0
 const SPEED := 470.0
 const BULLET_SPEED := 820.0
 const MAX_LEVEL := 5
+const ABILITY_COOLDOWN := 18.0 # Seconds from activation until X is ready again
 
 var font: Font
 var stars: Array[Vector2] = []
@@ -19,6 +20,9 @@ var level := 1
 var damage_level := 0
 var rate_level := 0
 var armor_level := 0
+var ability_level := 1 # 1/2/3 = 2/4/6 seconds
+var ability_time := 0.0
+var ability_cooldown := 0.0
 var state := "playing" # playing, shop, gameover, victory
 var enemies: Array[Dictionary] = []
 var player_bullets: Array[Vector2] = []
@@ -63,6 +67,8 @@ func start_level() -> void:
 	boss_fire_clock = 1.0
 	spawn_clock = 0.0
 	invulnerable = 1.0
+	ability_time = 0.0
+	ability_cooldown = 0.0 # Ready again at the beginning of a mission.
 	level_time = 0.0
 	kills = 0
 	target_kills = 8 + level * 4
@@ -83,6 +89,8 @@ func _process(delta: float) -> void:
 		return
 	level_time += delta
 	invulnerable = maxf(0.0, invulnerable - delta)
+	ability_time = maxf(0.0, ability_time - delta)
+	ability_cooldown = maxf(0.0, ability_cooldown - delta)
 	update_player(delta)
 	update_enemies(delta)
 	update_boss(delta)
@@ -106,7 +114,7 @@ func update_player(delta: float) -> void:
 		move += 1.0
 	player_x = clampf(player_x + clampf(move, -1.0, 1.0) * SPEED * delta, 28.0, W - 28.0)
 	fire_clock -= delta
-	if (Input.is_key_pressed(KEY_SPACE) or Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)) and fire_clock <= 0.0:
+	if (Input.is_key_pressed(KEY_B) or Input.is_key_pressed(KEY_SPACE) or Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)) and fire_clock <= 0.0:
 		player_bullets.append(Vector2(player_x, PLAYER_Y - 34.0))
 		fire_clock = maxf(0.085, 0.22 - rate_level * 0.035)
 
@@ -205,7 +213,7 @@ func update_bullets(delta: float) -> void:
 			take_damage()
 
 func take_damage() -> void:
-	if invulnerable > 0.0:
+	if invulnerable > 0.0 or ability_time > 0.0:
 		return
 	lives -= 1
 	invulnerable = 1.7 + armor_level * 0.4
@@ -243,10 +251,11 @@ func upgrade_cost(kind: int) -> int:
 		1: return 80 + damage_level * 100
 		2: return 80 + rate_level * 100
 		3: return 100 + armor_level * 130
+		4: return 160 + (ability_level - 1) * 240
 	return 99999
 
 func buy_upgrade(kind: int) -> void:
-	var capped := (kind == 1 and damage_level >= 4) or (kind == 2 and rate_level >= 4) or (kind == 3 and armor_level >= 3)
+	var capped := (kind == 1 and damage_level >= 4) or (kind == 2 and rate_level >= 4) or (kind == 3 and armor_level >= 3) or (kind == 4 and ability_level >= 3)
 	if capped or scrap < upgrade_cost(kind):
 		return
 	scrap -= upgrade_cost(kind)
@@ -254,6 +263,7 @@ func buy_upgrade(kind: int) -> void:
 		1: damage_level += 1
 		2: rate_level += 1
 		3: armor_level += 1
+		4: ability_level += 1
 		   
 func _unhandled_key_input(event: InputEvent) -> void:
 	if not event is InputEventKey or not event.pressed or event.echo:
@@ -263,9 +273,14 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			KEY_1: buy_upgrade(1)
 			KEY_2: buy_upgrade(2)
 			KEY_3: buy_upgrade(3)
+			KEY_4: buy_upgrade(4)
 			KEY_ENTER, KEY_KP_ENTER:
 				level += 1
 				start_level()
+	elif state == "playing":
+		if event.keycode == KEY_X and ability_cooldown <= 0.0:
+			ability_time = float(ability_level * 2)
+			ability_cooldown = ABILITY_COOLDOWN
 	elif state == "gameover" or state == "victory":
 		if event.keycode == KEY_ENTER or event.keycode == KEY_KP_ENTER:
 			lives = 3
@@ -275,6 +290,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			damage_level = 0
 			rate_level = 0
 			armor_level = 0
+			ability_level = 1
 			start_level()
 	queue_redraw()
 
@@ -286,11 +302,19 @@ func _draw() -> void:
 		draw_circle(star, 1.5, Color(0.45, 0.65, 0.9, 0.55))
 	text_at("CROATIA  %d/5       SCORE %d" % [level, score], 20, 35)
 	text_at("LIVES %d       SCRAP %d" % [lives, scrap], 20, 66, 21, Color(0.8, 0.95, 0.7))
+	if ability_time > 0.0:
+		text_at("X SHIELD: %.1fs" % ability_time, 20, 96, 19, Color(0.3, 1.0, 1.0))
+	elif ability_cooldown > 0.0:
+		text_at("X RECHARGE: %.1fs" % ability_cooldown, 20, 96, 19, Color(0.9, 0.75, 0.5))
+	else:
+		text_at("X SHIELD READY (Lv.%d)" % ability_level, 20, 96, 19, Color(0.4, 1.0, 0.7))
 	if state == "playing":
 		if invulnerable <= 0.0 or int(Time.get_ticks_msec() / 100) % 2 == 0:
 			var ship := PackedVector2Array([Vector2(player_x, PLAYER_Y - 36), Vector2(player_x - 27, PLAYER_Y + 23), Vector2(player_x, PLAYER_Y + 12), Vector2(player_x + 27, PLAYER_Y + 23)])
 			draw_colored_polygon(ship, Color(0.2, 0.8, 1.0))
-			draw_circle(Vector2(player_x, PLAYER_Y + 3), 7.0, Color(1.0, 0.9, 0.3))
+				draw_circle(Vector2(player_x, PLAYER_Y + 3), 7.0, Color(1.0, 0.9, 0.3))
+		if ability_time > 0.0:
+			draw_arc(Vector2(player_x, PLAYER_Y), 43.0, 0.0, TAU, 48, Color(0.3, 0.95, 1.0, 0.95), 5.0)
 	for shot in player_bullets:
 		draw_rect(Rect2(shot.x - 3.0, shot.y - 13.0, 6.0, 22.0), Color(1.0, 0.92, 0.25))
 	for shot in enemy_bullets:
@@ -319,17 +343,18 @@ func _draw() -> void:
 		var pos: Vector2 = effect["pos"]
 		draw_arc(pos, 30.0 * float(effect["time"]) / 0.3 + 8.0, 0, TAU, 20, Color(1.0, 0.68, 0.2), 4.0)
 	if state == "shop":
-		draw_rect(Rect2(70, 250, 580, 430), Color(0.07, 0.12, 0.23, 0.96))
+		draw_rect(Rect2(70, 218, 580, 495), Color(0.07, 0.12, 0.23, 0.96))
 		text_at("MISSION COMPLETE!", 198, 310, 32)
 		text_at("SCRAP: %d" % scrap, 265, 360, 26, Color(0.95, 0.85, 0.3))
 		text_at("1 - Weapon damage Lv.%d   (%d)" % [damage_level, upgrade_cost(1)], 120, 430, 23)
 		text_at("2 - Fire rate Lv.%d       (%d)" % [rate_level, upgrade_cost(2)], 120, 490, 23)
-		text_at("3 - Armor Lv.%d           (%d)" % [armor_level, upgrade_cost(3)], 120, 550, 23)
-		text_at("ENTER - Next mission", 185, 630, 26, Color(0.4, 0.9, 1.0))
+		text_at("3 - Armor Lv.%d           (%d)" % [armor_level, upgrade_cost(3)], 120, 540, 23)
+		text_at("4 - X shield Lv.%d / 3   (%d)" % [ability_level, upgrade_cost(4)], 120, 590, 23)
+		text_at("ENTER - Next mission", 185, 660, 26, Color(0.4, 0.9, 1.0))
 	elif state == "gameover":
 		text_at("GAME OVER", 195, 440, 52, Color(1.0, 0.35, 0.4))
 		text_at("Press ENTER to restart", 205, 500, 24)
 	elif state == "victory":
 		text_at("CROATIA PROTOTYPE CLEARED!", 85, 435, 31, Color(0.45, 1.0, 0.7))
 		text_at("Press ENTER to play again", 193, 490, 24)
-	text_at("A/D or arrows: move    SPACE: fire", 22, H - 22, 19, Color(0.65, 0.8, 0.95))
+	text_at("A/D: move    B/SPACE: fire    X: shield", 22, H - 22, 19, Color(0.65, 0.8, 0.95))
