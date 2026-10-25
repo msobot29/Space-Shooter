@@ -602,7 +602,8 @@ func update_bullets(delta: float) -> void:
 		if boss_active and not boss.is_empty():
 			var boss_previous: Vector2 = boss.get("prev_pos", boss["pos"])
 			var boss_current: Vector2 = boss["pos"]
-			var hit_t := swept_hit_fraction(previous, shot, boss_previous, boss_current, 69.0)
+			var boss_radius := 108.0 if level == MAX_LEVEL else 69.0
+			var hit_t := swept_hit_fraction(previous, shot, boss_previous, boss_current, boss_radius)
 			if hit_t >= 0.0:
 				boss_hit = true
 				first_hit = hit_t
@@ -699,7 +700,7 @@ func drop_life_orb(pos: Vector2) -> void:
 
 func collect_life_orb(orb_index: int) -> void:
 	var bit := 1 << orb_index
-	if collected_orb_mask & bit != 0:
+	if (collected_orb_mask & bit) != 0:
 		return
 	collected_orb_mask |= bit
 	if collected_orb_mask == 15:
@@ -1087,7 +1088,8 @@ func _draw() -> void:
 			draw_line(Vector2(boss_warning_x, 215.0), Vector2(boss_warning_x, H - 80.0), Color(1.0, 0.35, 0.25, 0.7), 2.0)
 		draw_rect(Rect2(150, 85, 420, 12), Color(0.25, 0.25, 0.35))
 		draw_rect(Rect2(150, 85, 420 * float(boss["hp"]) / float(boss["max_hp"]), 12), Color(0.9, 0.25, 0.3))
-		text_at("ZONE GUARDIAN  |  SHIELD %d/2: %d" % [boss_shield_round, boss_shields] if level == MAX_LEVEL else "CITY GUARDIAN  |  SHIELD %d" % boss_shields, 160, 118, 18)
+		var boss_status := "ZONE GUARDIAN | SHIELD ROUND %d/2: %d" % [boss_shield_round, boss_shields] if level == MAX_LEVEL else "CITY GUARDIAN | SHIELD %d" % boss_shields
+		text_at(boss_status, 155, 118, 18)
 		if level == MAX_LEVEL and storm_warning_time > 0.0:
 			for lane in range(9):
 				if lane == storm_safe_lane:
