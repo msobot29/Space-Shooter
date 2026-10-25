@@ -8,7 +8,7 @@ const PLAYER_Y := 840.0
 const BASE_SPEED := 295.0
 const SPEED_STEP := 48.0
 const SPIN_WARNING := 1.5
-const SPIN_PROJECTILES := 32
+const SPIN_PROJECTILES := 48
 const BULLET_SPEED := 820.0
 const MAX_LEVEL := 5
 const ABILITY_COOLDOWN := 10.0 # Starts after the shield expires
@@ -284,6 +284,8 @@ func update_boss(delta: float) -> void:
 	if pos.x >= W - 110.0 or pos.x <= 110.0:
 		direction *= -1.0
 	pos.x = clampf(pos.x, 110.0, W - 110.0)
+	# Boss dives toward the player while winding up the radial attack.
+	pos.y = move_toward(pos.y, 395.0 if spin_countdown > 0.0 else 155.0, 230.0 * delta)
 	boss["pos"] = pos
 	boss["direction"] = direction
 	boss_fire_clock -= delta
