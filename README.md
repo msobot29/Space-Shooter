@@ -214,3 +214,20 @@ Engine test still needs confirmation in Godot 4.
 1. Confirm Single Shot yellow, Double Shot blue, and Triple Shot lilac projectiles, including in-motion fan shots.
 2. Confirm the mini-boss 360 ring has visibly narrower passages while still allowing skilled dodges.
 3. Confirm regular hit detection, pause and shields still work.
+
+## Persistent High Scores — Top 10 (latest)
+- At GAME OVER or after clearing Croatia mission 5, the game displays a **Top 10 High Scores** leaderboard.
+- If a completed run has a positive score high enough to make the local Top 10, an editable **pilot name** field appears. Type a name (up to 12 characters) and press **ENTER** to submit. A blank name is saved as **PILOT**.
+- A run beating the previous number-one score displays **NEW HIGH SCORE!**; other qualifying scores display **TOP 10 QUALIFIED!**. After saving, press ENTER again to start a new run.
+- Scores are sorted descending and capped at 10. A tie with the 10th place does not displace an existing score.
+- Records are saved through Godot `ConfigFile` at **`user://highscores.cfg`** and loaded on launch. They survive game restarts on the same device/profile. They are *local*, not shared online, and each installation has its own leaderboard.
+- The in-game HUD also shows **BEST** (highest stored score or current-run score, whichever is higher).
+- Score multipliers already in place affect points awarded during gameplay and therefore the final leaderboard score.
+- No account/login required, and the rest of the gameplay and economy remain unchanged.
+
+### Suggested Godot test
+1. Finish or lose a run with some points. Confirm that a name-entry field appears and the first high score saves.
+2. Restart the game and lose another run; ensure the first result persists and the scores are correctly ordered.
+3. Submit enough scores to exceed 10; verify that only the 10 highest remain, and a lower score does not prompt for a name.
+4. Confirm ENTER submits the name first and only restarts after submission.
+5. Verify the BEST number increases when you exceed the record and multiplier-boosted scores are saved.
