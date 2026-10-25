@@ -143,7 +143,26 @@ func spawn_wave() -> void:
 			var lane := index if is_guard else (index - 2) % 2
 			var formation_x := (155.0 + float(lane) * 120.0) if left else (565.0 - float(lane) * 120.0)
 			var row_y := (505.0 + float(index) * 45.0) if is_guard else (250.0 + float(index - 2) * 67.0)
-			var target_pos := Vector2(formation_x, row_y + float(waves_spawned - 1) * 25.0)
+			# Five distinct formations for missions 6-10, with armored crabs always
+			# in the lower/front rows to protect the lighter enemies.
+			if level >= 6:
+				match level:
+					6: # V wedge: mirrored guards at the tip, back-line on wings.
+						formation_x = (160.0 + float(lane) * 115.0) if left else (560.0 - float(lane) * 115.0)
+						row_y = (505.0 + float(lane) * 46.0) if is_guard else (280.0 + float(index - 2) * 45.0)
+					7: # Tight double columns: layered defenders and rear units.
+						formation_x = (205.0 + float(lane) * 58.0) if left else (515.0 - float(lane) * 58.0)
+						row_y = (485.0 + float(lane) * 55.0) if is_guard else (265.0 + float(index - 2) * 65.0)
+					8: # Crescent: wider rear wings and a compact red shield.
+						formation_x = (170.0 + float(lane) * 130.0) if left else (550.0 - float(lane) * 130.0)
+						row_y = (515.0 + float(lane) * 35.0) if is_guard else (265.0 + absf(float(index - 3)) * 65.0)
+					9: # Pincer: each side approaches around the screen edges.
+						formation_x = (120.0 + float(lane) * 100.0) if left else (600.0 - float(lane) * 100.0)
+						row_y = (505.0 + float(lane) * 40.0) if is_guard else (240.0 + float(index - 2) * 58.0)
+					10: # Crown: shield in the middle, rear units spanning the field.
+						formation_x = (210.0 + float(lane) * 65.0) if left else (510.0 - float(lane) * 65.0)
+						row_y = (520.0 + float(lane) * 40.0) if is_guard else (275.0 + float(index - 2) * 48.0)
+			var target_pos := Vector2(formation_x, row_y + float(waves_spawned - 1) * 20.0)
 			var start_pos := Vector2(-85.0 - float(index) * 35.0 if left else W + 85.0 + float(index) * 35.0, 110.0 + float(index) * 38.0)
 			enemies.append({
 				"pos": start_pos,
@@ -322,14 +341,61 @@ func update_enemies(delta: float) -> void:
 		move_enemy(enemies[i], delta)
 	enemy_fire_clock -= delta
 	if enemy_fire_clock <= 0.0 and not enemies.is_empty():
-		var attacker: Dictionary = enemies[randi_range(0, enemies.size() - 1)]
-		var source: Vector2 = attacker["pos"]
-		if source.x > 15.0 and source.x < W - 15.0:
-			enemy_bullets.append(source + Vector2(0, 18))
-			# Jellyfish fire an additional offset projectile.
-			if int(attacker["kind"]) == 0:
-				enemy_bullets.append(source + Vector2(22, 18))
+		# Attack only after a unit is clearly on screen: no invisible off-screen fire.
+		var candidates: Array[Dictionary] = []
+		for enemy in enemies:
+			var position: Vector2 = enemy["pos"]
+			if position.x > 40.0 and position.x < W - 40.0 and position.y > 110.0:
+				candidates.append(enemy)
+		if not candidates.is_empty():
+			var attacker: Dictionary = candidates.pick_random()
+			var source: Vector2 = attacker["pos"] + Vector2(0, 25)
+			var kind: int = int(attacker["kind"])
+			if level <= 5:
+				enemy_bullets.append(source)
+				if kind == 0:
+					enemy_bullets.append(source + Vector2(22, 0))
+			else:
+				fire_advanced_enemy_pattern(source, kind)
 		enemy_fire_clock = maxf(0.56, 1.43 - float(level) * 0.085)
+
+func launch_enemy_shot(origin: Vector2, velocity: Vector2, tint: Color) -> void:
+	radial_bullets.append({"pos": origin, "velocity": velocity, "color": tint})
+
+func fire_advanced_enemy_pattern(origin: Vector2, kind: int) -> void:
+	# Distinct, readable attacks for the second five-mission block.
+	var aim := (Vector2(player_x, PLAYER_Y) - origin).normalized()
+	var speed := 270.0 + float(level - 6) * 12.0
+	match level:
+		6: # Electric eels: a single accurately aimed green bolt.
+			if kind == 2:
+				launch_enemy_shot(origin, aim * speed, Color(0.5, 1.0, 0.35))
+			else:
+				enemy_bullets.append(origin)
+		7: # Double columns: paired crossing blue bolts.
+			if kind == 0:
+				launch_enemy_shot(origin, aim.rotated(-0.19) * speed, Color(0.38, 0.84, 1.0))
+				launch_enemy_shot(origin, aim.rotated(0.19) * speed, Color(0.38, 0.84, 1.0))
+			else:
+				enemy_bullets.append(origin)
+		8: # Crescent: three-way orange fan only from armored guards.
+			if kind == 1:
+				for angle in [-0.27, 0.0, 0.27]:
+					launch_enemy_shot(origin, aim.rotated(angle) * speed, Color(1.0, 0.64, 0.3))
+			else:
+				enemy_bullets.append(origin)
+		9: # Pincer: two narrow targeted lanes, including the miniboss's guards.
+			if kind == 2:
+				for angle in [-0.11, 0.11]:
+					launch_enemy_shot(origin, aim.rotated(angle) * speed, Color(0.65, 1.0, 0.48))
+			else:
+				enemy_bullets.append(origin)
+		10: # Crown: alternating narrow paired fire and aimed pulses.
+			if kind == 0:
+				for angle in [-0.22, 0.22]:
+					launch_enemy_shot(origin, aim.rotated(angle) * speed, Color(0.65, 0.72, 1.0))
+			else:
+				launch_enemy_shot(origin, aim * speed, Color(1.0, 0.56, 0.44))
 
 func update_boss(delta: float) -> void:
 	if not boss_active or boss.is_empty():
@@ -781,8 +847,8 @@ func _draw() -> void:
 	for shot in enemy_bullets:
 		draw_circle(shot, 7.0, Color(1.0, 0.3, 0.18))
 	for bullet in radial_bullets:
-		draw_circle(bullet["pos"], 9.0, Color(1.0, 0.35, 0.65))
-		draw_circle(bullet["pos"], 4.0, Color(1.0, 0.85, 0.45))
+		draw_circle(bullet["pos"], 9.0, bullet.get("color", Color(1.0, 0.35, 0.65)))
+		draw_circle(bullet["pos"], 4.0, Color(1.0, 0.88, 0.7))
 	for enemy in enemies:
 		var pos: Vector2 = enemy["pos"]
 		match int(enemy["kind"]):
