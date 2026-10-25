@@ -90,3 +90,7 @@ Godot editor validation remains pending.
 - Special 360 spin now happens regularly every three attack decisions: spread -> spin -> aimed attack, repeating. Attack interval: 1.5 seconds in phase 1 / 1.2 seconds in phase 2, excluding 1.5-second spin warning.
 - 48 radial projectile slots with two open corridors to enable skillful dodging. Projectile speed 350 px/s (phase 1), 410 px/s (phase 2).
 - Test both escaping through the gaps and blocking with X Shield. Gaps are intended to improve chances, not guarantee safety.
+
+## Current shop layout
+Keys: 1 Extra Speed, 2 Rate of Fire, 3 Double Shot, 4 Triple Shot, 5 Shield Upgrade.
+Double Shot requires three purchases; then Triple Shot requires three more purchases. Boss health is now 200 HP, with phase two starting at 95 HP. This section supersedes earlier shop key mappings and HP numbers above.
