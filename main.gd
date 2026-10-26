@@ -37,6 +37,16 @@ const DOUBLE_DROP_PITY_KILLS := 18
 
 var font: Font
 var stars: Array[Vector2] = []
+
+# ZADAR - ANIMATED BACKGROUND
+var bg_scroll_far := 0.0
+var bg_scroll_mid := 0.0
+var bg_scroll_near := 0.0
+
+const BG_SPEED_FAR := 22.0
+const BG_SPEED_MID := 48.0
+const BG_SPEED_NEAR := 90.0
+
 var player_x := 360.0
 var lives := 3
 var score := 0
@@ -103,6 +113,78 @@ var target_kills := 0
 var waves_spawned := 0
 var wave_path_ids: Array[int] = []
 var boss_pending := false
+
+
+func update_background(delta: float) -> void:
+	bg_scroll_far = fposmod(bg_scroll_far + BG_SPEED_FAR * delta, H)
+	bg_scroll_mid = fposmod(bg_scroll_mid + BG_SPEED_MID * delta, H)
+	bg_scroll_near = fposmod(bg_scroll_near + BG_SPEED_NEAR * delta, H)
+
+
+func draw_zadar_background() -> void:
+	# Deep Adriatic sea
+	draw_rect(Rect2(0.0, 0.0, W, H), Color(0.025, 0.14, 0.24))
+
+	# Distant moving water
+	for i in range(10):
+		var y := fposmod(float(i) * 120.0 + bg_scroll_far, H + 120.0) - 120.0
+		draw_rect(Rect2(0.0, y, W, 52.0), Color(0.08, 0.26, 0.38, 0.34))
+
+	# Islands moving at medium speed
+	for i in range(5):
+		var y := fposmod(float(i) * 245.0 + bg_scroll_mid, H + 245.0) - 245.0
+		var x := 105.0 if i % 2 == 0 else 440.0
+
+		var shadow := PackedVector2Array([
+			Vector2(x - 78.0, y + 40.0),
+			Vector2(x - 25.0, y),
+			Vector2(x + 60.0, y + 12.0),
+			Vector2(x + 99.0, y + 65.0),
+			Vector2(x + 35.0, y + 105.0),
+			Vector2(x - 68.0, y + 89.0)
+		])
+
+		draw_colored_polygon(shadow, Color(0.08, 0.24, 0.22))
+
+		var island := PackedVector2Array([
+			Vector2(x - 65.0, y + 36.0),
+			Vector2(x - 21.0, y + 10.0),
+			Vector2(x + 51.0, y + 22.0),
+			Vector2(x + 82.0, y + 60.0),
+			Vector2(x + 27.0, y + 91.0),
+			Vector2(x - 52.0, y + 75.0)
+		])
+
+		draw_colored_polygon(island, Color(0.29, 0.40, 0.25))
+
+		draw_line(
+			Vector2(x - 55.0, y + 78.0),
+			Vector2(x + 25.0, y + 95.0),
+			Color(0.78, 0.84, 0.62, 0.45),
+			3.0,
+			true
+		)
+
+	# Fast-moving foam and surface waves
+	for i in range(16):
+		var y := fposmod(float(i) * 85.0 + bg_scroll_near, H + 85.0) - 85.0
+		var x := 40.0 + float((i * 127) % 540)
+
+		draw_line(
+			Vector2(x, y),
+			Vector2(x + 82.0, y + 7.0),
+			Color(0.68, 0.94, 1.0, 0.38),
+			2.0,
+			true
+		)
+
+		draw_line(
+			Vector2(x + 18.0, y + 14.0),
+			Vector2(x + 55.0, y + 17.0),
+			Color(0.75, 0.97, 1.0, 0.23),
+			1.5,
+			true
+		)
 
 func city_name() -> String:
 	var slot := clampi(int((level - 1) / 5), 0, 4)
@@ -523,6 +605,16 @@ func _process(delta: float) -> void:
 	if debug_level_menu or game_paused or show_stats_modal:
 		queue_redraw()
 		return
+	
+	if city_name() == "ZADAR" and state in [
+		"playing",
+		"intermission",
+		"boss_intro",
+		"boss_rewards"
+	]:
+		update_background(delta)
+
+
 	if state == "city_flight":
 		city_flight_time += delta
 		if city_flight_time >= CITY_FLIGHT_SECONDS:
@@ -1298,6 +1390,16 @@ func draw_ship_status_modal() -> void:
 	text_at("TAB - CLOSE / RESUME", 230, 652, 19, Color(0.80, 0.91, 1.0))
 
 func _draw() -> void:
+	
+	if city_name() == "ZADAR" and state in [
+		"playing",
+		"intermission",
+		"boss_intro",
+		"boss_rewards"
+	]:
+		draw_zadar_background()
+
+
 	for star in stars:
 		draw_circle(star, 1.5, Color(0.45, 0.65, 0.9, 0.55))
 	text_at("%s LVL %d/%d WAVE %d/%d SCORE %d" % [city_name(), level, MAX_LEVEL, waves_spawned, waves_for_level(), score], 20, 35, 18)
