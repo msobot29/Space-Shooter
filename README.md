@@ -504,3 +504,16 @@ Reference guides for Warblade document its four-stage mission structure, differe
 5. Unlock Zagreb after the fourth city and check the flight departs from that fourth city's location, then verify mission 25 launches the **1,000 HP final boss without regular enemy waves**.
 6. Test F2 jumping, O God Mode one-shot, orb collection, score multipliers, shop upgrades and no frozen bullets in transitions.
 Godot 4 parser/runtime verification is required after pulling this change.
+
+## Final Zone Guardian: unique pre-fight warning and white orb (latest)
+- **Level 25** uses its own three-line pre-boss announcement: **THE GUARDIAN HAS COME / TO DEAL WITH YOU / PERSONALLY**, replacing the ordinary lieutenant warning. It is reserved for the Zone Guardian; levels 5/10/15/20 still use the lieutenant announcement.
+- Defeating the final boss now **always spawns a large, bright white collectible orb**, including when using **O GOD MODE / ONE SHOT**.
+- Following the final boss's defeat, the player gets the same **eight-second, movement-enabled collection period** as after ordinary city bosses. The screen reads **ZONE GUARDIAN DEFEATED! / COLLECT THE WHITE ORB** before opening the final shop and victory flow.
+- The fifth HUD indicator turns **white** only when the orb is physically collected; it resets when starting a new run or using F2 to test a different level.
+- The **white trophy orb** is distinct from the four colored lieutenant life-orbs; it is not required for, and does not grant, the four-color extra life. Other core gameplay mechanics remain unchanged.
+
+### QA
+1. F2 → level 25: verify *THE GUARDIAN HAS COME TO DEAL WITH YOU PERSONALLY*, not lieutenant dialogue.
+2. Use O to one-shot the final boss: its white orb must drop despite shield bypass.
+3. Move into the orb during the eight-second reward period: the fifth HUD dot should become white, then the final shop should appear.
+4. Verify levels 5/10/15/20 still use lieutenant text and drop red/blue/green/yellow orbs and do not trigger the white orb.
