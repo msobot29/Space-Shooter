@@ -465,3 +465,22 @@ Code changes are committed, but gameplay and Godot parser correctness still need
 5. Finish a debug-jump run: no new Top 10 entry should be saved.
 6. Restart normally after a completed run, and verify standard high-score qualification is available again.
 Code was updated through GitHub; confirm operation in the Godot 4 editor before release.
+
+## Campaign map and Zagreb unlock (latest)
+- On a new normal game, show an **interactive, procedurally illustrated Balkan relief map** before Level 1. The artistic map includes the Adriatic Sea, stylized mountain contour lines and elevation bands, islands, and waterways. It is illustrative artwork, **not a georeferenced or accurately traced geographic/topographic dataset**.
+- Player chooses the first city freely among **Zadar, Rijeka, Split and Osijek**. Click an available city's marker, or cycle choices with LEFT/RIGHT (UP/DOWN also works) and confirm with ENTER. **Zagreb has no marker or label and cannot be chosen** until the other four cities are liberated.
+- Selection triggers a **six-second ship-flight animation** on the map: the ship travels from a staging position toward the chosen city. At destination, that city's five missions begin directly, no initial level countdown.
+- Each city keeps its normal five missions and a guardian at the fifth. After defeating the guardian and leaving the upgrade shop with ENTER, return to the map to select any **remaining** city. Previously liberated cities display a green **[FREE]** label and cannot be selected again.
+- After four different cities have been cleared and the fourth city's shop is exited, the map reveals **ZAGREB** for the first time, with **TIME TO FREE THE ZONE** prominently displayed. Select Zagreb and take a six-second flight to begin the final block, **levels 21–25**. Level 25 still concludes in the 1,000-HP Zone Guardian fight; the final shop leads to victory and High Scores.
+- A dynamic **city_route** determines the order of four freely selected Croatian cities, then Zagreb. Global level numbers remain **1–25** in completion order; the HUD and title use the city name associated with that current block, regardless of selection order.
+- The F2 debug selector remains available and uses a fixed canonical city ordering when jumping directly to a numbered test level; it is independent of the normal campaign map. Debug runs remain excluded from Top 10.
+- Starting an entirely new run after Game Over or victory clears prior route progress and opens the campaign map again.
+
+### QA
+1. Start a new run: see relief map with four cities; **no Zagreb text or marker** anywhere.
+2. Select Rijeka (or another non-default city) via mouse or arrow/ENTER: verify six-second map flight, then LEVEL 1–5 labeled RIJEKA.
+3. Defeat boss in level 5: shop opens; ENTER returns to map, where Rijeka is marked free. Choose another available city, verify its five stages use levels 6–10 and keep purchased upgrades.
+4. Repeat for the third and fourth cities, ensuring no city can be selected twice.
+5. After fourth boss and shop: verify Zagreb marker is **unlocked and visible**, message **TIME TO FREE THE ZONE** appears. Select it, fly six seconds, play levels 21–25 and fight final Zone Guardian.
+6. Check F2 debug level skipping, restart/game over reset, remaining drops after shop and Top 10 behavior.
+Godot 4 runtime verification is required before release.
