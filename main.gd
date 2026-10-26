@@ -88,6 +88,7 @@ var storm_pulses_remaining := 0
 var storm_pulse_time := 0.0
 var storm_safe_lane := 4
 var collected_orb_mask := 0
+var white_orb_collected := false # Final Zagreb guardian trophy, independent of four life-orb colors
 var boss_attack_index := 0
 var boss_warning_time := 0.0
 var boss_warning_x := 360.0
@@ -286,6 +287,7 @@ func jump_to_debug_level() -> void:
 	drops.clear()
 	active_multipliers.clear()
 	collected_orb_mask = 0
+	white_orb_collected = false
 	total_kills = 0
 	single_shot_kills_since_drop = 0
 	score = 0
@@ -483,8 +485,8 @@ func move_enemy(enemy: Dictionary, delta: float) -> void:
 	enemy["pos"] = position
 
 func begin_boss_reward_time() -> void:
-	# City lieutenant defeated. Allow the pilot to reach the colored orb,
-	# but do not force pickup: missed collectibles remain collectible later.
+	# Every guardian, including Zagreb's final boss, leaves an orb.
+	# Give players time to collect it before showing the shop.
 	state = "boss_rewards"
 	boss_reward_time = BOSS_REWARD_SECONDS
 	enemy_bullets.clear()
@@ -590,10 +592,7 @@ func _process(delta: float) -> void:
 		# stay in drops and carry into the next mission as falling objects.
 		if boss_active:
 			if boss.is_empty():
-				if level == MAX_LEVEL:
-					complete_level()
-				else:
-					begin_boss_reward_time()
+				begin_boss_reward_time()
 		elif boss_pending:
 			begin_boss_intro()
 		else:
@@ -881,7 +880,9 @@ func update_bullets(delta: float) -> void:
 				if boss_shields == 0 and float(boss["hp"]) <= 0.0:
 					score += 2500 * score_multiplier()
 					scrap += 300
-					if level < MAX_LEVEL:
+					if level == MAX_LEVEL:
+						drop_white_orb(Vector2(boss["pos"]))
+					else:
 						drop_life_orb(Vector2(boss["pos"]))
 					boss.clear()
 			else:
@@ -946,6 +947,15 @@ func drop_life_orb(pos: Vector2) -> void:
 		"kind": "life_orb",
 		"orb_index": orb_index,
 		"fall_speed": 120.0
+	})
+
+
+func drop_white_orb(pos: Vector2) -> void:
+	# The final Zone Guardian leaves a unique white trophy orb.
+	drops.append({
+		"pos": Vector2(clampf(pos.x, 65.0, W - 65.0), 350.0),
+		"kind": "white_orb",
+		"fall_speed": 100.0
 	})
 
 
@@ -1020,6 +1030,9 @@ func update_pickups(delta: float) -> void:
 					explosions.append({"pos": Vector2(player_x, PLAYER_Y), "time": 0.32})
 			elif drops[i].get("kind", "scrap") == "life_orb":
 				collect_life_orb(int(drops[i]["orb_index"]))
+			elif drops[i].get("kind", "scrap") == "white_orb":
+				white_orb_collected = true
+				explosions.append({"pos": Vector2(player_x, PLAYER_Y), "time": 0.5})
 			elif drops[i].get("kind", "scrap") == "multiplier":
 				active_multipliers.append({
 					"factor": int(drops[i]["factor"]),
@@ -1239,6 +1252,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			city_route.clear()
 			selected_city = 0
 			collected_orb_mask = 0
+			white_orb_collected = false
 			drops.clear() # A new run must not inherit old rewards.
 			level = 1
 			damage_level = 0
@@ -1300,6 +1314,8 @@ func _draw() -> void:
 	for orb_i in range(4):
 		var orb_color: Color = ORB_COLORS[orb_i]
 		draw_circle(Vector2(360.0 + float(orb_i) * 24.0, 59.0), 8.0, orb_color if (collected_orb_mask & (1 << orb_i)) != 0 else Color(0.2, 0.25, 0.34))
+	# Fifth slot tracks only the final white Zone Guardian trophy.
+	draw_circle(Vector2(456.0, 59.0), 9.0, Color.WHITE if white_orb_collected else Color(0.2, 0.25, 0.34))
 	if ability_time > 0.0:
 		text_at("R SHIELD: %.1fs" % ability_time, 20, 96, 19, Color(0.3, 1.0, 1.0))
 	elif ability_cooldown > 0.0:
@@ -1392,6 +1408,10 @@ func _draw() -> void:
 			draw_circle(pos, 21.0, Color(0.75, 0.32, 0.97))
 			draw_arc(pos, 20.0, 0.0, TAU, 28, Color(1.0, 0.84, 0.3), 3.0)
 			text_at("x%d" % int(drop["factor"]), pos.x - 15.0, pos.y + 7.0, 22, Color.WHITE)
+		elif drop.get("kind", "scrap") == "white_orb":
+			draw_circle(pos, 23.0, Color(0.5, 0.78, 1.0, 0.55))
+			draw_circle(pos, 17.0, Color(1.0, 1.0, 1.0))
+			draw_circle(pos + Vector2(-5.0, -6.0), 6.0, Color(0.77, 0.93, 1.0))
 		elif drop.get("kind", "scrap") == "life_orb":
 			var orb_color: Color = ORB_COLORS[int(drop["orb_index"])]
 			draw_circle(pos, 19.0, orb_color.darkened(0.45))
@@ -1409,15 +1429,24 @@ func _draw() -> void:
 		draw_arc(pos, 30.0 * float(effect["time"]) / 0.3 + 8.0, 0, TAU, 20, Color(1.0, 0.68, 0.2), 4.0)
 	if state == "boss_rewards":
 		draw_rect(Rect2(75.0, 209.0, 570.0, 92.0), Color(0.05, 0.1, 0.22, 0.89))
-		text_at("LIEUTENANT DEFEATED!", 156, 244, 27, Color(0.68, 1.0, 0.72))
-		text_at("COLLECT THE ORB - %d s" % int(ceil(boss_reward_time)), 198, 283, 22, Color(1.0, 0.89, 0.46))
+		if level == MAX_LEVEL:
+			text_at("ZONE GUARDIAN DEFEATED!", 118, 244, 27, Color(0.9, 0.98, 1.0))
+			text_at("COLLECT THE WHITE ORB - %d s" % int(ceil(boss_reward_time)), 153, 283, 21, Color(1.0, 1.0, 1.0))
+		else:
+			text_at("LIEUTENANT DEFEATED!", 156, 244, 27, Color(0.68, 1.0, 0.72))
+			text_at("COLLECT THE ORB - %d s" % int(ceil(boss_reward_time)), 198, 283, 22, Color(1.0, 0.89, 0.46))
 	if state == "boss_intro":
 		# Separate lieutenant announcement instead of an abrupt boss spawn.
 		draw_rect(Rect2(42, 338, 636, 190), Color(0.08, 0.07, 0.17, 0.94))
 		draw_rect(Rect2(42, 338, 636, 5), Color(0.8, 0.36, 0.94))
-		text_at("THE GUARDIAN OF THIS ZONE", 85, 403, 29, Color(0.95, 0.85, 1.0))
-		text_at("HAS SENT HIS LIEUTENANT", 103, 445, 28, Color(0.95, 0.85, 1.0))
-		text_at("TO DEAL WITH YOU", 207, 487, 29, Color(1.0, 0.65, 0.75))
+		if level == MAX_LEVEL:
+			text_at("THE GUARDIAN HAS COME", 136, 405, 29, Color(1.0, 0.91, 0.9))
+			text_at("TO DEAL WITH YOU", 198, 448, 29, Color(1.0, 0.74, 0.77))
+			text_at("PERSONALLY", 259, 492, 33, Color(1.0, 0.53, 0.62))
+		else:
+			text_at("THE GUARDIAN OF THIS ZONE", 85, 403, 29, Color(0.95, 0.85, 1.0))
+			text_at("HAS SENT HIS LIEUTENANT", 103, 445, 28, Color(0.95, 0.85, 1.0))
+			text_at("TO DEAL WITH YOU", 207, 487, 29, Color(1.0, 0.65, 0.75))
 	if state == "intermission" and level_transition_time <= LEVEL_TITLE_SECONDS:
 		# First 10 seconds are silent; only show the level title near wave entry.
 		draw_rect(Rect2(144, 369, 432, 114), Color(0.04, 0.10, 0.23, 0.87))
