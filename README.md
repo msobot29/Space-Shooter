@@ -440,3 +440,11 @@ The city name appears in the live HUD and in the centered next-level introductio
 5. On level 25, confirm **1,000 HP**, four shield hits at spawn, shield recharge at 500 HP, large collision target, and a real visible/adaptable safe corridor during Adriatic Storm.
 6. Confirm the zone boss defeat still leads to the final shop, then CROATIA LIBERATED / persistent High Score.
 Code changes are committed, but gameplay and Godot parser correctness still need in-editor testing.
+
+## God Mode: one-shot test damage (latest)
+- Press **O** to turn God Mode on or off. In addition to invulnerability, a **single player bullet hit** now defeats any regular enemy or mini-boss, including the level-25 final Zone Guardian with 1,000 HP.
+- In God Mode, boss shield charges (including both rounds on level 25) are bypassed, so one projectile ends the encounter rather than consuming a shield first.
+- Normal kill score, Scrap and life-orb drops still run; this is useful for checking the 25-level campaign quickly.
+- The HUD reads **GOD MODE / ONE SHOT [O]** while active. When O is switched off, normal weapon damage, boss shield mechanics and life loss apply immediately.
+- QA: Enable O on an armored crab and the level-5 boss, verify a single projectile kills each. Repeat against the level-25 Zone Guardian, confirm final shop/victory works. Turn O off and verify normal HP reductions and shields.
+- This is a local development/testing shortcut, not intended for fair leaderboard scoring.
