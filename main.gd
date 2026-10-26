@@ -254,6 +254,10 @@ func jump_to_debug_level() -> void:
 	# Retain current equipment and God Mode so the target can be tested easily.
 	debug_run = true
 	debug_level_menu = false
+	# Debug run uses canonical city order regardless of campaign route.
+	city_route.clear()
+	for city_index in range(5):
+		city_route.append(city_index)
 	level = clampi(debug_selected_level, 1, MAX_LEVEL)
 	lives = maxi(lives, 3)
 	drops.clear()
@@ -473,6 +477,16 @@ func launch_boss() -> void:
 
 func _process(delta: float) -> void:
 	if debug_level_menu or game_paused or show_stats_modal:
+		queue_redraw()
+		return
+	if state == "city_flight":
+		city_flight_time += delta
+		if city_flight_time >= CITY_FLIGHT_SECONDS:
+			level = (city_route.size() - 1) * 5 + 1
+			start_level()
+		queue_redraw()
+		return
+	if state == "city_select":
 		queue_redraw()
 		return
 	if state == "intermission" or state == "boss_intro":
@@ -1112,6 +1126,16 @@ func _unhandled_key_input(event: InputEvent) -> void:
 				jump_to_debug_level()
 		queue_redraw()
 		return
+	if state == "city_select":
+		match event.keycode:
+			KEY_LEFT, KEY_UP:
+				cycle_city(-1)
+			KEY_RIGHT, KEY_DOWN:
+				cycle_city(1)
+			KEY_ENTER, KEY_KP_ENTER:
+				start_city_flight(selected_city)
+		queue_redraw()
+		return
 	# Test-only invulnerability hotkey: available in any game state.
 	if event.keycode == KEY_O:
 		god_mode = not god_mode
@@ -1129,8 +1153,8 @@ func _unhandled_key_input(event: InputEvent) -> void:
 				if level >= MAX_LEVEL:
 					finish_run(true)
 				else:
-					level += 1
-					begin_level_transition()
+					# Each city ends in its own shop; then return to the map.
+					show_city_map()
 	elif state == "playing" or state == "intermission" or state == "boss_intro":
 		if event.keycode == KEY_P:
 			game_paused = not game_paused
@@ -1156,6 +1180,8 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			single_shot_kills_since_drop = 0
 			active_multipliers.clear()
 			debug_run = false
+			city_route.clear()
+			selected_city = 0
 			collected_orb_mask = 0
 			drops.clear() # A new run must not inherit old rewards.
 			level = 1
@@ -1163,7 +1189,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			rate_level = 0
 			speed_level = 0
 			ability_level = 1
-			start_level()
+			show_city_map()
 	queue_redraw()
 
 func text_at(value: String, x: float, y: float, size: int = 22, color: Color = Color.WHITE) -> void:
@@ -1383,5 +1409,9 @@ func _draw() -> void:
 		text_at("GAME PAUSED", 226, 449, 34, Color(0.9, 0.96, 1.0))
 		text_at("Press P to resume", 228, 508, 23, Color(0.45, 0.9, 1.0))
 	text_at("A/D: move  B/SPACE: fire  R: shield  P: pause  F2: levels", 14, H - 22, 16, Color(0.65, 0.8, 0.95))
+	if state == "city_select":
+		draw_city_map()
+	elif state == "city_flight":
+		draw_city_flight()
 	if debug_level_menu:
 		draw_debug_level_menu()
