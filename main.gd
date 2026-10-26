@@ -14,6 +14,8 @@ const SPIN_GAP_SECONDARY := 0.105 # Slightly narrower than the previous 0.12
 const BULLET_SPEED := 820.0
 const MAX_LEVEL := 25
 const CITY_NAMES := ["ZADAR", "RIJEKA", "SPLIT", "OSIJEK", "ZAGREB"]
+const CITY_POINTS := [Vector2(260, 455), Vector2(238, 357), Vector2(298, 573), Vector2(514, 352), Vector2(376, 309)]
+const CITY_FLIGHT_SECONDS := 6.0
 const HIGH_SCORE_FILE := "user://highscores.cfg"
 const HIGH_SCORE_LIMIT := 10
 const ABILITY_COOLDOWN := 10.0 # Starts after the shield expires
@@ -42,7 +44,10 @@ var speed_level := 0
 var ability_level := 1 # 1/2/3 = 2/4/6 seconds
 var ability_time := 0.0
 var ability_cooldown := 0.0
-var state := "playing" # playing, intermission, boss_intro, shop, gameover, victory
+var state := "city_select" # city_select, city_flight, playing, intermission, boss_intro, shop, gameover, victory
+var city_route: Array[int] = []
+var selected_city := 0
+var city_flight_time := 0.0
 var boss_intro_time := 0.0
 var level_transition_time := 0.0
 var show_stats_modal := false
@@ -94,7 +99,8 @@ var wave_path_ids: Array[int] = []
 var boss_pending := false
 
 func city_name() -> String:
-	return CITY_NAMES[clampi(int((level - 1) / 5), 0, CITY_NAMES.size() - 1)]
+	var slot := clampi(int((level - 1) / 5), 0, 4)
+	return CITY_NAMES[city_route[slot]] if slot < city_route.size() else CITY_NAMES[slot]
 
 func city_mission() -> int:
 	return ((level - 1) % 5) + 1
@@ -113,7 +119,135 @@ func _ready() -> void:
 	score_name_field.hide()
 	for i in range(110):
 		stars.append(Vector2(randf_range(0.0, W), randf_range(0.0, H)))
-	start_level()
+	state = "city_select"
+	queue_redraw()
+
+
+func city_selectable(city_index: int) -> bool:
+	if city_index < 0 or city_index >= 5 or city_route.has(city_index):
+		return false
+	return city_index != 4 or city_route.size() == 4
+
+
+func start_city_flight(city_index: int) -> void:
+	if not city_selectable(city_index):
+		return
+	selected_city = city_index
+	city_route.append(city_index)
+	city_flight_time = 0.0
+	state = "city_flight"
+	game_paused = false
+	show_stats_modal = false
+	queue_redraw()
+
+
+func show_city_map() -> void:
+	state = "city_select"
+	for city_index in range(5):
+		if city_selectable(city_index):
+			selected_city = city_index
+			break
+	queue_redraw()
+
+
+func cycle_city(direction: int) -> void:
+	for offset in range(1, 6):
+		var next_city := posmod(selected_city + direction * offset, 5)
+		if city_selectable(next_city):
+			selected_city = next_city
+			break
+
+
+func _unhandled_input(event: InputEvent) -> void:
+	if state != "city_select" or debug_level_menu:
+		return
+	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+		for city_index in range(CITY_POINTS.size()):
+			if city_selectable(city_index) and event.position.distance_to(CITY_POINTS[city_index]) <= 34.0:
+				start_city_flight(city_index)
+				get_viewport().set_input_as_handled()
+				break
+
+
+func draw_balkan_relief() -> void:
+	# Original illustrative relief, not precision elevation or administrative GIS.
+	draw_rect(Rect2(0, 0, W, H), Color(0.026, 0.09, 0.17))
+	for wave in range(17):
+		var water_line := PackedVector2Array()
+		for step in range(13):
+			water_line.append(Vector2(17.0 + float(step) * 24.0, 210.0 + float(wave) * 37.0 + sin(float(step) * 0.7 + float(wave)) * 5.0))
+		draw_polyline(water_line, Color(0.16, 0.35, 0.49, 0.34), 1.1, true)
+	draw_colored_polygon(PackedVector2Array([
+		Vector2(255, 179), Vector2(398, 180), Vector2(537, 219),
+		Vector2(662, 280), Vector2(682, 417), Vector2(639, 548),
+		Vector2(585, 671), Vector2(545, 804), Vector2(495, 785),
+		Vector2(458, 698), Vector2(387, 621), Vector2(328, 585),
+		Vector2(288, 518), Vector2(265, 451), Vector2(229, 371),
+		Vector2(254, 316), Vector2(246, 240)]), Color(0.29, 0.42, 0.29))
+	draw_colored_polygon(PackedVector2Array([
+		Vector2(269, 236), Vector2(459, 216), Vector2(594, 296),
+		Vector2(531, 371), Vector2(356, 347)]), Color(0.44, 0.54, 0.34))
+	draw_colored_polygon(PackedVector2Array([
+		Vector2(287, 401), Vector2(360, 376), Vector2(441, 444),
+		Vector2(540, 600), Vector2(531, 719), Vector2(474, 675),
+		Vector2(398, 570), Vector2(311, 519)]), Color(0.54, 0.48, 0.32))
+	for ridge in range(7):
+		var shift := float(ridge) * 13.0
+		draw_polyline(PackedVector2Array([
+			Vector2(294.0 + shift, 393.0 + shift),
+			Vector2(345.0 + shift, 439.0 + shift),
+			Vector2(399.0 + shift, 497.0 + shift),
+			Vector2(460.0 + shift, 574.0 + shift)]), Color(0.85, 0.78, 0.55, 0.42), 1.6, true)
+	for island in [Vector2(210, 404), Vector2(222, 474), Vector2(246, 533), Vector2(259, 578)]:
+		draw_circle(island, 7.0, Color(0.60, 0.61, 0.42))
+	draw_polyline(PackedVector2Array([Vector2(316, 314), Vector2(398, 335), Vector2(493, 371), Vector2(574, 386)]), Color(0.31, 0.68, 0.84), 2.5, true)
+	text_at("ADRIATIC SEA", 42, 628, 18, Color(0.52, 0.76, 0.9))
+	text_at("DINARIC ALPS", 400, 540, 17, Color(0.95, 0.87, 0.67))
+	text_at("BALKAN PENINSULA", 422, 754, 17, Color(0.9, 0.94, 0.83))
+
+
+func draw_city_map() -> void:
+	draw_balkan_relief()
+	draw_rect(Rect2(18, 27, 684, 145), Color(0.025, 0.065, 0.14, 0.94))
+	text_at("ADRIATIC UPRISING", 127, 77, 35, Color(0.95, 0.97, 1.0))
+	text_at("SELECT THE NEXT CITY TO LIBERATE", 115, 118, 22, Color(0.65, 0.95, 1.0))
+	text_at("LIBERATED: %d/5" % city_route.size(), 277, 153, 17, Color(0.9, 0.82, 0.56))
+	for city_index in range(5):
+		# Zagreb's marker and name do not exist until four cities are liberated.
+		if city_index == 4 and city_route.size() < 4:
+			continue
+		var point: Vector2 = CITY_POINTS[city_index]
+		var finished := city_route.has(city_index)
+		var chosen := city_selectable(city_index) and selected_city == city_index
+		var tint := Color(0.38, 1.0, 0.61) if finished else Color(1.0, 0.83, 0.32)
+		draw_circle(point, 11.0, tint)
+		draw_arc(point, 21.0 if chosen else 15.0, 0.0, TAU, 28, Color(0.44, 0.91, 1.0) if chosen else tint, 3.0)
+		var label_offset := Vector2(-102, -20) if city_index == 1 else Vector2(18, -13)
+		text_at(String(CITY_NAMES[city_index]) + (" [FREE]" if finished else ""), point.x + label_offset.x, point.y + label_offset.y, 17, tint)
+	if city_route.size() == 4:
+		draw_rect(Rect2(64, 777, 592, 66), Color(0.20, 0.08, 0.20, 0.94))
+		text_at("TIME TO FREE THE ZONE", 134, 819, 31, Color(1.0, 0.80, 0.41))
+	else:
+		text_at("CLICK CITY / LEFT-RIGHT TO CHOOSE / ENTER TO FLY", 42, 828, 19, Color(0.94, 0.96, 1.0))
+	text_at("6-SECOND FLIGHT TO SELECTED CITY", 160, 873, 18, Color(0.7, 0.88, 1.0))
+
+
+func draw_city_flight() -> void:
+	draw_balkan_relief()
+	var destination: Vector2 = CITY_POINTS[selected_city]
+	var fraction := clampf(city_flight_time / CITY_FLIGHT_SECONDS, 0.0, 1.0)
+	var eased := fraction * fraction * (3.0 - 2.0 * fraction)
+	var ship_pos := Vector2(86, 775).lerp(destination, eased)
+	draw_line(Vector2(86, 775), destination, Color(0.60, 0.90, 1.0, 0.6), 3.0, true)
+	draw_circle(destination, 15.0, Color(1.0, 0.78, 0.3))
+	var ship_shape := PackedVector2Array([
+		ship_pos + Vector2(0, -23), ship_pos + Vector2(-17, 15),
+		ship_pos + Vector2(0, 7), ship_pos + Vector2(17, 15)])
+	draw_colored_polygon(ship_shape, Color(0.24, 0.82, 1.0))
+	draw_circle(ship_pos + Vector2(0, 2), 5.0, Color(1.0, 0.91, 0.3))
+	draw_rect(Rect2(38, 35, 644, 93), Color(0.02, 0.07, 0.15, 0.95))
+	text_at("FLYING TO " + String(CITY_NAMES[selected_city]), 119, 96, 35, Color(0.90, 0.96, 1.0))
+
 
 func jump_to_debug_level() -> void:
 	# Start the chosen level immediately, skipping intermission and shop.
