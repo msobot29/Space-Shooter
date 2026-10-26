@@ -624,7 +624,12 @@ func update_bullets(delta: float) -> void:
 			var impact := previous.lerp(shot, first_hit)
 			explosions.append({"pos": impact, "time": 0.16})
 			if boss_hit:
-				if boss_shields > 0:
+				if god_mode:
+					# QA one-shot: bypass both shield rounds and defeat any boss instantly.
+					boss_shields = 0
+					boss_shield_round = 2
+					boss["hp"] = 0.0
+				elif boss_shields > 0:
 					boss_shields -= 1
 				else:
 					boss["hp"] = maxf(0.0, float(boss["hp"]) - (2.0 + damage_level))
@@ -635,7 +640,8 @@ func update_bullets(delta: float) -> void:
 						drop_life_orb(Vector2(boss["pos"]))
 					boss.clear()
 			else:
-				enemies[target_index]["hp"] = int(enemies[target_index]["hp"]) - (1 + damage_level)
+				# QA one-shot keeps normal kills, Scrap, drops and score bookkeeping.
+				enemies[target_index]["hp"] = 0 if god_mode else int(enemies[target_index]["hp"]) - (1 + damage_level)
 				if int(enemies[target_index]["hp"]) <= 0:
 					var enemy_pos: Vector2 = enemies[target_index]["pos"]
 					enemies.remove_at(target_index)
@@ -1007,7 +1013,7 @@ func _draw() -> void:
 	text_at("x%d     SCRAP %d" % [lives, scrap], 61, 66, 21, Color(0.8, 0.95, 0.7))
 	text_at("BEST %d" % maxi(score, int(high_scores[0]["score"]) if not high_scores.is_empty() else 0), 480, 66, 19, Color(1.0, 0.88, 0.5))
 	if god_mode:
-		text_at("GOD MODE [O]", 475, 101, 18, Color(0.35, 1.0, 0.68))
+		text_at("GOD MODE / ONE SHOT [O]", 440, 101, 17, Color(0.35, 1.0, 0.68))
 	for orb_i in range(4):
 		var orb_color: Color = ORB_COLORS[orb_i]
 		draw_circle(Vector2(360.0 + float(orb_i) * 24.0, 59.0), 8.0, orb_color if (collected_orb_mask & (1 << orb_i)) != 0 else Color(0.2, 0.25, 0.34))
