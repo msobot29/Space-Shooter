@@ -27,7 +27,11 @@ const STORM_WARNING_SECONDS := 1.3
 const STORM_PULSE_INTERVAL := 0.62
 const ORB_COLORS := [Color(1.0, 0.28, 0.3), Color(0.3, 0.68, 1.0), Color(0.38, 1.0, 0.52), Color(1.0, 0.78, 0.22)]
 const ENEMIES_PER_WAVE := 10
-const WAVES_PER_LEVEL := 2
+# Warblade-inspired pacing, not verified exact Warblade Classic stage counts.
+# 20/30/40 enemies per stage, launched as successive ten-enemy formations.
+const ENEMY_WAVES_BY_CITY_STAGE := [2, 2, 3, 3, 4]
+const BOSS_REWARD_SECONDS := 8.0
+const CAMPAIGN_BASE := Vector2(492.0, 616.0)
 const DOUBLE_DROP_CHANCE := 0.12
 const DOUBLE_DROP_PITY_KILLS := 18
 
@@ -48,6 +52,7 @@ var state := "city_select" # city_select, city_flight, playing, intermission, bo
 var city_route: Array[int] = []
 var selected_city := 0
 var city_flight_time := 0.0
+var boss_reward_time := 0.0
 var boss_intro_time := 0.0
 var level_transition_time := 0.0
 var show_stats_modal := false
@@ -104,6 +109,13 @@ func city_name() -> String:
 
 func city_mission() -> int:
 	return ((level - 1) % 5) + 1
+
+func waves_for_level() -> int:
+	# Warblade Classic's exact stage-by-stage enemy totals are not verified.
+	# Our ten-unit mirrored groups scale from 20 to 40 enemies per stage.
+	if level == MAX_LEVEL:
+		return 0 # Classic Warblade level 25 is a standalone boss fight.
+	return ENEMY_WAVES_BY_CITY_STAGE[city_mission() - 1]
 
 func _ready() -> void:
 	randomize()
@@ -204,6 +216,9 @@ func draw_balkan_relief() -> void:
 	text_at("ADRIATIC SEA", 42, 628, 18, Color(0.52, 0.76, 0.9))
 	text_at("DINARIC ALPS", 400, 540, 17, Color(0.95, 0.87, 0.67))
 	text_at("BALKAN PENINSULA", 422, 754, 17, Color(0.9, 0.94, 0.83))
+	if city_route.is_empty():
+		draw_circle(CAMPAIGN_BASE, 9.0, Color(0.43, 1.0, 0.68))
+		text_at("INLAND AIRBASE", 505, 635, 14, Color(0.63, 1.0, 0.78))
 
 
 func draw_city_map() -> void:
@@ -212,6 +227,10 @@ func draw_city_map() -> void:
 	text_at("ADRIATIC UPRISING", 127, 77, 35, Color(0.95, 0.97, 1.0))
 	text_at("SELECT THE NEXT CITY TO LIBERATE", 115, 118, 22, Color(0.65, 0.95, 1.0))
 	text_at("LIBERATED: %d/5" % city_route.size(), 277, 153, 17, Color(0.9, 0.82, 0.56))
+	if not city_route.is_empty():
+		var origin_city: Vector2 = CITY_POINTS[city_route[city_route.size() - 1]]
+		draw_arc(origin_city, 26.0, 0.0, TAU, 28, Color(0.41, 0.94, 1.0), 3.0)
+		text_at("SHIP", origin_city.x + 14.0, origin_city.y + 29.0, 14, Color(0.60, 0.93, 1.0))
 	for city_index in range(5):
 		# Zagreb's marker and name do not exist until four cities are liberated.
 		if city_index == 4 and city_route.size() < 4:
@@ -237,8 +256,12 @@ func draw_city_flight() -> void:
 	var destination: Vector2 = CITY_POINTS[selected_city]
 	var fraction := clampf(city_flight_time / CITY_FLIGHT_SECONDS, 0.0, 1.0)
 	var eased := fraction * fraction * (3.0 - 2.0 * fraction)
-	var ship_pos := Vector2(86, 775).lerp(destination, eased)
-	draw_line(Vector2(86, 775), destination, Color(0.60, 0.90, 1.0, 0.6), 3.0, true)
+	var departure := CAMPAIGN_BASE
+	if city_route.size() >= 2:
+		departure = CITY_POINTS[city_route[city_route.size() - 2]]
+	var ship_pos := departure.lerp(destination, eased)
+	draw_line(departure, destination, Color(0.60, 0.90, 1.0, 0.6), 3.0, true)
+	draw_circle(departure, 9.0, Color(0.43, 1.0, 0.68))
 	draw_circle(destination, 15.0, Color(1.0, 0.78, 0.3))
 	var ship_shape := PackedVector2Array([
 		ship_pos + Vector2(0, -23), ship_pos + Vector2(-17, 15),
@@ -310,6 +333,7 @@ func start_level() -> void:
 	boss_active = false
 	boss_pending = level % 5 == 0 # City guardian every 5 levels; final boss at 25
 	boss_intro_time = 0.0
+	boss_reward_time = 0.0
 	waves_spawned = 0
 	wave_path_ids.clear()
 	boss_phase = 1
@@ -334,8 +358,12 @@ func start_level() -> void:
 	ability_cooldown = 0.0 # Ready again at the beginning of a mission.
 	level_time = 0.0
 	kills = 0
-	target_kills = WAVES_PER_LEVEL * ENEMIES_PER_WAVE
-	spawn_wave()
+	target_kills = waves_for_level() * ENEMIES_PER_WAVE
+	if level == MAX_LEVEL:
+		# Zone Guardian battle: no ordinary enemy waves before the boss.
+		begin_boss_intro()
+	else:
+		spawn_wave()
 	queue_redraw()
 
 func begin_level_transition() -> void:
@@ -381,7 +409,9 @@ func spawn_wave() -> void:
 					5: # Crown: shield in the middle, rear units spanning the field.
 						formation_x = (210.0 + float(lane) * 65.0) if left else (510.0 - float(lane) * 65.0)
 						row_y = (520.0 + float(lane) * 40.0) if is_guard else (275.0 + float(index - 2) * 48.0)
-			var target_pos := Vector2(formation_x, row_y + float(waves_spawned - 1) * 20.0)
+			# More than two waves need only a modest shift, not an ever-lower
+			# formation that collides with the player's flight lane.
+			var target_pos := Vector2(formation_x, row_y + float((waves_spawned - 1) % 2) * 20.0)
 			var start_pos := Vector2(-85.0 - float(index) * 35.0 if left else W + 85.0 + float(index) * 35.0, 110.0 + float(index) * 38.0)
 			enemies.append({
 				"pos": start_pos,
@@ -452,6 +482,18 @@ func move_enemy(enemy: Dictionary, delta: float) -> void:
 	position.y = clampf(position.y, 55.0, 650.0)
 	enemy["pos"] = position
 
+func begin_boss_reward_time() -> void:
+	# City lieutenant defeated. Allow the pilot to reach the colored orb,
+	# but do not force pickup: missed collectibles remain collectible later.
+	state = "boss_rewards"
+	boss_reward_time = BOSS_REWARD_SECONDS
+	enemy_bullets.clear()
+	radial_bullets.clear()
+	player_bullets.clear()
+	fire_held = true
+	queue_redraw()
+
+
 func begin_boss_intro() -> void:
 	# Give the player a readable story warning before the lieutenant arrives.
 	boss_pending = false
@@ -489,6 +531,17 @@ func _process(delta: float) -> void:
 	if state == "city_select":
 		queue_redraw()
 		return
+	if state == "boss_rewards":
+		update_player(delta)
+		update_bullets(delta)
+		update_pickups(delta)
+		update_multiplier_timers(delta)
+		update_effects(delta)
+		boss_reward_time = maxf(0.0, boss_reward_time - delta)
+		if boss_reward_time <= 0.0:
+			complete_level()
+		queue_redraw()
+		return
 	if state == "intermission" or state == "boss_intro":
 		# Let old rewards fall and remain collectible during both types of intro.
 		update_player(delta)
@@ -521,7 +574,7 @@ func _process(delta: float) -> void:
 			ability_cooldown = ABILITY_COOLDOWN
 	elif ability_cooldown > 0.0:
 		ability_cooldown = maxf(0.0, ability_cooldown - delta)
-	if waves_spawned == 1 and level_time >= WAVE_DELAY:
+	if waves_spawned < waves_for_level() and level_time >= float(waves_spawned) * WAVE_DELAY:
 		spawn_wave()
 	update_player(delta)
 	update_enemies(delta)
@@ -532,12 +585,15 @@ func _process(delta: float) -> void:
 	update_effects(delta)
 	if lives <= 0:
 		finish_run(false)
-	elif waves_spawned == WAVES_PER_LEVEL and enemies.is_empty():
+	elif waves_spawned == waves_for_level() and enemies.is_empty():
 		# Stage flow must never wait for collectibles. Existing Scrap and bonuses
 		# stay in drops and carry into the next mission as falling objects.
 		if boss_active:
 			if boss.is_empty():
-				complete_level()
+				if level == MAX_LEVEL:
+					complete_level()
+				else:
+					begin_boss_reward_time()
 		elif boss_pending:
 			begin_boss_intro()
 		else:
@@ -556,7 +612,7 @@ func update_player(delta: float) -> void:
 	# Shooting remains available between levels; bullets are updated even
 	# while the next wave has not started. Boss announcements stay non-combat.
 	# Keep edge-triggered shots: holding the key does not repeat volleys.
-	if (state == "playing" or state == "intermission") and pressed and not fire_held and fire_clock <= 0.0:
+	if (state == "playing" or state == "intermission" or state == "boss_rewards") and pressed and not fire_held and fire_clock <= 0.0:
 		fire_weapon()
 		fire_clock = maxf(0.12, 0.34 - rate_level * 0.05)
 	fire_held = pressed
@@ -1155,7 +1211,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
 				else:
 					# Each city ends in its own shop; then return to the map.
 					show_city_map()
-	elif state == "playing" or state == "intermission" or state == "boss_intro":
+	elif state == "playing" or state == "intermission" or state == "boss_intro" or state == "boss_rewards":
 		if event.keycode == KEY_P:
 			game_paused = not game_paused
 			if game_paused:
@@ -1230,7 +1286,7 @@ func draw_ship_status_modal() -> void:
 func _draw() -> void:
 	for star in stars:
 		draw_circle(star, 1.5, Color(0.45, 0.65, 0.9, 0.55))
-	text_at("%s  LVL %d/%d  WAVE %d/2  SCORE %d" % [city_name(), level, MAX_LEVEL, waves_spawned, score], 20, 35, 19)
+	text_at("%s LVL %d/%d WAVE %d/%d SCORE %d" % [city_name(), level, MAX_LEVEL, waves_spawned, waves_for_level(), score], 20, 35, 18)
 	# The same little blue ship silhouette used for the player represents lives.
 	var life_icon := PackedVector2Array([Vector2(36, 43), Vector2(24, 67), Vector2(36, 62), Vector2(48, 67)])
 	draw_colored_polygon(life_icon, Color(0.2, 0.8, 1.0))
@@ -1259,7 +1315,7 @@ func _draw() -> void:
 		draw_rect(Rect2(385, 168, 316, 65), Color(0.17, 0.10, 0.26, 0.90))
 		text_at("SCORE x%d" % score_multiplier(), 399, 195, 24, Color(1.0, 0.85, 0.35))
 		text_at("%.1fs remaining" % multiplier_time_left(), 400, 220, 17, Color(0.95, 0.85, 1.0))
-	if state == "playing" or state == "intermission" or state == "boss_intro":
+	if state == "playing" or state == "intermission" or state == "boss_intro" or state == "boss_rewards":
 		if invulnerable <= 0.0 or int(Time.get_ticks_msec() / 100) % 2 == 0:
 			var ship := PackedVector2Array([Vector2(player_x, PLAYER_Y - 36), Vector2(player_x - 27, PLAYER_Y + 23), Vector2(player_x, PLAYER_Y + 12), Vector2(player_x + 27, PLAYER_Y + 23)])
 			draw_colored_polygon(ship, Color(0.2, 0.8, 1.0))
@@ -1351,6 +1407,10 @@ func _draw() -> void:
 	for effect in explosions:
 		var pos: Vector2 = effect["pos"]
 		draw_arc(pos, 30.0 * float(effect["time"]) / 0.3 + 8.0, 0, TAU, 20, Color(1.0, 0.68, 0.2), 4.0)
+	if state == "boss_rewards":
+		draw_rect(Rect2(75.0, 209.0, 570.0, 92.0), Color(0.05, 0.1, 0.22, 0.89))
+		text_at("LIEUTENANT DEFEATED!", 156, 244, 27, Color(0.68, 1.0, 0.72))
+		text_at("COLLECT THE ORB - %d s" % int(ceil(boss_reward_time)), 198, 283, 22, Color(1.0, 0.89, 0.46))
 	if state == "boss_intro":
 		# Separate lieutenant announcement instead of an abrupt boss spawn.
 		draw_rect(Rect2(42, 338, 636, 190), Color(0.08, 0.07, 0.17, 0.94))
@@ -1401,9 +1461,9 @@ func _draw() -> void:
 			text_at("CROATIA LIBERATED!", 186, 174, 29, Color(0.45, 1.0, 0.7))
 		else:
 			text_at("GAME OVER", 258, 174, 29, Color(1.0, 0.35, 0.4))
-	if show_stats_modal and (state == "playing" or state == "intermission" or state == "boss_intro"):
+	if show_stats_modal and (state == "playing" or state == "intermission" or state == "boss_intro" or state == "boss_rewards"):
 		draw_ship_status_modal()
-	if game_paused and (state == "playing" or state == "intermission" or state == "boss_intro"):
+	if game_paused and (state == "playing" or state == "intermission" or state == "boss_intro" or state == "boss_rewards"):
 		draw_rect(Rect2(0, 0, W, H), Color(0.0, 0.02, 0.06, 0.65))
 		draw_rect(Rect2(124, 362, 472, 212), Color(0.06, 0.12, 0.23, 0.98))
 		text_at("GAME PAUSED", 226, 449, 34, Color(0.9, 0.96, 1.0))
