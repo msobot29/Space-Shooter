@@ -448,3 +448,20 @@ Code changes are committed, but gameplay and Godot parser correctness still need
 - The HUD reads **GOD MODE / ONE SHOT [O]** while active. When O is switched off, normal weapon damage, boss shield mechanics and life loss apply immediately.
 - QA: Enable O on an armored crab and the level-5 boss, verify a single projectile kills each. Repeat against the level-25 Zone Guardian, confirm final shop/victory works. Turn O off and verify normal HP reductions and shields.
 - This is a local development/testing shortcut, not intended for fair leaderboard scoring.
+
+## F2 DEBUG LEVEL SELECT (latest)
+- Press **F2** while playing, in level intermissions, boss introductions, the shop, Game Over, or victory to open a **debug level-selection screen**. Game simulation, projectiles, rewards and timers freeze while the selector is open.
+- The selector displays all **25 levels in five city columns** (Zadar 1–5, Rijeka 6–10, Split 11–15, Osijek 16–20, Zagreb 21–25), highlights the selected stage and shows its city.
+- **UP / DOWN**: move to the previous/next level. **LEFT / RIGHT**: move by five levels (previous/next city). **ENTER**: immediately launch the chosen level, with no preceding shop or intro delay. **ESC / F2**: close the selector and return to the previous state.
+- When jumping, all current enemy waves, boss, projectiles and falling collectibles are cleared by the normal stage-start reset plus a debug cleanup. The player keeps the current speed/fire/weapon/shield upgrades and the **O God Mode** toggle. Lives are restored to at least three; score, Scrap, score multipliers, and four-orb progress reset.
+- Stage jumps are flagged **DEBUG RUN**, and results from such a run **cannot enter the persistent Top 10 leaderboard**. Starting a fresh ordinary game from Game Over/victory resets the debug flag.
+- This selector is meant only for local QA to quickly inspect late levels, milestone shops and the level-25 Zagreb guardian.
+
+### Smoke test
+1. Press F2 at level 1: all 25 stages and five city headings should appear; game simulation freezes.
+2. Select level 25 using RIGHT/UP/DOWN and press ENTER: Zagreb level 25 begins immediately. Turn on O to one-shot the final guardian after its intro.
+3. Press F2 while paused and close it via ESC: original paused state remains.
+4. Press F2 in the shop and jump to level 6; shop should disappear and selected stage start instantly.
+5. Finish a debug-jump run: no new Top 10 entry should be saved.
+6. Restart normally after a completed run, and verify standard high-score qualification is available again.
+Code was updated through GitHub; confirm operation in the Godot 4 editor before release.
