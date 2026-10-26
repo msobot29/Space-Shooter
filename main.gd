@@ -48,6 +48,9 @@ var level_transition_time := 0.0
 var show_stats_modal := false
 var game_paused := false
 var god_mode := false # Local QA toggle (O key), blocks actual life and weapon loss
+var debug_level_menu := false
+var debug_selected_level := 1
+var debug_run := false # Debug skips never qualify for persistent High Scores.
 var high_scores: Array[Dictionary] = []
 var score_name_field: LineEdit
 var awaiting_score_name := false
@@ -111,6 +114,44 @@ func _ready() -> void:
 	for i in range(110):
 		stars.append(Vector2(randf_range(0.0, W), randf_range(0.0, H)))
 	start_level()
+
+func jump_to_debug_level() -> void:
+	# Start the chosen level immediately, skipping intermission and shop.
+	# Retain current equipment and God Mode so the target can be tested easily.
+	debug_run = true
+	debug_level_menu = false
+	level = clampi(debug_selected_level, 1, MAX_LEVEL)
+	lives = maxi(lives, 3)
+	drops.clear()
+	active_multipliers.clear()
+	collected_orb_mask = 0
+	total_kills = 0
+	single_shot_kills_since_drop = 0
+	score = 0
+	scrap = 0
+	fire_held = true # Require a fresh fire-key press after closing the menu.
+	start_level()
+
+
+func draw_debug_level_menu() -> void:
+	# Five columns = five cities; each column lists that city's five missions.
+	draw_rect(Rect2(0.0, 0.0, W, H), Color(0.0, 0.02, 0.07, 0.86))
+	draw_rect(Rect2(42.0, 205.0, 636.0, 550.0), Color(0.06, 0.12, 0.24, 0.98))
+	text_at("DEBUG LEVEL SELECT [F2]", 139, 260, 30, Color(0.45, 0.95, 1.0))
+	for city_index in range(5):
+		var start_x := 83.0 + float(city_index) * 122.0
+		text_at(String(CITY_NAMES[city_index]), start_x, 315, 16, Color(0.96, 0.80, 0.45))
+		for city_stage in range(5):
+			var stage_number := city_index * 5 + city_stage + 1
+			var top := 336.0 + float(city_stage) * 55.0
+			var active := stage_number == debug_selected_level
+			draw_rect(Rect2(start_x - 10.0, top, 105.0, 45.0), Color(0.14, 0.48, 0.72) if active else Color(0.10, 0.20, 0.35))
+			text_at("LVL %02d" % stage_number, start_x + 5.0, top + 30.0, 20, Color.WHITE if active else Color(0.74, 0.85, 0.95))
+	var selected_city := String(CITY_NAMES[clampi(int((debug_selected_level - 1) / 5), 0, 4)])
+	text_at("SELECTED: %s - LEVEL %d" % [selected_city, debug_selected_level], 172, 661, 23, Color(1.0, 0.9, 0.48))
+	text_at("LEFT/RIGHT: CITY     UP/DOWN: LEVEL", 130, 702, 18, Color(0.8, 0.91, 1.0))
+	text_at("ENTER: START     ESC / F2: CLOSE", 145, 730, 18, Color(0.65, 0.97, 0.8))
+
 
 func start_level() -> void:
 	state = "playing"
@@ -297,7 +338,7 @@ func launch_boss() -> void:
 
 
 func _process(delta: float) -> void:
-	if game_paused or show_stats_modal:
+	if debug_level_menu or game_paused or show_stats_modal:
 		queue_redraw()
 		return
 	if state == "intermission" or state == "boss_intro":
@@ -840,7 +881,7 @@ func qualifies_for_high_scores(points: int) -> bool:
 func finish_run(won: bool) -> void:
 	state = "victory" if won else "gameover"
 	new_personal_record = score > 0 and (high_scores.is_empty() or score > int(high_scores[0]["score"]))
-	awaiting_score_name = qualifies_for_high_scores(score)
+	awaiting_score_name = not debug_run and qualifies_for_high_scores(score)
 	if awaiting_score_name:
 		score_name_field.text = ""
 		score_name_field.show()
@@ -914,6 +955,29 @@ func buy_upgrade(kind: int) -> void:
 func _unhandled_key_input(event: InputEvent) -> void:
 	if not event is InputEventKey or not event.pressed or event.echo:
 		return
+	# F2 is accessible from gameplay, shop, victory, and test intermissions.
+	if event.keycode == KEY_F2:
+		debug_level_menu = not debug_level_menu
+		if debug_level_menu:
+			debug_selected_level = level
+		queue_redraw()
+		return
+	if debug_level_menu:
+		match event.keycode:
+			KEY_ESCAPE:
+				debug_level_menu = false
+			KEY_UP:
+				debug_selected_level = maxi(1, debug_selected_level - 1)
+			KEY_DOWN:
+				debug_selected_level = mini(MAX_LEVEL, debug_selected_level + 1)
+			KEY_LEFT:
+				debug_selected_level = maxi(1, debug_selected_level - 5)
+			KEY_RIGHT:
+				debug_selected_level = mini(MAX_LEVEL, debug_selected_level + 5)
+			KEY_ENTER, KEY_KP_ENTER:
+				jump_to_debug_level()
+		queue_redraw()
+		return
 	# Test-only invulnerability hotkey: available in any game state.
 	if event.keycode == KEY_O:
 		god_mode = not god_mode
@@ -957,6 +1021,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			total_kills = 0
 			single_shot_kills_since_drop = 0
 			active_multipliers.clear()
+			debug_run = false
 			collected_orb_mask = 0
 			drops.clear() # A new run must not inherit old rewards.
 			level = 1
@@ -1012,6 +1077,8 @@ func _draw() -> void:
 	draw_circle(Vector2(36, 58), 3.2, Color(1.0, 0.9, 0.3))
 	text_at("x%d     SCRAP %d" % [lives, scrap], 61, 66, 21, Color(0.8, 0.95, 0.7))
 	text_at("BEST %d" % maxi(score, int(high_scores[0]["score"]) if not high_scores.is_empty() else 0), 480, 66, 19, Color(1.0, 0.88, 0.5))
+	if debug_run:
+		text_at("DEBUG RUN", 570, 132, 16, Color(1.0, 0.65, 0.35))
 	if god_mode:
 		text_at("GOD MODE / ONE SHOT [O]", 440, 101, 17, Color(0.35, 1.0, 0.68))
 	for orb_i in range(4):
@@ -1181,4 +1248,6 @@ func _draw() -> void:
 		draw_rect(Rect2(124, 362, 472, 212), Color(0.06, 0.12, 0.23, 0.98))
 		text_at("GAME PAUSED", 226, 449, 34, Color(0.9, 0.96, 1.0))
 		text_at("Press P to resume", 228, 508, 23, Color(0.45, 0.9, 1.0))
-	text_at("A/D: move  B/SPACE: fire  R: shield  P: pause", 14, H - 22, 17, Color(0.65, 0.8, 0.95))
+	text_at("A/D: move  B/SPACE: fire  R: shield  P: pause  F2: levels", 14, H - 22, 16, Color(0.65, 0.8, 0.95))
+	if debug_level_menu:
+		draw_debug_level_menu()
