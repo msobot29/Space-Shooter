@@ -484,3 +484,23 @@ Code was updated through GitHub; confirm operation in the Godot 4 editor before 
 5. After fourth boss and shop: verify Zagreb marker is **unlocked and visible**, message **TIME TO FREE THE ZONE** appears. Select it, fly six seconds, play levels 21–25 and fight final Zone Guardian.
 6. Check F2 debug level skipping, restart/game over reset, remaining drops after shop and Top 10 behavior.
 Godot 4 runtime verification is required before release.
+
+## Campaign flights, lieutenant orb collection and enemy-wave scale (latest)
+- The **first flight** now starts at an **inland staging airbase** at the stylized map coordinate (492, 616), rather than off the western sea edge. The ship visibly flies **six seconds** toward the first selected city.
+- **After liberating a city**, the player still visits the upgrade shop and returns to the map. Once they select the next available city, the six-second flight **starts at the previous liberated city's marker** and ends at the newly selected city. This applies to all four intermediate travel segments, including the final trip to Zagreb. The map highlights the current ship location when choosing the next city.
+- All five cities and Zagreb's hidden-until-four-free unlock system remain unchanged, as do the city selection controls and F2 debug test menu.
+- **City-lieutenant reward window:** after defeating the guardian at levels **5/10/15/20**, the game enters an **8-second COLLECT THE ORB** phase *before the shop opens*. The player can steer, fire, and physically collect the four-color orb and other drops. Any missed drop still follows the normal fall/offscreen rule; the timer advances independently, so the shop opens after the window ends even if some other rewards remain. P/TAB pause the collection period. The level-25 Zone Guardian still takes the player straight to the final shop on defeat.
+- **Warblade-inspired enemy volume:** regular stages have *20, 20, 30, 30, 40* enemies within each 5-level city block, composed of respectively *2, 2, 3, 3, 4* successive mirrored formations of **10 enemies each**. The city guardian spawns after regular waves are defeated. **Level 25 is a boss-only mission**, consistent with Warblade's large boss at each twenty-fifth level.
+- The wave composition, armored-crab front guards, weapon economy and combat controls are retained. The HUD now displays the correct dynamic **WAVE i/N**, including 0/0 on the standalone final boss level.
+
+### Source fidelity note
+Reference guides for Warblade document its four-stage mission structure, different formation types, and boss at every 25th level. They do **not** supply a complete independently verified exact number of small enemies on each stage of Classic mode. Warblade Time Trial descriptions commonly report 20–40 enemies, but Time Trial is not Classic. **The 20/20/30/30/40 curve above is therefore our own Warblade-inspired balance choice, not a claim to replicate Warblade Classic's exact level-by-level counts.** If verified Classic counts become available, replace the curve with those values.
+
+### Godot QA
+1. On a new run, select Split: verify the blue ship starts on inland terrain and flies from the staging airbase to Split for six seconds.
+2. Complete Split's guardian and collect the orb during the full eight-second post-boss window; confirm the shop **does not** appear prematurely.
+3. Leave the shop, select Rijeka on the map, and verify the ship flight starts at Split rather than the original airbase.
+4. Test the 20/20/30/30/40 enemies-per-city progression and stage wave HUD; verify each subsequent wave arrives and the mission only advances after all scheduled enemies are defeated.
+5. Unlock Zagreb after the fourth city and check the flight departs from that fourth city's location, then verify mission 25 launches the **1,000 HP final boss without regular enemy waves**.
+6. Test F2 jumping, O God Mode one-shot, orb collection, score multipliers, shop upgrades and no frozen bullets in transitions.
+Godot 4 parser/runtime verification is required after pulling this change.
