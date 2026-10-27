@@ -2024,7 +2024,7 @@ func _process(delta: float) -> void:
 			start_level()
 		queue_redraw()
 		return
-	if state == "city_select" or state == "level_clear":
+	if state == "city_select":
 		queue_redraw()
 		return
 	if state == "boss_rewards":
@@ -2597,13 +2597,19 @@ func update_pickups(delta: float) -> void:
 					damage_level = 3
 					single_shot_kills_since_drop = 0
 				else:
-					rate_level = mini(4, rate_level + 1)
+					if rate_level >= 4:
+						score += 10000
+					else:
+						rate_level += 1
 				explosions.append({"pos": Vector2(player_x, PLAYER_Y), "time": 0.32})
 			elif drops[i].get("kind", "scrap") == "triple_shot":
 				if damage_level < 6:
 					damage_level = 6
 				else:
-					rate_level = mini(4, rate_level + 1)
+					if rate_level >= 4:
+						score += 10000
+					else:
+						rate_level += 1
 				explosions.append({"pos": Vector2(player_x, PLAYER_Y), "time": 0.32})
 			elif drops[i].get("kind", "scrap") == "life_orb":
 				collect_life_orb(int(drops[i]["orb_index"]))
@@ -2641,15 +2647,10 @@ func complete_level() -> void:
 	elif level % 5 == 0:
 		show_city_map()
 	else:
-		# Save the next mission before allowing a safe return to Main Menu.
+		# Advance automatically with the established silent pause and title.
+		# Checkpoint the next level so Continue still restores progress.
 		level += 1
-		state = "level_clear"
-		save_campaign_checkpoint("playing")
-		drops.clear()
-		player_bullets.clear()
-		enemy_bullets.clear()
-		radial_bullets.clear()
-		queue_redraw()
+		begin_level_transition()
 
 
 func compare_high_scores(a: Dictionary, b: Dictionary) -> bool:
@@ -2857,7 +2858,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		queue_redraw()
 		return
 	# M is the safe exit at checkpoint screens; it must precede Music M.
-	if event.keycode == KEY_M and state in ["level_clear", "city_select", "shop"]:
+	if event.keycode == KEY_M and state in ["city_select", "shop"]:
 		return_to_main_menu()
 		return
 	# Sound controls work from gameplay, shop and map (even while paused).
@@ -2996,13 +2997,6 @@ func _unhandled_key_input(event: InputEvent) -> void:
 						state = "main_menu"
 		queue_redraw()
 		return
-	if state == "level_clear":
-		if event.keycode == KEY_ENTER or event.keycode == KEY_KP_ENTER:
-			begin_level_transition()
-		elif event.keycode == KEY_M or event.keycode == KEY_ESCAPE:
-			return_to_main_menu()
-		queue_redraw()
-		return
 	if state == "city_select":
 		if event.keycode == KEY_M or event.keycode == KEY_ESCAPE:
 			return_to_main_menu()
@@ -3048,6 +3042,10 @@ func _unhandled_key_input(event: InputEvent) -> void:
 				else:
 					show_city_map()
 	elif state == "playing" or state == "intermission" or state == "boss_intro" or state == "boss_rewards":
+		if state == "intermission" and event.keycode == KEY_ESCAPE:
+			# The upcoming level is already stored in the checkpoint.
+			return_to_main_menu()
+			return
 		if event.physical_keycode == bindings[4] or event.keycode == bindings[4]:
 			game_paused = not game_paused
 			if game_paused:
@@ -3342,13 +3340,6 @@ func _draw() -> void:
 		var title_size := 35
 		var title_width := font.get_string_size(level_title, HORIZONTAL_ALIGNMENT_LEFT, -1, title_size).x
 		text_at(level_title, (W - title_width) / 2.0, 442, title_size, Color(0.92, 0.97, 1.0))
-	if state == "level_clear":
-		draw_rect(Rect2(82, 305, 556, 278), Color(0.04, 0.10, 0.21, 0.97))
-		draw_rect(Rect2(82, 305, 556, 5), Color(0.28, 0.91, 0.67))
-		text_at("LEVEL COMPLETE!", 165, 378, 34, Color(0.54, 1.0, 0.76))
-		text_at("NEXT: %s - LEVEL %d" % [city_name(), level], 143, 432, 22)
-		text_at("ENTER - NEXT LEVEL", 202, 490, 23, Color(0.62, 0.89, 1.0))
-		text_at("M / ESC - MAIN MENU (SAVED)", 153, 531, 18, Color(0.80, 0.98, 0.80))
 	if state == "boss_rewards" and level == MAX_LEVEL:
 		# Keep this message visible even before the white orb is collected.
 		draw_rect(Rect2(156.0, 205.0, 408.0, 63.0), Color(0.06, 0.16, 0.23, 0.88))
