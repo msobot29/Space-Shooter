@@ -148,6 +148,9 @@ var boss_intro_time := 0.0
 var level_transition_time := 0.0
 var show_stats_modal := false
 var game_paused := false
+var pause_screen := "menu" # menu, options, bindings, confirm
+var pause_menu_selection := 0
+var pause_confirm_yes := false
 var god_mode := false # Local QA toggle (O key), blocks actual life and weapon loss
 var debug_level_menu := false
 var show_performance_stats := false # F3 toggles an FPS/process-time diagnostic overlay
@@ -1667,7 +1670,7 @@ func draw_new_game_confirmation() -> void:
 	text_at("ESC - CANCEL", 235, 525, 22, Color(0.65, 0.86, 1.0))
 
 
-func draw_options_menu() -> void:
+func draw_options_menu(in_game: bool = false) -> void:
 	draw_menu_background()
 	draw_rect(Rect2(64, 88, 592, 788), Color(0.04, 0.09, 0.18, 0.96))
 	draw_rect(Rect2(64, 88, 592, 6), Color(0.29, 0.86, 1.0))
@@ -1686,7 +1689,7 @@ func draw_options_menu() -> void:
 		draw_rect(Rect2(118.0, y, 482.0, 54.0), Color(0.15, 0.42, 0.69, 0.95) if active else Color(0.07, 0.13, 0.23, 0.95))
 		text_at(entries[item_index], 144.0, y + 34.0, 22, Color.WHITE if active else Color(0.78, 0.9, 1.0))
 	text_at("LEFT/RIGHT CHANGES VALUES  |  ENTER TOGGLE / BACK", 98, 674, 17, Color(0.80, 0.93, 1.0))
-	text_at("ESC - RETURN TO MAIN MENU", 196, 703, 17, Color(0.62, 0.90, 1.0))
+	text_at("ESC - RETURN TO PAUSE MENU" if in_game else "ESC - RETURN TO MAIN MENU", 180, 703, 17, Color(0.62, 0.90, 1.0))
 	draw_rect(Rect2(104, 736, 514, 112), Color(0.05, 0.11, 0.21, 0.95))
 	text_at("CONTROLS", 285, 772, 24, Color(1.0, 0.86, 0.47))
 	text_at("CUSTOMIZE YOUR KEYBOARD IN KEYBOARD CONTROLS", 108, 807, 17, Color(0.88, 0.95, 1.0))
@@ -2724,6 +2727,7 @@ func return_to_main_menu() -> void:
 		score_name_field.hide()
 		score_name_field.release_focus()
 	game_paused = false
+	pause_screen = "menu"
 	show_stats_modal = false
 	debug_level_menu = false
 	victory_show_scores = false
@@ -2822,7 +2826,7 @@ func buy_upgrade(kind: int) -> void:
 func _unhandled_key_input(event: InputEvent) -> void:
 	if not event is InputEventKey or not event.pressed or event.echo:
 		return
-	if state == "menu_bindings":
+	if state == "menu_bindings" or (game_paused and pause_screen == "bindings"):
 		if binding_capture:
 			if event.keycode == KEY_ESCAPE:
 				binding_capture = false
@@ -2845,7 +2849,10 @@ func _unhandled_key_input(event: InputEvent) -> void:
 				KEY_DOWN:
 					binding_selection = posmod(binding_selection + 1, BIND_ACTIONS.size() + 2)
 				KEY_ESCAPE:
-					state = "menu_options"
+					if game_paused:
+						pause_screen = "options"
+					else:
+						state = "menu_options"
 				KEY_ENTER, KEY_KP_ENTER:
 					if binding_selection < BIND_ACTIONS.size():
 						binding_capture = true
@@ -2854,9 +2861,58 @@ func _unhandled_key_input(event: InputEvent) -> void:
 						reset_bindings()
 						binding_notice = "DEFAULTS RESTORED" if save_bindings() else "SAVE FAILED"
 					else:
-						state = "menu_options"
+						if game_paused:
+							pause_screen = "options"
+						else:
+							state = "menu_options"
 		queue_redraw()
 		return
+	# ESC opens a proper pause menu instead of leaving or unpausing directly.
+	if state in ["playing", "intermission", "boss_intro", "boss_rewards"] and event.keycode == KEY_ESCAPE:
+		if not game_paused:
+			game_paused = true
+			show_stats_modal = false
+			pause_screen = "menu"
+			pause_menu_selection = 0
+		elif pause_screen == "menu":
+			game_paused = false
+		elif pause_screen == "confirm":
+			pause_screen = "menu"
+		else:
+			pause_screen = "menu"
+		queue_redraw()
+		return
+	if game_paused and pause_screen == "confirm":
+		if event.keycode in [KEY_LEFT, KEY_RIGHT, KEY_UP, KEY_DOWN]:
+			pause_confirm_yes = not pause_confirm_yes
+		elif event.keycode in [KEY_ENTER, KEY_KP_ENTER]:
+			if pause_confirm_yes:
+				# Do NOT write a checkpoint: resume from the last autosave only.
+				return_to_main_menu()
+			else:
+				pause_screen = "menu"
+		queue_redraw()
+		return
+	if game_paused and pause_screen == "menu":
+		match event.keycode:
+			KEY_UP, KEY_LEFT:
+				pause_menu_selection = posmod(pause_menu_selection - 1, 3)
+			KEY_DOWN, KEY_RIGHT:
+				pause_menu_selection = posmod(pause_menu_selection + 1, 3)
+			KEY_ENTER, KEY_KP_ENTER:
+				match pause_menu_selection:
+					0:
+						game_paused = false
+					1:
+						pause_screen = "options"
+						options_menu_selection = 0
+					2:
+						pause_screen = "confirm"
+						pause_confirm_yes = false # NO is always the safe default.
+		queue_redraw()
+		return
+	if game_paused and pause_screen == "options" and event.keycode == KEY_M:
+		return # Keep the menu focused; music can be toggled from Options.
 	# M is the safe exit at checkpoint screens; it must precede Music M.
 	if event.keycode == KEY_M and state in ["city_select", "shop"]:
 		return_to_main_menu()
@@ -2951,10 +3007,13 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			state = "main_menu"
 		queue_redraw()
 		return
-	if state == "menu_options":
+	if state == "menu_options" or (game_paused and pause_screen == "options"):
 		match event.keycode:
 			KEY_ESCAPE:
-				state = "main_menu"
+				if game_paused:
+					pause_screen = "menu"
+				else:
+					state = "main_menu"
 			KEY_UP:
 				options_menu_selection = posmod(options_menu_selection - 1, 6)
 			KEY_DOWN:
@@ -2990,11 +3049,17 @@ func _unhandled_key_input(event: InputEvent) -> void:
 					3:
 						show_performance_stats = not show_performance_stats
 					4:
-						state = "menu_bindings"
+						if game_paused:
+							pause_screen = "bindings"
+						else:
+							state = "menu_bindings"
 						binding_selection = 0
 						binding_notice = ""
 					5:
-						state = "main_menu"
+						if game_paused:
+							pause_screen = "menu"
+						else:
+							state = "main_menu"
 		queue_redraw()
 		return
 	if state == "city_select":
@@ -3042,11 +3107,9 @@ func _unhandled_key_input(event: InputEvent) -> void:
 				else:
 					show_city_map()
 	elif state == "playing" or state == "intermission" or state == "boss_intro" or state == "boss_rewards":
-		if state == "intermission" and event.keycode == KEY_ESCAPE:
-			# The upcoming level is already stored in the checkpoint.
-			return_to_main_menu()
-			return
 		if event.physical_keycode == bindings[4] or event.keycode == bindings[4]:
+			pause_screen = "menu"
+			pause_menu_selection = 0
 			game_paused = not game_paused
 			if game_paused:
 				show_stats_modal = false
@@ -3388,11 +3451,34 @@ func _draw() -> void:
 		text_at("M music %s [%d%%]  [ ] volume   , . SFX [%d%%]" % ["ON" if music_enabled else "OFF", int(music_volume * 100.0), int(sfx_volume * 100.0)], 19, H - 42, 15, Color(0.74, 0.90, 1.0))
 	if show_stats_modal and (state == "playing" or state == "intermission" or state == "boss_intro" or state == "boss_rewards"):
 		draw_ship_status_modal()
-	if game_paused and (state == "playing" or state == "intermission" or state == "boss_intro" or state == "boss_rewards"):
-		draw_rect(Rect2(0, 0, W, H), Color(0.0, 0.02, 0.06, 0.65))
-		draw_rect(Rect2(124, 362, 472, 212), Color(0.06, 0.12, 0.23, 0.98))
-		text_at("GAME PAUSED", 226, 449, 34, Color(0.9, 0.96, 1.0))
-		text_at("Press %s to resume" % binding_name(bindings[4]), 228, 508, 23, Color(0.45, 0.9, 1.0))
+	if game_paused and state in ["playing", "intermission", "boss_intro", "boss_rewards"]:
+		draw_rect(Rect2(0, 0, W, H), Color(0.0, 0.02, 0.06, 0.78))
+		if pause_screen == "options":
+			draw_options_menu(true)
+		elif pause_screen == "bindings":
+			draw_bindings_menu()
+		elif pause_screen == "confirm":
+			draw_rect(Rect2(65, 319, 590, 308), Color(0.06, 0.11, 0.23, 0.99))
+			draw_rect(Rect2(65, 319, 590, 5), Color(0.97, 0.57, 0.30))
+			text_at("ARE YOU SURE?", 203, 381, 34, Color(1.0, 0.85, 0.70))
+			text_at("If you leave now, all unsaved", 114, 435, 22)
+			text_at("progress will be lost.", 218, 468, 22)
+			text_at("Your last checkpoint stays saved.", 139, 508, 18, Color(0.69, 0.89, 1.0))
+			for choice in range(2):
+				var selected := pause_confirm_yes == (choice == 0)
+				var x := 157.0 + float(choice) * 226.0
+				draw_rect(Rect2(x, 533, 185, 55), Color(0.68, 0.25, 0.25) if selected and choice == 0 else (Color(0.15, 0.50, 0.45) if selected else Color(0.12, 0.19, 0.29)))
+				text_at("YES" if choice == 0 else "NO", x + 66.0, 571, 26, Color.WHITE)
+		else:
+			draw_rect(Rect2(122, 285, 476, 374), Color(0.06, 0.12, 0.23, 0.99))
+			draw_rect(Rect2(122, 285, 476, 5), Color(0.28, 0.78, 1.0))
+			text_at("GAME PAUSED", 222, 358, 35, Color(0.9, 0.96, 1.0))
+			for i in range(3):
+				var label := ["RESUME", "OPTIONS", "MAIN MENU"][i]
+				var y := 391.0 + float(i) * 65.0
+				draw_rect(Rect2(173, y, 375, 52), Color(0.17, 0.48, 0.67) if pause_menu_selection == i else Color(0.09, 0.17, 0.29))
+				text_at(label, 268 if i != 2 else 254, y + 34, 25)
+			text_at("ARROWS / ENTER SELECT   ESC RESUME", 160, 623, 16, Color(0.73, 0.88, 1.0))
 	text_at("MOVE %s/%s  FIRE %s  SHIELD %s  PAUSE %s" % [binding_name(bindings[0]), binding_name(bindings[1]), binding_name(bindings[2]), binding_name(bindings[3]), binding_name(bindings[4])], 14, H - 22, 16, Color(0.65, 0.8, 0.95))
 	if state == "city_select":
 		draw_city_map()
