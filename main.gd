@@ -41,6 +41,9 @@ const BOSS_REWARD_SECONDS := 8.0
 const CAMPAIGN_BASE := Vector2(492.0, 616.0)
 const DOUBLE_DROP_CHANCE := 0.12
 const DOUBLE_DROP_PITY_KILLS := 18
+const EXTRA_DOUBLE_DROP_CHANCE := 0.055
+const TRIPLE_DROP_CHANCE := 0.022
+const MAX_WEAPON_PICKUPS_ON_SCREEN := 3
 const BINDINGS_FILE := "user://controls.cfg" # Legacy save path, supported for migration
 const CONTROL_SAVE_FOLDER := "AdriaticUprising"
 const BIND_ACTIONS := ["MOVE LEFT", "MOVE RIGHT", "FIRE", "SHIELD", "PAUSE", "SHIP STATUS"]
@@ -2021,7 +2024,7 @@ func _process(delta: float) -> void:
 			start_level()
 		queue_redraw()
 		return
-	if state == "city_select":
+	if state == "city_select" or state == "level_clear":
 		queue_redraw()
 		return
 	if state == "boss_rewards":
@@ -2525,24 +2528,34 @@ func collect_life_orb(orb_index: int) -> void:
 		explosions.append({"pos": Vector2(player_x, PLAYER_Y), "time": 0.5})
 
 
-func has_double_shot_drop() -> bool:
+func pending_weapon_pickups() -> int:
+	var count := 0
 	for pickup in drops:
-		if pickup.get("kind", "scrap") == "double_shot":
-			return true
-	return false
+		if pickup.get("kind", "scrap") in ["double_shot", "triple_shot"]:
+			count += 1
+	return count
+
 
 func try_drop_double_shot(pos: Vector2) -> void:
-	# Limited to the single-shot stage; no duplicate Double Shot pickups.
-	if damage_level >= 3 or has_double_shot_drop():
+	# Weapon drops continue even when Double and Triple are already unlocked.
+	if pending_weapon_pickups() >= MAX_WEAPON_PICKUPS_ON_SCREEN:
 		return
-	single_shot_kills_since_drop += 1
-	if randf() < DOUBLE_DROP_CHANCE or single_shot_kills_since_drop >= DOUBLE_DROP_PITY_KILLS:
-		single_shot_kills_since_drop = 0
-		drops.append({
-			"kind": "double_shot",
-			"pos": pos,
-			"fall_speed": 230.0
-		})
+	var kind := ""
+	if damage_level < 3:
+		single_shot_kills_since_drop += 1
+		if randf() < DOUBLE_DROP_CHANCE or single_shot_kills_since_drop >= DOUBLE_DROP_PITY_KILLS:
+			kind = "double_shot"
+	else:
+		var chance := randf()
+		if chance < TRIPLE_DROP_CHANCE:
+			kind = "triple_shot"
+		elif chance < TRIPLE_DROP_CHANCE + EXTRA_DOUBLE_DROP_CHANCE:
+			kind = "double_shot"
+	if kind.is_empty():
+		return
+	single_shot_kills_since_drop = 0
+	drops.append({"kind": kind, "pos": pos, "fall_speed": 205.0})
+
 
 func score_multiplier() -> int:
 	# Stack additively: x2 plus x6 results in x8, never x12.
@@ -2581,9 +2594,17 @@ func update_pickups(delta: float) -> void:
 			play_arcade_sfx("pickup")
 			if drops[i].get("kind", "scrap") == "double_shot":
 				if damage_level < 3:
-					damage_level = 3 # Permanent unlock: shop now shows OWNED.
+					damage_level = 3
 					single_shot_kills_since_drop = 0
-					explosions.append({"pos": Vector2(player_x, PLAYER_Y), "time": 0.32})
+				else:
+					rate_level = mini(4, rate_level + 1)
+				explosions.append({"pos": Vector2(player_x, PLAYER_Y), "time": 0.32})
+			elif drops[i].get("kind", "scrap") == "triple_shot":
+				if damage_level < 6:
+					damage_level = 6
+				else:
+					rate_level = mini(4, rate_level + 1)
+				explosions.append({"pos": Vector2(player_x, PLAYER_Y), "time": 0.32})
 			elif drops[i].get("kind", "scrap") == "life_orb":
 				collect_life_orb(int(drops[i]["orb_index"]))
 			elif drops[i].get("kind", "scrap") == "white_orb":
@@ -2612,7 +2633,7 @@ func update_effects(delta: float) -> void:
 			explosions.remove_at(i)
 
 func complete_level() -> void:
-	# Regular city mini-boss shops are before combat; final guardian shop is after.
+	# Keep the final guardian shop after combat and city map after lieutenants.
 	if level >= MAX_LEVEL:
 		state = "shop"
 		pre_boss_shop = false
@@ -2620,8 +2641,15 @@ func complete_level() -> void:
 	elif level % 5 == 0:
 		show_city_map()
 	else:
+		# Save the next mission before allowing a safe return to Main Menu.
 		level += 1
-		begin_level_transition()
+		state = "level_clear"
+		save_campaign_checkpoint("playing")
+		drops.clear()
+		player_bullets.clear()
+		enemy_bullets.clear()
+		radial_bullets.clear()
+		queue_redraw()
 
 
 func compare_high_scores(a: Dictionary, b: Dictionary) -> bool:
@@ -2964,7 +2992,17 @@ func _unhandled_key_input(event: InputEvent) -> void:
 						state = "main_menu"
 		queue_redraw()
 		return
+	if state == "level_clear":
+		if event.keycode == KEY_ENTER or event.keycode == KEY_KP_ENTER:
+			begin_level_transition()
+		elif event.keycode == KEY_M or event.keycode == KEY_ESCAPE:
+			return_to_main_menu()
+		queue_redraw()
+		return
 	if state == "city_select":
+		if event.keycode == KEY_M or event.keycode == KEY_ESCAPE:
+			return_to_main_menu()
+			return
 		match event.keycode:
 			KEY_LEFT, KEY_UP:
 				cycle_city(-1)
@@ -2988,6 +3026,9 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		queue_redraw()
 		return
 	if state == "shop":
+		if event.keycode == KEY_M or event.keycode == KEY_ESCAPE:
+			return_to_main_menu()
+			return
 		match event.keycode:
 			KEY_1: buy_upgrade(1)
 			KEY_2: buy_upgrade(2)
@@ -3265,6 +3306,12 @@ func _draw() -> void:
 			draw_rect(Rect2(pos.x - 14.0, pos.y + 11.0, 28.0, 3.0), Color(0.04, 0.14, 0.28))
 			draw_rect(Rect2(pos.x - 9.0, pos.y - 8.0, 4.0, 16.0), Color(0.72, 0.96, 1.0))
 			draw_rect(Rect2(pos.x + 5.0, pos.y - 8.0, 4.0, 16.0), Color(0.72, 0.96, 1.0))
+		elif drop.get("kind", "scrap") == "triple_shot":
+			# Purple pickup with three vertical bars.
+			draw_rect(Rect2(pos.x - 16.0, pos.y - 15.0, 32.0, 30.0), Color(0.22, 0.09, 0.42))
+			draw_rect(Rect2(pos.x - 13.0, pos.y - 12.0, 26.0, 24.0), Color(0.50, 0.27, 0.75))
+			for bar_x in [-9.0, -2.0, 5.0]:
+				draw_rect(Rect2(pos.x + bar_x, pos.y - 8.0, 4.0, 16.0), Color(0.93, 0.79, 1.0))
 		else:
 			draw_circle(pos, 9.0, Color(0.95, 0.82, 0.25))
 			draw_circle(pos, 4.0, Color(0.45, 0.3, 0.08))
@@ -3291,6 +3338,13 @@ func _draw() -> void:
 		var title_size := 35
 		var title_width := font.get_string_size(level_title, HORIZONTAL_ALIGNMENT_LEFT, -1, title_size).x
 		text_at(level_title, (W - title_width) / 2.0, 442, title_size, Color(0.92, 0.97, 1.0))
+	if state == "level_clear":
+		draw_rect(Rect2(82, 305, 556, 278), Color(0.04, 0.10, 0.21, 0.97))
+		draw_rect(Rect2(82, 305, 556, 5), Color(0.28, 0.91, 0.67))
+		text_at("LEVEL COMPLETE!", 165, 378, 34, Color(0.54, 1.0, 0.76))
+		text_at("NEXT: %s - LEVEL %d" % [city_name(), level], 143, 432, 22)
+		text_at("ENTER - NEXT LEVEL", 202, 490, 23, Color(0.62, 0.89, 1.0))
+		text_at("M / ESC - MAIN MENU (SAVED)", 153, 531, 18, Color(0.80, 0.98, 0.80))
 	if state == "boss_rewards" and level == MAX_LEVEL:
 		# Keep this message visible even before the white orb is collected.
 		draw_rect(Rect2(156.0, 205.0, 408.0, 63.0), Color(0.06, 0.16, 0.23, 0.88))
@@ -3325,6 +3379,7 @@ func _draw() -> void:
 		text_at("FIRE RATE  %.2f shots/s  Lv.%d/4" % [shots_per_second(), rate_level], 105, 640, 17, Color(1.0, 0.65, 0.5))
 		text_at("%s SHOT  |  SHIELD Lv.%d/3" % [equipped_weapon_name(), ability_level], 105, 664, 17, Color(0.6, 0.96, 0.76))
 		text_at("ENTER - FACE THE GUARDIAN" if pre_boss_shop else ("ENTER - View results" if level >= MAX_LEVEL else "ENTER - Next mission"), 137, 707, 24, Color(0.4, 0.9, 1.0))
+		text_at("M / ESC - MAIN MENU (SAVED)", 163, 729, 16, Color(0.74, 0.95, 0.79))
 	elif state == "gameover" or state == "victory":
 		if state == "victory" and not awaiting_score_name and not victory_show_scores:
 			draw_campaign_finale()
