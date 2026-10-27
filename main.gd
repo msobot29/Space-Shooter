@@ -1939,8 +1939,13 @@ func move_enemy(enemy: Dictionary, delta: float) -> void:
 	enemy["pos"] = position
 
 func begin_boss_reward_time() -> void:
-	# Every guardian, including Zagreb's final boss, leaves an orb.
-	# Give players time to collect it before showing the shop.
+	# Guardian victory is independent of waves/enemies. This transition runs
+	# exactly once and does not depend on whether a previous wave was cleared.
+	if state == "boss_rewards":
+		return
+	boss_active = false
+	boss_pending = false
+	enemies.clear()
 	state = "boss_rewards"
 	boss_reward_time = BOSS_REWARD_SECONDS
 	enemy_bullets.clear()
@@ -2127,14 +2132,17 @@ func _process(delta: float) -> void:
 	update_effects(delta)
 	if lives <= 0:
 		finish_run(false)
-	elif waves_spawned == waves_for_level() and enemies.is_empty():
-		# Stage flow must never wait for collectibles. Existing Scrap and bonuses
-		# stay in drops and carry into the next mission as falling objects.
-		if boss_active:
-			if boss.is_empty():
-				begin_boss_reward_time()
-		elif boss_pending:
+	elif boss_active and boss.is_empty():
+		# Boss victory takes precedence. Never wait for a stale wave or enemy
+		# counter after the guardian has been defeated.
+		begin_boss_reward_time()
+	elif not boss_active and waves_spawned == waves_for_level() and enemies.is_empty():
+		# Pickups do not block level progression.
+		if boss_pending:
 			begin_shop_arrival(true)
+		elif level == MAX_LEVEL:
+			# Final boss has zero regular waves; it must not complete itself.
+			pass
 		else:
 			complete_level()
 	queue_redraw()
