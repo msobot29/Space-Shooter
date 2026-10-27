@@ -3474,7 +3474,7 @@ func _draw() -> void:
 			draw_rect(Rect2(122, 285, 476, 5), Color(0.28, 0.78, 1.0))
 			text_at("GAME PAUSED", 222, 358, 35, Color(0.9, 0.96, 1.0))
 			for i in range(3):
-				var label := ["RESUME", "OPTIONS", "MAIN MENU"][i]
+				var label: String = ["RESUME", "OPTIONS", "MAIN MENU"][i]
 				var y := 391.0 + float(i) * 65.0
 				draw_rect(Rect2(173, y, 375, 52), Color(0.17, 0.48, 0.67) if pause_menu_selection == i else Color(0.09, 0.17, 0.29))
 				text_at(label, 268 if i != 2 else 254, y + 34, 25)
