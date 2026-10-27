@@ -2,6 +2,16 @@
 
 This repository contains the Godot 4 game source. The Windows .exe must be exported using Godot and matching export templates.
 
+## Automatic GitHub build (no local export required)
+
+1. Open https://github.com/msobot29/Space-Shooter/actions/workflows/windows-build.yml while signed in to GitHub.
+2. Click **Run workflow**, keep the **main** branch selected and confirm.
+3. Open the resulting run. When its status is **Success**, scroll to **Artifacts**.
+4. Download **AdriaticUprising-Windows-Alpha**. Extract the artifact ZIP to get `AdriaticUprising.exe`.
+5. Test the EXE on Windows and then send a ZIP of it to your friend.
+
+This automation uses Godot 4.7.2 and matching Windows export template. If the workflow fails, inspect the job log or export manually with the steps below. A workflow file is not itself an executable.
+
 ## Export a single Windows executable
 
 1. Open the project in **Godot 4.7.2** (or the matching Godot version you use).
