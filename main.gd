@@ -38,6 +38,7 @@ const ENEMIES_PER_WAVE := 10
 # preserving the original 20/20/30/30/40 total for missions 1..5.
 const ENEMY_TOTAL_BY_CITY_STAGE := [20, 20, 30, 30, 40]
 const BOSS_REWARD_SECONDS := 8.0
+const SHOP_ARRIVAL_SECONDS := 6.0
 const CAMPAIGN_BASE := Vector2(492.0, 616.0)
 const DOUBLE_DROP_CHANCE := 0.12
 const DOUBLE_DROP_PITY_KILLS := 18
@@ -147,6 +148,8 @@ var boss_reward_time := 0.0
 var boss_intro_time := 0.0
 var level_transition_time := 0.0
 var show_stats_modal := false
+var shop_arrival_elapsed := 0.0
+var shop_arrival_before_boss := false
 var game_paused := false
 var pause_screen := "menu" # menu, options, bindings, confirm
 var pause_menu_selection := 0
@@ -590,7 +593,7 @@ func draw_zagreb_background() -> void:
 			draw_circle(Vector2(beacon_x, beacon_y), 5.0, Color(1.0, 0.22, 0.13, brightness))
 
 
-func draw_player_ship_25d(pos: Vector2) -> void:
+func draw_player_ship_25d(pos: Vector2, engine_power: float = 1.0) -> void:
 	
 	# Shadow
 	draw_colored_polygon(PackedVector2Array([
@@ -658,13 +661,13 @@ func draw_player_ship_25d(pos: Vector2) -> void:
 
 	draw_colored_polygon(PackedVector2Array([
 		pos + Vector2(-7, 18),
-		pos + Vector2(0, 32 + flame_shift),
+		pos + Vector2(0, 18.0 + (14.0 + flame_shift) * engine_power),
 		pos + Vector2(7, 18)
 	]), Color(1.0, 0.72, 0.22, 0.95))
 
 	draw_colored_polygon(PackedVector2Array([
 		pos + Vector2(-4, 18),
-		pos + Vector2(0, 26 + flame_shift * 0.7),
+		pos + Vector2(0, 18.0 + (8.0 + flame_shift * 0.7) * engine_power),
 		pos + Vector2(4, 18)
 	]), Color(1.0, 0.93, 0.45, 0.95))
 
@@ -1089,7 +1092,7 @@ func update_retro_music() -> void:
 	var needed := ""
 	if state in ["main_menu", "menu_confirm_new", "menu_options", "menu_highscores", "menu_bindings"]:
 		needed = "menu"
-	elif state in ["playing", "intermission", "boss_intro", "boss_rewards"]:
+	elif state in ["playing", "intermission", "boss_intro", "boss_rewards", "shop_arrival"]:
 		needed = "boss" if boss_active or state in ["boss_intro", "boss_rewards"] else "stage"
 	elif state == "victory":
 		needed = "victory"
@@ -1947,6 +1950,31 @@ func begin_boss_reward_time() -> void:
 	queue_redraw()
 
 
+func begin_shop_arrival(before_boss: bool) -> void:
+	# Save the shop checkpoint first so quitting during the six-second animation
+	# never loses previously earned score, scrap, or equipment.
+	shop_arrival_elapsed = 0.0
+	shop_arrival_before_boss = before_boss
+	state = "shop_arrival"
+	game_paused = false
+	show_stats_modal = false
+	player_bullets.clear()
+	enemy_bullets.clear()
+	radial_bullets.clear()
+	fire_held = true
+	save_campaign_checkpoint("pre_boss_shop" if before_boss else "shop")
+	queue_redraw()
+
+
+func finish_shop_arrival() -> void:
+	if shop_arrival_before_boss:
+		open_pre_boss_shop()
+	else:
+		pre_boss_shop = false
+		state = "shop"
+		queue_redraw()
+
+
 func open_pre_boss_shop() -> void:
 	# Shop after the last regular enemy and before the city guardian.
 	state = "shop"
@@ -2004,7 +2032,7 @@ func _process(delta: float) -> void:
 		queue_redraw()
 		return
 	
-	if state in ["playing", "intermission", "boss_intro", "boss_rewards"]:
+	if state in ["playing", "intermission", "boss_intro", "boss_rewards", "shop_arrival"]:
 		if city_name() == "ZADAR":
 			update_background(delta)
 		elif city_name() == "RIJEKA":
@@ -2028,6 +2056,13 @@ func _process(delta: float) -> void:
 		queue_redraw()
 		return
 	if state == "city_select":
+		queue_redraw()
+		return
+	if state == "shop_arrival":
+		shop_arrival_elapsed = minf(SHOP_ARRIVAL_SECONDS, shop_arrival_elapsed + delta)
+		update_effects(delta)
+		if shop_arrival_elapsed >= SHOP_ARRIVAL_SECONDS:
+			finish_shop_arrival()
 		queue_redraw()
 		return
 	if state == "boss_rewards":
@@ -2099,7 +2134,7 @@ func _process(delta: float) -> void:
 			if boss.is_empty():
 				begin_boss_reward_time()
 		elif boss_pending:
-			open_pre_boss_shop()
+			begin_shop_arrival(true)
 		else:
 			complete_level()
 	queue_redraw()
@@ -2644,9 +2679,7 @@ func update_effects(delta: float) -> void:
 func complete_level() -> void:
 	# Keep the final guardian shop after combat and city map after lieutenants.
 	if level >= MAX_LEVEL:
-		state = "shop"
-		pre_boss_shop = false
-		save_campaign_checkpoint("shop")
+		begin_shop_arrival(false)
 	elif level % 5 == 0:
 		show_city_map()
 	else:
@@ -3240,7 +3273,7 @@ func _draw() -> void:
 			text_at("CPU frame %.1f ms [F3]" % frame_ms_scores, 490.0, 288.0, 15, Color(0.84, 0.91, 1.0))
 		return
 	
-	var is_playfield := state in ["playing", "intermission", "boss_intro", "boss_rewards"]
+	var is_playfield := state in ["playing", "intermission", "boss_intro", "boss_rewards", "shop_arrival"]
 	var has_animated_port := is_playfield and city_name() in ["ZADAR", "RIJEKA", "SPLIT", "OSIJEK", "ZAGREB"]
 	if has_animated_port:
 		if city_name() == "ZADAR":
@@ -3447,6 +3480,24 @@ func _draw() -> void:
 				text_at("CROATIA LIBERATED!", 186, 174, 29, Color(0.45, 1.0, 0.7))
 			else:
 				text_at("GAME OVER", 258, 174, 29, Color(1.0, 0.35, 0.4))
+	if state == "shop_arrival":
+		# Six-second animated docking: hard acceleration followed by soft braking.
+		var progress: float = clampf(shop_arrival_elapsed / SHOP_ARRIVAL_SECONDS, 0.0, 1.0)
+		var throttle: float = smoothstep(0.0, 0.35, progress) * (1.0 - smoothstep(0.55, 1.0, progress))
+		var travel: float = 105.0 * (progress * progress * (3.0 - 2.0 * progress))
+		var ship_pos := Vector2(360.0, PLAYER_Y - travel)
+		var engine_power: float = 0.35 + throttle * 2.4
+		draw_player_ship_25d(ship_pos, engine_power)
+		for trail_index in range(5):
+			var trail_progress: float = float(trail_index) / 4.0
+			var flame_length: float = (14.0 + throttle * 68.0) * (1.0 - trail_progress * 0.75)
+			var flame_pos := ship_pos + Vector2(0.0, 22.0 + float(trail_index) * 14.0 + flame_length)
+			draw_circle(flame_pos, 3.0 + throttle * 5.0 * (1.0 - trail_progress), Color(0.25, 0.84, 1.0, throttle * (1.0 - trail_progress) * 0.60))
+		draw_rect(Rect2(112, 215, 496, 111), Color(0.04, 0.09, 0.18, 0.86))
+		text_at("DOCKING AT THE SHOP", 167, 263, 28, Color(0.65, 0.94, 1.0))
+		text_at("ENGINE BOOST" if progress < 0.57 else "SLOWING DOWN", 261, 294, 19, Color(1.0, 0.85, 0.54))
+		draw_rect(Rect2(145, 310, 430, 7), Color(0.13, 0.22, 0.31))
+		draw_rect(Rect2(145, 310, 430.0 * progress, 7), Color(0.29, 0.85, 1.0))
 	if state in ["playing", "intermission", "boss_intro", "boss_rewards", "shop"]:
 		text_at("M music %s [%d%%]  [ ] volume   , . SFX [%d%%]" % ["ON" if music_enabled else "OFF", int(music_volume * 100.0), int(sfx_volume * 100.0)], 19, H - 42, 15, Color(0.74, 0.90, 1.0))
 	if show_stats_modal and (state == "playing" or state == "intermission" or state == "boss_intro" or state == "boss_rewards"):
