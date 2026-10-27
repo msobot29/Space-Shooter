@@ -1094,16 +1094,16 @@ func update_retro_music() -> void:
 		music_player.stream = music_streams[needed]
 		music_player.play()
 	music_player.stream_paused = game_paused or show_stats_modal or debug_level_menu
-	music_player.volume_db = linear_to_db(maxf(music_volume, 0.001))
+	music_player.volume_db = -80.0 if music_volume <= 0.0 else linear_to_db(music_volume)
 
 
 func update_sound_volumes() -> void:
 	for kind in sfx_voices:
 		var players: Array[AudioStreamPlayer] = sfx_voices[kind]
 		for player in players:
-			player.volume_db = float(sfx_base_db[kind]) + linear_to_db(maxf(sfx_volume, 0.001))
+			player.volume_db = -80.0 if sfx_volume <= 0.0 else float(sfx_base_db[kind]) + linear_to_db(sfx_volume)
 	if music_player != null:
-		music_player.volume_db = linear_to_db(maxf(music_volume, 0.001))
+		music_player.volume_db = -80.0 if music_volume <= 0.0 else linear_to_db(music_volume)
 
 
 func setup_arcade_audio() -> void:
@@ -1759,6 +1759,8 @@ func begin_level_transition() -> void:
 	# Preserve falling rewards during the silent break and level-title intro.
 	state = "intermission"
 	level_transition_time = LEVEL_TRANSITION_SECONDS + LEVEL_TITLE_SECONDS
+	# Checkpoint the next mission before the between-level countdown.
+	save_campaign_checkpoint("playing")
 	player_bullets.clear()
 	enemy_bullets.clear()
 	radial_bullets.clear()
