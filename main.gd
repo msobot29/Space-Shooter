@@ -2856,6 +2856,10 @@ func _unhandled_key_input(event: InputEvent) -> void:
 						state = "menu_options"
 		queue_redraw()
 		return
+	# M is the safe exit at checkpoint screens; it must precede Music M.
+	if event.keycode == KEY_M and state in ["level_clear", "city_select", "shop"]:
+		return_to_main_menu()
+		return
 	# Sound controls work from gameplay, shop and map (even while paused).
 	if event.keycode == KEY_M:
 		music_enabled = not music_enabled
