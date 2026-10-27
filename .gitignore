@@ -1,0 +1,14 @@
+# Godot 4 auto-generated project cache
+.godot/
+
+# Local editor/backups
+*.bak
+*.bak.gd
+*_backup.gd
+save main.gd
+
+# Built Windows distributions
+build/
+*.exe
+*.pck
+*.zip
