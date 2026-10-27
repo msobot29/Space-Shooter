@@ -149,7 +149,7 @@ var boss_intro_time := 0.0
 var level_transition_time := 0.0
 var show_stats_modal := false
 var shop_arrival_elapsed := 0.0
-var shop_arrival_before_boss := false
+var departure_destination := "shop" # shop after final boss; map after miniboss
 var game_paused := false
 var pause_screen := "menu" # menu, options, bindings, confirm
 var pause_menu_selection := 0
@@ -1955,25 +1955,28 @@ func begin_boss_reward_time() -> void:
 	queue_redraw()
 
 
-func begin_shop_arrival(before_boss: bool) -> void:
-	# Save the shop checkpoint first so quitting during the six-second animation
-	# never loses previously earned score, scrap, or equipment.
+func begin_departure(destination: String) -> void:
+	# The transition starts only when all rewards have been collected or
+	# fallen offscreen. Save the destination BEFORE the ship flies away.
+	departure_destination = destination
 	shop_arrival_elapsed = 0.0
-	shop_arrival_before_boss = before_boss
-	state = "shop_arrival"
+	state = "shop_arrival" # Reuse the existing six-second flight state.
 	game_paused = false
 	show_stats_modal = false
 	player_bullets.clear()
 	enemy_bullets.clear()
 	radial_bullets.clear()
 	fire_held = true
-	save_campaign_checkpoint("pre_boss_shop" if before_boss else "shop")
+	if destination == "map":
+		save_campaign_checkpoint("city_select")
+	else:
+		save_campaign_checkpoint("shop")
 	queue_redraw()
 
 
 func finish_shop_arrival() -> void:
-	if shop_arrival_before_boss:
-		open_pre_boss_shop()
+	if departure_destination == "map":
+		show_city_map()
 	else:
 		pre_boss_shop = false
 		state = "shop"
@@ -2085,7 +2088,9 @@ func _process(delta: float) -> void:
 					final_dialogue_time = FINAL_DIALOGUE_LINE_SECONDS
 				else:
 					final_dialogue_stage = 0
-		if boss_reward_time <= 0.0 and final_dialogue_stage == 0:
+		# Wait for EVERY dropped reward to be collected or leave the bottom
+		# edge. A completed timer alone must not cut off the pickup window.
+		if drops.is_empty() and final_dialogue_stage == 0:
 			complete_level()
 		queue_redraw()
 		return
@@ -2139,7 +2144,7 @@ func _process(delta: float) -> void:
 	elif not boss_active and waves_spawned == waves_for_level() and enemies.is_empty():
 		# Pickups do not block level progression.
 		if boss_pending:
-			begin_shop_arrival(true)
+			open_pre_boss_shop()
 		elif level == MAX_LEVEL:
 			# Final boss has zero regular waves; it must not complete itself.
 			pass
@@ -2685,11 +2690,12 @@ func update_effects(delta: float) -> void:
 			explosions.remove_at(i)
 
 func complete_level() -> void:
-	# Keep the final guardian shop after combat and city map after lieutenants.
+	# After each guardian, visibly fly away before showing the next screen.
+	# Ordinary mission timing is unchanged.
 	if level >= MAX_LEVEL:
-		begin_shop_arrival(false)
+		begin_departure("shop")
 	elif level % 5 == 0:
-		show_city_map()
+		begin_departure("map")
 	else:
 		# Advance automatically with the established silent pause and title.
 		# Checkpoint the next level so Continue still restores progress.
@@ -3489,32 +3495,33 @@ func _draw() -> void:
 			else:
 				text_at("GAME OVER", 258, 174, 29, Color(1.0, 0.35, 0.4))
 	if state == "shop_arrival":
-		# Fast atmospheric flight to the shop, no teleporting and no warp tunnel.
-		# Ship accelerates vertically, exits the top edge and the scenery rushes
-		# past until the six-second arrival finishes.
+		# Fluid six-second departure. Begin EXACTLY at the player's current
+		# position: no snap to center and no full-screen cut at t=0.
 		var flight_t: float = clampf(shop_arrival_elapsed / SHOP_ARRIVAL_SECONDS, 0.0, 1.0)
-		var takeoff_t: float = clampf(shop_arrival_elapsed / 2.1, 0.0, 1.0)
-		var engine_boost: float = smoothstep(0.0, 0.45, takeoff_t)
-		var departure_y: float = PLAYER_Y - 1100.0 * takeoff_t * takeoff_t
-		# Vertical motion blur of passing scenery, like a fast arcade flyaway.
-		var speed_effect: float = smoothstep(0.08, 0.34, flight_t) * (1.0 - smoothstep(0.74, 1.0, flight_t))
-		for line_index in range(45):
-			var lane_x: float = 20.0 + float((line_index * 71) % 680)
-			var stream: float = fposmod(flight_t * (1500.0 + 1700.0 * speed_effect) + float((line_index * 113) % 930), H + 190.0) - 95.0
-			var streak_length: float = 20.0 + speed_effect * (45.0 + float((line_index * 19) % 110))
-			draw_line(Vector2(lane_x, stream), Vector2(lane_x, stream + streak_length), Color(0.70, 0.91, 1.0, 0.09 + speed_effect * 0.31), 1.0 + speed_effect, true)
-		if takeoff_t < 1.0:
-			# Ship retains its normal size; it really travels off the screen.
-			var ship_pos := Vector2(player_x, departure_y)
-			draw_player_ship_25d(ship_pos, 1.0 + engine_boost * 4.0)
+		var boost_t: float = clampf(shop_arrival_elapsed / 3.35, 0.0, 1.0)
+		# Smooth throttle rise and strong late acceleration, continuous velocity.
+		var boost: float = smoothstep(0.0, 0.70, boost_t)
+		var distance: float = 1200.0 * boost_t * boost_t * boost_t
+		var ship_pos := Vector2(player_x, PLAYER_Y - distance)
+		var speed_lines: float = smoothstep(0.12, 0.40, flight_t) * (1.0 - smoothstep(0.83, 1.0, flight_t))
+		# Motion streaks fade in smoothly on the existing city background.
+		for streak_index in range(36):
+			var lane_x: float = 15.0 + float((streak_index * 79) % 685)
+			var phase: float = float((streak_index * 131) % 991)
+			var line_y: float = fposmod(shop_arrival_elapsed * (470.0 + speed_lines * 1250.0) + phase, H + 145.0) - 90.0
+			var length: float = 15.0 + speed_lines * (36.0 + float((streak_index * 13) % 85))
+			draw_line(Vector2(lane_x, line_y), Vector2(lane_x, line_y + length), Color(0.58, 0.86, 1.0, speed_lines * 0.35), 1.0 + speed_lines, true)
+		if ship_pos.y > -100.0:
+			# The actual ship leaves frame smoothly as its engines grow stronger.
+			draw_player_ship_25d(ship_pos, 1.0 + boost * 3.3)
 			for flame_index in range(3):
-				var offset_x: float = (float(flame_index) - 1.0) * 9.0
-				draw_line(ship_pos + Vector2(offset_x, 22.0), ship_pos + Vector2(offset_x, 68.0 + engine_boost * 160.0), Color(0.26, 0.77, 1.0, 0.4 + engine_boost * 0.45), 2.0 + engine_boost * 2.0, true)
-		# The view fades only as the ship reaches the shop, not via a warp effect.
-		var arrival_fade: float = smoothstep(0.72, 1.0, flight_t)
-		draw_rect(Rect2(0.0, 0.0, W, H), Color(0.025, 0.07, 0.13, arrival_fade * 0.94))
-		if flight_t > 0.72:
-			text_at("APPROACHING SHOP", 187, 459, 31, Color(0.82, 0.97, 1.0, arrival_fade))
+				var offset_x: float = (float(flame_index) - 1.0) * 8.0
+				var flame_from := ship_pos + Vector2(offset_x, 20.0)
+				var flame_to := ship_pos + Vector2(offset_x, 48.0 + boost * 137.0)
+				draw_line(flame_from, flame_to, Color(0.24, 0.77, 1.0, boost * 0.78), 2.0 + boost * 1.8, true)
+		# Fade into the map (or final shop) near the end, no message overlay.
+		var fade_amount: float = smoothstep(0.80, 1.0, flight_t)
+		draw_rect(Rect2(0.0, 0.0, W, H), Color(0.015, 0.04, 0.08, fade_amount))
 	if state in ["playing", "intermission", "boss_intro", "boss_rewards", "shop"]:
 		text_at("M music %s [%d%%]  [ ] volume   , . SFX [%d%%]" % ["ON" if music_enabled else "OFF", int(music_volume * 100.0), int(sfx_volume * 100.0)], 19, H - 42, 15, Color(0.74, 0.90, 1.0))
 	if show_stats_modal and (state == "playing" or state == "intermission" or state == "boss_intro" or state == "boss_rewards"):
