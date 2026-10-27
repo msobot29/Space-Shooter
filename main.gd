@@ -19,6 +19,10 @@ const CITY_FLIGHT_SECONDS := 6.0
 const HIGH_SCORE_FILE := "user://highscores.cfg"
 const HIGH_SCORE_LIMIT := 10
 const ABILITY_COOLDOWN := 10.0 # Starts after the shield expires
+# Lower regular-enemy aggression; preserve existing boss attack choreography.
+const REGULAR_ENEMY_FIRE_MIN := 0.90
+const REGULAR_ENEMY_PROJECTILE_SPEED_FACTOR := 0.80
+const BOSS_RED_PROJECTILE_SPEED_FACTOR := 0.88
 const WAVE_DELAY := 5.0
 const LEVEL_TRANSITION_SECONDS := 5.0 # Silent pause before showing the title
 const LEVEL_TITLE_SECONDS := 3.5 # Enemies begin after the title is shown
@@ -2105,10 +2109,10 @@ func update_enemies(delta: float) -> void:
 					enemy_bullets.append(source + Vector2(22, 0))
 			else:
 				fire_advanced_enemy_pattern(source, kind)
-		enemy_fire_clock = maxf(0.56, 1.43 - float(level) * 0.085)
+		enemy_fire_clock = maxf(REGULAR_ENEMY_FIRE_MIN, 1.85 - float(level) * 0.055)
 
 func launch_enemy_shot(origin: Vector2, velocity: Vector2, tint: Color) -> void:
-	radial_bullets.append({"pos": origin, "velocity": velocity, "color": tint})
+	radial_bullets.append({"pos": origin, "velocity": velocity * REGULAR_ENEMY_PROJECTILE_SPEED_FACTOR, "color": tint})
 
 func fire_advanced_enemy_pattern(origin: Vector2, kind: int) -> void:
 	# Distinct, readable attacks for the second five-mission block.
@@ -2388,7 +2392,7 @@ func update_bullets(delta: float) -> void:
 			radial_bullets.remove_at(i)
 			take_damage()
 	for i in range(enemy_bullets.size() - 1, -1, -1):
-		enemy_bullets[i].y += (240.0 + level * 18.0) * delta
+		enemy_bullets[i].y += (240.0 + level * 18.0) * (BOSS_RED_PROJECTILE_SPEED_FACTOR if boss_active else REGULAR_ENEMY_PROJECTILE_SPEED_FACTOR) * delta
 		if enemy_bullets[i].y > H + 20.0:
 			enemy_bullets.remove_at(i)
 		elif enemy_bullets[i].distance_to(Vector2(player_x, PLAYER_Y)) < 24.0:
