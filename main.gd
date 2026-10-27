@@ -41,7 +41,8 @@ const BOSS_REWARD_SECONDS := 8.0
 const CAMPAIGN_BASE := Vector2(492.0, 616.0)
 const DOUBLE_DROP_CHANCE := 0.12
 const DOUBLE_DROP_PITY_KILLS := 18
-const BINDINGS_FILE := "user://controls.cfg"
+const BINDINGS_FILE := "user://controls.cfg" # Legacy save path, supported for migration
+const CONTROL_SAVE_FOLDER := "AdriaticUprising"
 const BIND_ACTIONS := ["MOVE LEFT", "MOVE RIGHT", "FIRE", "SHIELD", "PAUSE", "SHIP STATUS"]
 const BIND_DEFAULT := [KEY_A, KEY_D, KEY_SPACE, KEY_R, KEY_P, KEY_TAB]
 const BIND_RESTRICTED := [KEY_ESCAPE, KEY_ENTER, KEY_KP_ENTER, KEY_F2, KEY_F3, KEY_O, KEY_M, KEY_BRACKETLEFT, KEY_BRACKETRIGHT, KEY_COMMA, KEY_PERIOD]
@@ -202,6 +203,7 @@ var target_kills := 0
 var waves_spawned := 0
 var wave_path_ids: Array[int] = []
 var boss_pending := false
+var pre_boss_shop := false
 
 
 func update_background(delta: float) -> void:
@@ -1142,29 +1144,66 @@ func reset_bindings() -> void:
 		bindings.append(int(key))
 
 
-func save_bindings() -> void:
+func controls_save_path() -> String:
+	# Stable across Godot project-name changes and Windows exported builds.
+	return OS.get_data_dir().path_join(CONTROL_SAVE_FOLDER).path_join("controls.cfg")
+
+
+func load_bindings_from_path(path: String) -> bool:
 	var cfg := ConfigFile.new()
-	cfg.set_value("keyboard", "bindings", bindings)
-	var result := cfg.save(BINDINGS_FILE)
+	if cfg.load(path) != OK:
+		return false
+	var loaded: Array[int] = []
+	if cfg.has_section_key("keyboard", "key_0"):
+		for i in range(BIND_ACTIONS.size()):
+			loaded.append(int(cfg.get_value("keyboard", "key_%d" % i, 0)))
+	else:
+		# Compatible with the older typed-Array save.
+		var previous: Variant = cfg.get_value("keyboard", "bindings", [])
+		if not previous is Array or previous.size() != BIND_ACTIONS.size():
+			return false
+		for item in previous:
+			loaded.append(int(item))
+	for key in loaded:
+		if key <= 0 or BIND_RESTRICTED.has(key):
+			return false
+	for i in range(loaded.size()):
+		if loaded.count(loaded[i]) > 1:
+			return false
+	bindings = loaded
+	return true
+
+
+func save_bindings() -> bool:
+	var path := controls_save_path()
+	var directory := path.get_base_dir()
+	if DirAccess.make_dir_recursive_absolute(directory) != OK:
+		push_warning("Cannot create keyboard settings folder: %s" % directory)
+		return false
+	var cfg := ConfigFile.new()
+	for i in range(bindings.size()):
+		cfg.set_value("keyboard", "key_%d" % i, bindings[i])
+	var result := cfg.save(path)
 	if result != OK:
-		push_warning("Could not save keyboard settings")
+		push_warning("Could not save keyboard settings to %s (error %d)" % [path, result])
+		return false
+	return true
 
 
 func load_bindings() -> void:
 	reset_bindings()
-	var cfg := ConfigFile.new()
-	if cfg.load(BINDINGS_FILE) != OK:
+	if load_bindings_from_path(controls_save_path()):
 		return
-	var stored: Variant = cfg.get_value("keyboard", "bindings", [])
-	if not stored is Array or stored.size() != BIND_ACTIONS.size():
-		return
-	var temp: Array[int] = []
-	for item in stored:
-		var k := int(item)
-		if k <= 0 or BIND_RESTRICTED.has(k) or temp.has(k):
+	# Migrate settings from user:// when the project's display name changed.
+	var legacy: Array[String] = [
+		BINDINGS_FILE,
+		OS.get_data_dir().path_join("Godot").path_join("app_userdata").path_join("Space Shooter").path_join("controls.cfg"),
+		OS.get_data_dir().path_join("Godot").path_join("app_userdata").path_join("Adriatic Uprising").path_join("controls.cfg")
+	]
+	for old_path in legacy:
+		if load_bindings_from_path(old_path):
+			save_bindings()
 			return
-		temp.append(k)
-	bindings = temp
 
 
 func key_down(action: int) -> bool:
@@ -1229,7 +1268,7 @@ func read_campaign_save() -> void:
 	if int(config.get_value("campaign", "version", -1)) != CAMPAIGN_SAVE_VERSION:
 		return
 	var checkpoint_state := String(config.get_value("campaign", "checkpoint", ""))
-	if not checkpoint_state in ["city_select", "playing", "shop"]:
+	if not checkpoint_state in ["city_select", "playing", "shop", "pre_boss_shop", "pre_boss"]:
 		return
 	var saved_level := int(config.get_value("campaign", "level", 0))
 	var saved_lives := int(config.get_value("campaign", "lives", 0))
@@ -1269,7 +1308,7 @@ func read_campaign_save() -> void:
 func save_campaign_checkpoint(checkpoint_state: String) -> void:
 	# Checkpoints are written at mission starts, city selection and shops.
 	# DEBUG sessions are never saved or submitted to High Scores.
-	if debug_run or not checkpoint_state in ["city_select", "playing", "shop"]:
+	if debug_run or not checkpoint_state in ["city_select", "playing", "shop", "pre_boss_shop", "pre_boss"]:
 		return
 	var config := ConfigFile.new()
 	config.set_value("campaign", "version", CAMPAIGN_SAVE_VERSION)
@@ -1338,8 +1377,10 @@ func continue_campaign() -> void:
 	boss_active = false
 	player_x = W * 0.5
 	var checkpoint := String(data["checkpoint"])
-	if checkpoint == "shop":
-		state = "shop"
+	if checkpoint == "pre_boss_shop":
+		open_pre_boss_shop()
+	elif checkpoint == "pre_boss":
+		start_level(true)
 	elif checkpoint == "city_select":
 		show_city_map()
 	else:
@@ -1697,7 +1738,7 @@ func draw_debug_level_menu() -> void:
 	text_at("ENTER: START     ESC / F2: CLOSE", 145, 730, 18, Color(0.65, 0.97, 0.8))
 
 
-func start_level() -> void:
+func start_level(resume_boss: bool = false) -> void:
 	state = "playing"
 	show_stats_modal = false
 	game_paused = false
@@ -1714,7 +1755,8 @@ func start_level() -> void:
 	explosions.clear()
 	boss.clear()
 	boss_active = false
-	boss_pending = level % 5 == 0 # City guardian every 5 levels; final boss at 25
+	boss_pending = level % 5 == 0 # Boss every 5 levels; shop opens before boss
+	pre_boss_shop = false
 	boss_intro_time = 0.0
 	boss_reward_time = 0.0
 	final_dialogue_stage = 0
@@ -1747,12 +1789,16 @@ func start_level() -> void:
 	level_time = 0.0
 	kills = 0
 	target_kills = waves_for_level() * enemies_per_wave()
-	if level == MAX_LEVEL:
-		# Zone Guardian battle: no ordinary enemy waves before the boss.
+	if resume_boss:
+		# Resuming after the shop must NOT show a second shop.
 		begin_boss_intro()
+		save_campaign_checkpoint("pre_boss")
+	elif level == MAX_LEVEL:
+		# Final encounter has no normal waves, so shop opens before the intro.
+		open_pre_boss_shop()
 	else:
 		spawn_wave()
-	save_campaign_checkpoint("playing")
+		save_campaign_checkpoint("playing")
 	queue_redraw()
 
 func begin_level_transition() -> void:
@@ -1819,7 +1865,7 @@ func spawn_wave() -> void:
 				"path": path_id,
 				"side": -1.0 if left else 1.0,
 				"offset": float(index) * 0.26,
-				"hp": 5 + mini(int((level - 1) / 5), 4) if is_guard else 2 + mini(int((level - 1) / 5), 4),
+				"hp": 3 if is_guard and level <= 5 else (5 + mini(int((level - 1) / 5), 4) if is_guard else 2 + mini(int((level - 1) / 5), 4)),
 				"kind": kind
 			})
 
@@ -1887,6 +1933,27 @@ func begin_boss_reward_time() -> void:
 	radial_bullets.clear()
 	player_bullets.clear()
 	fire_held = true
+	queue_redraw()
+
+
+func open_pre_boss_shop() -> void:
+	# Shop after the last regular enemy and before the city guardian.
+	state = "shop"
+	pre_boss_shop = true
+	game_paused = false
+	show_stats_modal = false
+	enemy_bullets.clear()
+	radial_bullets.clear()
+	player_bullets.clear()
+	fire_held = true
+	save_campaign_checkpoint("pre_boss_shop")
+	queue_redraw()
+
+
+func leave_pre_boss_shop() -> void:
+	pre_boss_shop = false
+	begin_boss_intro()
+	save_campaign_checkpoint("pre_boss")
 	queue_redraw()
 
 
@@ -2021,7 +2088,7 @@ func _process(delta: float) -> void:
 			if boss.is_empty():
 				begin_boss_reward_time()
 		elif boss_pending:
-			begin_boss_intro()
+			open_pre_boss_shop()
 		else:
 			complete_level()
 	queue_redraw()
@@ -2540,12 +2607,11 @@ func update_effects(delta: float) -> void:
 			explosions.remove_at(i)
 
 func complete_level() -> void:
-	# Shop only after each group of five missions, never after ordinary stages.
-	if level % 5 == 0:
-		state = "shop"
-		save_campaign_checkpoint("shop")
-	elif level >= MAX_LEVEL:
+	# Shopping is done BEFORE each guardian. No additional post-boss shop.
+	if level >= MAX_LEVEL:
 		finish_run(true)
+	elif level % 5 == 0:
+		show_city_map()
 	else:
 		level += 1
 		begin_level_transition()
@@ -2715,7 +2781,7 @@ func buy_upgrade(kind: int) -> void:
 		4: damage_level = 6
 		5: ability_level += 1
 	if state == "shop":
-		save_campaign_checkpoint("shop")
+		save_campaign_checkpoint("pre_boss_shop" if pre_boss_shop else "shop")
 
 func _unhandled_key_input(event: InputEvent) -> void:
 	if not event is InputEventKey or not event.pressed or event.echo:
@@ -2733,9 +2799,9 @@ func _unhandled_key_input(event: InputEvent) -> void:
 					binding_notice = "KEY ALREADY USED"
 				else:
 					bindings[binding_selection] = key
-					save_bindings()
+					var saved := save_bindings()
 					binding_capture = false
-					binding_notice = "SAVED: %s" % binding_name(key)
+					binding_notice = ("SAVED: %s" % binding_name(key)) if saved else "SAVE FAILED - CHECK USER FOLDER"
 		else:
 			match event.keycode:
 				KEY_UP:
@@ -2750,8 +2816,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
 						binding_notice = ""
 					elif binding_selection == BIND_ACTIONS.size():
 						reset_bindings()
-						save_bindings()
-						binding_notice = "DEFAULTS RESTORED"
+						binding_notice = "DEFAULTS RESTORED" if save_bindings() else "SAVE FAILED"
 					else:
 						state = "menu_options"
 		queue_redraw()
@@ -2924,10 +2989,11 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			KEY_5: buy_upgrade(5)
 
 			KEY_ENTER, KEY_KP_ENTER:
-				if level >= MAX_LEVEL:
+				if pre_boss_shop:
+					leave_pre_boss_shop()
+				elif level >= MAX_LEVEL:
 					finish_run(true)
 				else:
-					# Each city ends in its own shop; then return to the map.
 					show_city_map()
 	elif state == "playing" or state == "intermission" or state == "boss_intro" or state == "boss_rewards":
 		if event.physical_keycode == bindings[4] or event.keycode == bindings[4]:
@@ -3225,7 +3291,7 @@ func _draw() -> void:
 		draw_final_orb_speech()
 	if state == "shop":
 		draw_rect(Rect2(52, 190, 616, 555), Color(0.07, 0.12, 0.23, 0.96))
-		text_at("%s LIBERATED!" % city_name(), 185, 250, 30)
+		text_at("PRE-BOSS SHOP - %s" % city_name() if pre_boss_shop else "%s LIBERATED!" % city_name(), 136, 250, 27)
 		text_at("SCRAP: %d" % scrap, 250, 296, 26, Color(0.95, 0.85, 0.3))
 		if speed_level >= 4:
 			text_at("1 - Extra Speed: MAX", 105, 353, 22)
@@ -3251,7 +3317,7 @@ func _draw() -> void:
 		text_at("SHIP SPEED  %d px/s  Lv.%d/4" % [int(BASE_SPEED + speed_level * SPEED_STEP), speed_level], 105, 616, 17, Color(0.55, 0.83, 1.0))
 		text_at("FIRE RATE  %.2f shots/s  Lv.%d/4" % [shots_per_second(), rate_level], 105, 640, 17, Color(1.0, 0.65, 0.5))
 		text_at("%s SHOT  |  SHIELD Lv.%d/3" % [equipped_weapon_name(), ability_level], 105, 664, 17, Color(0.6, 0.96, 0.76))
-		text_at("ENTER - View results" if level >= MAX_LEVEL else "ENTER - Next mission", 160, 707, 26, Color(0.4, 0.9, 1.0))
+		text_at("ENTER - FACE THE GUARDIAN" if pre_boss_shop else ("ENTER - View results" if level >= MAX_LEVEL else "ENTER - Next mission"), 137, 707, 24, Color(0.4, 0.9, 1.0))
 	elif state == "gameover" or state == "victory":
 		if state == "victory" and not awaiting_score_name and not victory_show_scores:
 			draw_campaign_finale()
