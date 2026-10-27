@@ -69,6 +69,7 @@ var show_stats_modal := false
 var game_paused := false
 var god_mode := false # Local QA toggle (O key), blocks actual life and weapon loss
 var debug_level_menu := false
+var show_performance_stats := false # F3 toggles an FPS/process-time diagnostic overlay
 var debug_selected_level := 1
 var debug_run := false # Debug skips never qualify for persistent High Scores.
 var high_scores: Array[Dictionary] = []
@@ -99,6 +100,11 @@ var storm_pulse_time := 0.0
 var storm_safe_lane := 4
 var collected_orb_mask := 0
 var white_orb_collected := false # Final Zagreb guardian trophy, independent of four life-orb colors
+# Final boss dialogue is triggered only when the player physically collects the white orb.
+# Stage 1: crew report. Stage 2: captain's reply.
+var final_dialogue_stage := 0
+var final_dialogue_time := 0.0
+const FINAL_DIALOGUE_LINE_SECONDS := 4.5
 var boss_attack_index := 0
 var boss_warning_time := 0.0
 var boss_warning_x := 360.0
@@ -116,9 +122,9 @@ var boss_pending := false
 
 
 func update_background(delta: float) -> void:
-	bg_scroll_far = fposmod(bg_scroll_far + BG_SPEED_FAR * delta, H)
-	bg_scroll_mid = fposmod(bg_scroll_mid + BG_SPEED_MID * delta, H)
-	bg_scroll_near = fposmod(bg_scroll_near + BG_SPEED_NEAR * delta, H)
+	bg_scroll_far = fposmod(bg_scroll_far + BG_SPEED_FAR * delta, 10.0 * 120.0)
+	bg_scroll_mid = fposmod(bg_scroll_mid + BG_SPEED_MID * delta, 6.0 * 245.0)
+	bg_scroll_near = fposmod(bg_scroll_near + BG_SPEED_NEAR * delta, 16.0 * 85.0)
 
 
 func draw_zadar_background() -> void:
@@ -127,12 +133,17 @@ func draw_zadar_background() -> void:
 
 	# Distant moving water
 	for i in range(10):
-		var y := fposmod(float(i) * 120.0 + bg_scroll_far, H + 120.0) - 120.0
+		var y := fposmod(float(i) * 120.0 + bg_scroll_far + 120.0, 10.0 * 120.0) - 120.0
 		draw_rect(Rect2(0.0, y, W, 52.0), Color(0.08, 0.26, 0.38, 0.34))
 
 	# Islands moving at medium speed
-	for i in range(5):
-		var y := fposmod(float(i) * 245.0 + bg_scroll_mid, H + 245.0) - 245.0
+	# Six islands ensure the left/right pattern repeats identically after a loop.
+	# Wrap only while an island is entirely off-screen: no visible teleport.
+	for i in range(6):
+		var y := fposmod(float(i) * 245.0 + bg_scroll_mid + 245.0, 6.0 * 245.0) - 245.0
+		# Do not allocate island polygons if the entire island is off-screen.
+		if y > H + 10.0 or y + 110.0 < -10.0:
+			continue
 		var x := 105.0 if i % 2 == 0 else 440.0
 
 		var shadow := PackedVector2Array([
@@ -167,7 +178,9 @@ func draw_zadar_background() -> void:
 
 	# Fast-moving foam and surface waves
 	for i in range(16):
-		var y := fposmod(float(i) * 85.0 + bg_scroll_near, H + 85.0) - 85.0
+		var y := fposmod(float(i) * 85.0 + bg_scroll_near + 85.0, 16.0 * 85.0) - 85.0
+		if y > H + 10.0 or y + 20.0 < -10.0:
+			continue
 		var x := 40.0 + float((i * 127) % 540)
 
 		draw_line(
@@ -185,6 +198,278 @@ func draw_zadar_background() -> void:
 			1.5,
 			true
 		)
+func draw_player_ship_25d(pos: Vector2) -> void:
+	
+	# Shadow
+	draw_colored_polygon(PackedVector2Array([
+		pos + Vector2(5, -24),
+		pos + Vector2(-30, 23),
+		pos + Vector2(5, 17),
+		pos + Vector2(35, 23)
+	]), Color(0.0, 0.0, 0.0, 0.32))
+
+	# Dark lower hull
+	draw_colored_polygon(PackedVector2Array([
+		pos + Vector2(0, -30),
+		pos + Vector2(-18, 8),
+		pos + Vector2(-10, 20),
+		pos + Vector2(0, 12),
+		pos + Vector2(10, 20),
+		pos + Vector2(18, 8)
+	]), Color(0.08, 0.24, 0.42))
+
+	# Main blue hull
+	draw_colored_polygon(PackedVector2Array([
+		pos + Vector2(0, -34),
+		pos + Vector2(-20, 10),
+		pos + Vector2(-9, 18),
+		pos + Vector2(0, 10),
+		pos + Vector2(9, 18),
+		pos + Vector2(20, 10)
+	]), Color(0.30, 0.78, 1.0))
+
+	# Left wing
+	draw_colored_polygon(PackedVector2Array([
+		pos + Vector2(-20, 8),
+		pos + Vector2(-36, 25),
+		pos + Vector2(-11, 15)
+	]), Color(0.18, 0.56, 0.90))
+
+	# Right wing
+	draw_colored_polygon(PackedVector2Array([
+		pos + Vector2(20, 8),
+		pos + Vector2(36, 25),
+		pos + Vector2(11, 15)
+	]), Color(0.18, 0.56, 0.90))
+
+	# Cockpit
+	draw_colored_polygon(PackedVector2Array([
+		pos + Vector2(0, -10),
+		pos + Vector2(-8, 4),
+		pos + Vector2(0, 10),
+		pos + Vector2(8, 4)
+	]), Color(0.10, 0.23, 0.45))
+
+	draw_circle(pos, 5.5, Color(0.72, 0.95, 1.0))
+
+	# Metallic highlights
+	draw_line(
+		pos + Vector2(0, -28),
+		pos + Vector2(0, 12),
+		Color(0.88, 1.0, 1.0, 0.55),
+		2.0,
+		true
+	)
+
+	# Animated engine flames
+	var flame_shift := sin(Time.get_ticks_msec() * 0.02) * 2.0
+
+	draw_colored_polygon(PackedVector2Array([
+		pos + Vector2(-7, 18),
+		pos + Vector2(0, 32 + flame_shift),
+		pos + Vector2(7, 18)
+	]), Color(1.0, 0.72, 0.22, 0.95))
+
+	draw_colored_polygon(PackedVector2Array([
+		pos + Vector2(-4, 18),
+		pos + Vector2(0, 26 + flame_shift * 0.7),
+		pos + Vector2(4, 18)
+	]), Color(1.0, 0.93, 0.45, 0.95))
+
+# ENEMY 2.5D VISUALS - presentation only; no gameplay or hitbox changes.
+# The colors, highlights and cast shadows simulate depth in our Node2D game.
+func draw_jellyfish_25d(pos: Vector2) -> void:
+	var sway := sin(level_time * 3.5 + pos.x * 0.012)
+	var pulse := sin(level_time * 4.0 + pos.x * 0.008)
+	# Soft water shadow, then animated translucent tentacles behind the bell.
+	draw_circle(pos + Vector2(7.0, 12.0), 23.0, Color(0.0, 0.05, 0.11, 0.23))
+	for t in range(-2, 3):
+		var root := pos + Vector2(float(t) * 8.0, 4.0)
+		var tip := pos + Vector2(float(t) * 8.0 + sway * (5.0 + absf(float(t)) * 2.0), 34.0 + pulse * 2.0)
+		var mid := (root + tip) * 0.5 + Vector2(-sway * 4.0, 0.0)
+		draw_line(root, mid, Color(0.11, 0.45, 0.68, 0.85), 6.0, true)
+		draw_line(mid, tip, Color(0.49, 0.91, 1.0, 0.85), 3.0, true)
+		draw_circle(tip, 2.2, Color(0.65, 0.98, 1.0, 0.78))
+	# Layered dome suggests glasslike volume; size stays near old collision area.
+	var crown := pos + Vector2(0.0, -7.0 + pulse * 1.5)
+	draw_circle(crown + Vector2(1.5, 3.5), 24.0, Color(0.06, 0.30, 0.53, 0.95))
+	draw_circle(crown, 22.0, Color(0.24, 0.67, 0.92, 0.94))
+	draw_circle(crown + Vector2(-5.0, -6.0), 14.0, Color(0.58, 0.88, 1.0, 0.75))
+	draw_circle(crown + Vector2(-9.0, -11.0), 5.0, Color(0.91, 1.0, 1.0, 0.84))
+	draw_arc(crown, 23.0, PI + 0.12, TAU - 0.12, 24, Color(0.76, 0.97, 1.0, 0.95), 2.8, true)
+	draw_line(pos + Vector2(-17.0, 8.0), pos + Vector2(18.0, 8.0), Color(0.78, 0.96, 1.0, 0.72), 3.0, true)
+
+
+func draw_crab_25d(pos: Vector2) -> void:
+	var claw_motion := sin(level_time * 4.8 + pos.x * 0.015) * 3.0
+	# Offset shadow and rear legs produce a raised armored body.
+	draw_circle(pos + Vector2(5.0, 9.0), 26.0, Color(0.0, 0.03, 0.07, 0.35))
+	for side in [-1.0, 1.0]:
+		for n in range(3):
+			var y := -11.0 + float(n) * 12.0
+			draw_line(pos + Vector2(side * 15.0, y), pos + Vector2(side * 28.0, y + 9.0), Color(0.34, 0.08, 0.10), 6.0, true)
+		# Red armored pincers and their contrasting reflective edges.
+		var claw := pos + Vector2(side * 27.0, 5.0 + claw_motion * side)
+		draw_line(pos + Vector2(side * 15.0, 6.0), claw, Color(0.55, 0.12, 0.11), 9.0, true)
+		draw_circle(claw, 10.0, Color(0.59, 0.11, 0.12))
+		draw_circle(claw + Vector2(-3.0, -4.0), 6.5, Color(1.0, 0.44, 0.25))
+		draw_line(claw + Vector2(0.0, 1.0), claw + Vector2(side * 8.0, 10.0), Color(1.0, 0.57, 0.36), 4.0, true)
+	# Carapace has a shaded rim, elevated top and chitin plates.
+	draw_circle(pos + Vector2(1.5, 4.0), 23.0, Color(0.39, 0.07, 0.12))
+	draw_circle(pos + Vector2(0.0, -1.0), 21.0, Color(0.81, 0.20, 0.16))
+	draw_circle(pos + Vector2(-5.0, -7.0), 13.0, Color(1.0, 0.43, 0.28))
+	draw_arc(pos + Vector2(0.0, -1.0), 20.0, PI + 0.38, TAU - 0.42, 22, Color(1.0, 0.68, 0.43), 3.0, true)
+	draw_line(pos + Vector2(-16.0, 7.0), pos + Vector2(16.0, 7.0), Color(0.49, 0.08, 0.12), 4.0, true)
+	draw_circle(pos + Vector2(-7.0, -4.0), 2.2, Color(0.23, 0.07, 0.12))
+	draw_circle(pos + Vector2(7.0, -4.0), 2.2, Color(0.23, 0.07, 0.12))
+
+
+func draw_eel_25d(pos: Vector2) -> void:
+	var wiggle := sin(level_time * 7.5 + pos.x * 0.015) * 6.0
+	var tail := pos + Vector2(-22.0, 18.0 + wiggle)
+	var spine := pos + Vector2(-7.0, 13.0 - wiggle * 0.35)
+	var middle := pos + Vector2(7.0, 3.0 + wiggle * 0.45)
+	var head := pos + Vector2(13.0, -17.0)
+	# Consistent 2D depth through a darker offset silhouette.
+	var shade := Vector2(5.0, 6.0)
+	draw_line(tail + shade, spine + shade, Color(0.02, 0.15, 0.11, 0.38), 24.0, true)
+	draw_line(spine + shade, middle + shade, Color(0.02, 0.15, 0.11, 0.38), 24.0, true)
+	draw_line(middle + shade, head + shade, Color(0.02, 0.15, 0.11, 0.38), 23.0, true)
+	for segment in range(3):
+		var a := tail if segment == 0 else (spine if segment == 1 else middle)
+		var b := spine if segment == 0 else (middle if segment == 1 else head)
+		draw_line(a, b, Color(0.13, 0.35, 0.09), 21.0, true)
+		draw_line(a + Vector2(-3.0, -3.0), b + Vector2(-3.0, -3.0), Color(0.48, 0.91, 0.18), 13.0, true)
+		draw_line(a + Vector2(-5.0, -5.0), b + Vector2(-5.0, -5.0), Color(0.83, 1.0, 0.38, 0.68), 3.0, true)
+	draw_circle(head, 12.0, Color(0.30, 0.68, 0.12))
+	draw_circle(head + Vector2(-3.0, -4.0), 8.0, Color(0.71, 1.0, 0.23))
+	draw_circle(head + Vector2(-4.0, -5.0), 2.8, Color.WHITE)
+	draw_circle(head + Vector2(-4.0, -5.0), 1.3, Color(0.08, 0.17, 0.06))
+	# Short electrical arcs flicker without adding projectiles or damage.
+	var spark := sin(level_time * 11.0 + pos.x * 0.04)
+	if spark > 0.55:
+		draw_polyline(PackedVector2Array([
+			middle + Vector2(-8.0, -13.0),
+			middle + Vector2(-1.0, -19.0),
+			middle + Vector2(4.0, -13.0),
+			middle + Vector2(10.0, -18.0)
+		]), Color(0.77, 1.0, 0.49, 0.88), 2.0, true)
+
+
+
+# Presentation-only 2.5D boss artwork. Boss movement, shield charges, hitboxes,
+# projectile patterns, HP and rewards stay in the unchanged gameplay functions.
+func draw_boss_25d(pos: Vector2) -> void:
+	if level == MAX_LEVEL:
+		draw_zone_guardian_25d(pos)
+	else:
+		draw_city_lieutenant_25d(pos, city_name())
+
+
+func draw_city_lieutenant_25d(pos: Vector2, city: String) -> void:
+	# Four distinct silhouettes and color palettes without any gameplay changes.
+	var shell := Color(0.12, 0.48, 0.51)
+	var rim := Color(0.37, 0.92, 0.85)
+	var armor := Color(0.17, 0.31, 0.39)
+	match city:
+		"ZADAR":
+			shell = Color(0.14, 0.58, 0.61)
+			rim = Color(0.53, 0.96, 0.93)
+			armor = Color(0.10, 0.30, 0.42)
+		"RIJEKA":
+			shell = Color(0.37, 0.48, 0.68)
+			rim = Color(0.69, 0.84, 1.0)
+			armor = Color(0.17, 0.24, 0.40)
+		"SPLIT":
+			shell = Color(0.70, 0.38, 0.22)
+			rim = Color(1.0, 0.76, 0.40)
+			armor = Color(0.36, 0.19, 0.17)
+		"OSIJEK":
+			shell = Color(0.32, 0.59, 0.23)
+			rim = Color(0.71, 0.96, 0.43)
+			armor = Color(0.19, 0.32, 0.22)
+	# Diffuse ground shadow and thick faceted armored shell.
+	draw_circle(pos + Vector2(7.0, 13.0), 67.0, Color(0.0, 0.02, 0.06, 0.34))
+	draw_circle(pos + Vector2(0.0, 6.0), 65.0, armor.darkened(0.30))
+	draw_circle(pos, 60.0, shell)
+	draw_arc(pos, 61.0, PI * 1.1, TAU * 0.95, 28, rim, 5.0)
+	# Four outer armored flippers (different shape per lieutenant).
+	for side in [-1.0, 1.0]:
+		var blade := PackedVector2Array([
+			pos + Vector2(side * 42.0, -14.0),
+			pos + Vector2(side * 83.0, -40.0),
+			pos + Vector2(side * 74.0, 15.0),
+			pos + Vector2(side * 44.0, 34.0)
+		])
+		draw_colored_polygon(blade, armor)
+		draw_line(pos + Vector2(side * 47.0, -10.0), pos + Vector2(side * 76.0, -30.0), rim, 3.0, true)
+	# Visible pseudo-3D plates around the core.
+	for plate in range(6):
+		var angle := float(plate) * TAU / 6.0 + spin_rotation * 0.16
+		var offset := Vector2(cos(angle), sin(angle)) * 43.0
+		draw_circle(pos + offset + Vector2(2, 5), 14.0, armor.darkened(0.37))
+		draw_circle(pos + offset, 12.0, armor)
+		draw_circle(pos + offset + Vector2(-3, -4), 5.0, rim.darkened(0.12))
+	# Each city has a small unmistakable accent.
+	match city:
+		"ZADAR":
+			for spike in [-1.0, 1.0]:
+				draw_line(pos + Vector2(spike * 16.0, -31.0), pos + Vector2(spike * 25.0, -79.0), rim, 8.0, true)
+		"RIJEKA":
+			for fin in [-1.0, 1.0]:
+				draw_line(pos + Vector2(fin * 24.0, 19.0), pos + Vector2(fin * 43.0, 70.0), rim, 8.0, true)
+		"SPLIT":
+			draw_arc(pos, 74.0, 0.2, PI - 0.2, 22, rim, 5.0)
+		"OSIJEK":
+			for horn in [-1.0, 1.0]:
+				draw_line(pos + Vector2(horn * 26.0, -29.0), pos + Vector2(horn * 44.0, -66.0), rim, 8.0, true)
+	# Existing shield state drives only the light color, not collision logic.
+	var core_light := Color(0.26, 0.83, 1.0) if boss_shields > 0 else Color(1.0, 0.29, 0.30)
+	draw_circle(pos + Vector2(3, 5), 26.0, armor.darkened(0.5))
+	draw_circle(pos, 23.0, core_light)
+	draw_circle(pos + Vector2(-7, -8), 8.0, Color(1.0, 1.0, 1.0, 0.72))
+	if boss_shields > 0:
+		draw_arc(pos, 70.0, 0.0, TAU, 38, Color(0.3, 0.91, 1.0, 0.7), 3.0)
+
+
+func draw_zone_guardian_25d(pos: Vector2) -> void:
+	# Large final boss, visually distinct from the four city lieutenants.
+	# Main silhouette stays inside the existing ~108 px projectile hit radius
+	# except for decorative outer armor; physics remains unchanged.
+	var dark := Color(0.07, 0.13, 0.23)
+	var steel := Color(0.17, 0.38, 0.51)
+	var glow := Color(0.38, 0.91, 1.0)
+	draw_circle(pos + Vector2(9, 15), 111.0, Color(0.0, 0.02, 0.08, 0.37))
+	draw_circle(pos, 108.0, dark)
+	draw_arc(pos, 107.0, 0.0, TAU, 48, glow.darkened(0.25), 8.0)
+	for segment in range(8):
+		var angle := float(segment) * TAU / 8.0 + spin_rotation * 0.19
+		var direction := Vector2(cos(angle), sin(angle))
+		var anchor := pos + direction * 79.0
+		draw_line(pos + direction * 47.0, anchor, steel, 17.0, true)
+		draw_circle(anchor + Vector2(3.0, 5.0), 18.0, dark)
+		draw_circle(anchor, 15.0, steel)
+		draw_circle(anchor + Vector2(-4.0, -5.0), 6.0, glow)
+	# Angular inner hull, layered to suggest height and machinery.
+	draw_colored_polygon(PackedVector2Array([
+		pos + Vector2(0, -69), pos + Vector2(-65, -10),
+		pos + Vector2(-48, 47), pos + Vector2(0, 70),
+		pos + Vector2(48, 47), pos + Vector2(65, -10)
+	]), steel)
+	draw_colored_polygon(PackedVector2Array([
+		pos + Vector2(0, -57), pos + Vector2(-40, -8),
+		pos + Vector2(-30, 34), pos + Vector2(0, 49),
+		pos + Vector2(30, 34), pos + Vector2(40, -8)
+	]), Color(0.11, 0.25, 0.39))
+	draw_line(pos + Vector2(-33, -12), pos + Vector2(0, -48), glow, 4.0, true)
+	draw_line(pos + Vector2(33, -12), pos + Vector2(0, -48), glow, 4.0, true)
+	var core_glow := glow if boss_shields > 0 else Color(1.0, 0.35, 0.40)
+	draw_circle(pos + Vector2(4, 7), 32.0, dark)
+	draw_circle(pos, 29.0, core_glow)
+	draw_circle(pos + Vector2(-9, -10), 11.0, Color(0.92, 0.99, 1.0))
+	# Two shield rounds are already controlled by existing boss-shield state.
+	if boss_shields > 0:
+		draw_arc(pos, 114.0, 0.0, TAU, 56, Color(0.40, 0.92, 1.0, 0.88), 5.0)
 
 func city_name() -> String:
 	var slot := clampi(int((level - 1) / 5), 0, 4)
@@ -370,6 +655,8 @@ func jump_to_debug_level() -> void:
 	active_multipliers.clear()
 	collected_orb_mask = 0
 	white_orb_collected = false
+	final_dialogue_stage = 0
+	final_dialogue_time = 0.0
 	total_kills = 0
 	single_shot_kills_since_drop = 0
 	score = 0
@@ -418,6 +705,8 @@ func start_level() -> void:
 	boss_pending = level % 5 == 0 # City guardian every 5 levels; final boss at 25
 	boss_intro_time = 0.0
 	boss_reward_time = 0.0
+	final_dialogue_stage = 0
+	final_dialogue_time = 0.0
 	waves_spawned = 0
 	wave_path_ids.clear()
 	boss_phase = 1
@@ -632,7 +921,15 @@ func _process(delta: float) -> void:
 		update_multiplier_timers(delta)
 		update_effects(delta)
 		boss_reward_time = maxf(0.0, boss_reward_time - delta)
-		if boss_reward_time <= 0.0:
+		if final_dialogue_stage > 0:
+			final_dialogue_time = maxf(0.0, final_dialogue_time - delta)
+			if final_dialogue_time <= 0.0:
+				if final_dialogue_stage == 1:
+					final_dialogue_stage = 2
+					final_dialogue_time = FINAL_DIALOGUE_LINE_SECONDS
+				else:
+					final_dialogue_stage = 0
+		if boss_reward_time <= 0.0 and final_dialogue_stage == 0:
 			complete_level()
 		queue_redraw()
 		return
@@ -859,9 +1156,15 @@ func update_boss(delta: float) -> void:
 			boss_warning_x = player_x
 			boss_warning_time = 0.7
 		else:
-			spin_countdown = SPIN_WARNING
-			spin_rotation = 0.0
-			# The next volley begins only after the warning and rotation.
+			if level == MAX_LEVEL:
+				# Final Guardian does NOT use 360-degree barrages.
+				# Replace the old spin turn with a telegraphed aimed shot.
+				boss_warning_x = player_x
+				boss_warning_time = 0.7
+			else:
+				spin_countdown = SPIN_WARNING
+				spin_rotation = 0.0
+				# The lieutenant's radial volley begins after the warning.
 		boss_attack_index += 1
 		boss_fire_clock = (1.20 if boss_phase == 1 else 0.98) if level == MAX_LEVEL else (1.5 if boss_phase == 1 else 1.2)
 	if level == MAX_LEVEL and boss_shield_round == 1 and boss_shields == 0 and float(boss["hp"]) <= 500.0:
@@ -875,6 +1178,8 @@ func begin_adriatic_storm() -> void:
 	# The safe lane is two columns away from the player: reachable after warning.
 	var player_lane := clampi(int(round((player_x - 40.0) / 80.0)), 0, 8)
 	storm_safe_lane = clampi(player_lane + (2 if player_lane <= 4 else -2), 0, 8)
+	# No leftover aimed-warning volley during the Adriatic Storm telegraph.
+	boss_warning_time = 0.0
 	storm_warning_time = STORM_WARNING_SECONDS
 	storm_pulses_remaining = 3
 	storm_pulse_time = 0.0
@@ -1124,6 +1429,11 @@ func update_pickups(delta: float) -> void:
 				collect_life_orb(int(drops[i]["orb_index"]))
 			elif drops[i].get("kind", "scrap") == "white_orb":
 				white_orb_collected = true
+				if level == MAX_LEVEL and state == "boss_rewards":
+					final_dialogue_stage = 1
+					final_dialogue_time = FINAL_DIALOGUE_LINE_SECONDS
+					# Allow both lines to be read even if orb is collected very late.
+					boss_reward_time = maxf(boss_reward_time, FINAL_DIALOGUE_LINE_SECONDS * 2.0)
 				explosions.append({"pos": Vector2(player_x, PLAYER_Y), "time": 0.5})
 			elif drops[i].get("kind", "scrap") == "multiplier":
 				active_multipliers.append({
@@ -1264,6 +1574,11 @@ func buy_upgrade(kind: int) -> void:
 func _unhandled_key_input(event: InputEvent) -> void:
 	if not event is InputEventKey or not event.pressed or event.echo:
 		return
+	# F3: display actual frame rate and frame duration for diagnosing hitches.
+	if event.keycode == KEY_F3:
+		show_performance_stats = not show_performance_stats
+		queue_redraw()
+		return
 	# F2 is accessible from gameplay, shop, victory, and test intermissions.
 	if event.keycode == KEY_F2:
 		debug_level_menu = not debug_level_menu
@@ -1345,6 +1660,8 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			selected_city = 0
 			collected_orb_mask = 0
 			white_orb_collected = false
+			final_dialogue_stage = 0
+			final_dialogue_time = 0.0
 			drops.clear() # A new run must not inherit old rewards.
 			level = 1
 			damage_level = 0
@@ -1389,6 +1706,36 @@ func draw_ship_status_modal() -> void:
 	text_at("WEAPON: %s  |  SHIELD Lv.%d" % [equipped_weapon_name(), ability_level], 126, 612, 20, Color(0.70, 0.95, 0.8))
 	text_at("TAB - CLOSE / RESUME", 230, 652, 19, Color(0.80, 0.91, 1.0))
 
+func draw_final_orb_speech() -> void:
+	# A readable two-part conversation anchored above the moving player ship.
+	# Bubble stays within the game window when the player is near screen edges.
+	if final_dialogue_stage == 0 or state != "boss_rewards" or level != MAX_LEVEL:
+		return
+	var bubble_width := 460.0
+	var bubble_height := 128.0
+	var bubble_x := clampf(player_x - bubble_width * 0.5, 14.0, W - bubble_width - 14.0)
+	var bubble_y := PLAYER_Y - 205.0
+	var bubble_color := Color(0.05, 0.16, 0.27, 0.96)
+	draw_rect(Rect2(bubble_x, bubble_y, bubble_width, bubble_height), bubble_color)
+	draw_rect(Rect2(bubble_x, bubble_y, bubble_width, 4.0), Color(0.38, 0.85, 1.0))
+	var pointer := PackedVector2Array([
+		Vector2(clampf(player_x, bubble_x + 22.0, bubble_x + bubble_width - 22.0) - 13.0, bubble_y + bubble_height),
+		Vector2(clampf(player_x, bubble_x + 22.0, bubble_x + bubble_width - 22.0) + 13.0, bubble_y + bubble_height),
+		Vector2(player_x, bubble_y + bubble_height + 18.0)
+	])
+	draw_colored_polygon(pointer, bubble_color)
+	if final_dialogue_stage == 1:
+		text_at("CREW:", bubble_x + 18.0, bubble_y + 28.0, 20, Color(0.46, 0.9, 1.0))
+		text_at("Sir, we have picked up an orb.", bubble_x + 18.0, bubble_y + 58.0, 19)
+		text_at("It is giving off some kind", bubble_x + 18.0, bubble_y + 85.0, 19)
+		text_at("of energy!", bubble_x + 18.0, bubble_y + 112.0, 19)
+	else:
+		text_at("CAPTAIN:", bubble_x + 18.0, bubble_y + 28.0, 20, Color(1.0, 0.83, 0.43))
+		text_at("Put it inside the isolated box.", bubble_x + 18.0, bubble_y + 58.0, 19)
+		text_at("We will examine it later", bubble_x + 18.0, bubble_y + 85.0, 19)
+		text_at("back at HQ.", bubble_x + 18.0, bubble_y + 112.0, 19)
+
+
 func _draw() -> void:
 	
 	if city_name() == "ZADAR" and state in [
@@ -1400,8 +1747,10 @@ func _draw() -> void:
 		draw_zadar_background()
 
 
-	for star in stars:
-		draw_circle(star, 1.5, Color(0.45, 0.65, 0.9, 0.55))
+	# The moving ocean is opaque. Avoid 110 decorative draw calls over it.
+	if not (city_name() == "ZADAR" and state in ["playing", "intermission", "boss_intro", "boss_rewards"]):
+		for star in stars:
+			draw_circle(star, 1.5, Color(0.45, 0.65, 0.9, 0.55))
 	text_at("%s LVL %d/%d WAVE %d/%d SCORE %d" % [city_name(), level, MAX_LEVEL, waves_spawned, waves_for_level(), score], 20, 35, 18)
 	# The same little blue ship silhouette used for the player represents lives.
 	var life_icon := PackedVector2Array([Vector2(36, 43), Vector2(24, 67), Vector2(36, 62), Vector2(48, 67)])
@@ -1435,9 +1784,9 @@ func _draw() -> void:
 		text_at("%.1fs remaining" % multiplier_time_left(), 400, 220, 17, Color(0.95, 0.85, 1.0))
 	if state == "playing" or state == "intermission" or state == "boss_intro" or state == "boss_rewards":
 		if invulnerable <= 0.0 or int(Time.get_ticks_msec() / 100) % 2 == 0:
-			var ship := PackedVector2Array([Vector2(player_x, PLAYER_Y - 36), Vector2(player_x - 27, PLAYER_Y + 23), Vector2(player_x, PLAYER_Y + 12), Vector2(player_x + 27, PLAYER_Y + 23)])
-			draw_colored_polygon(ship, Color(0.2, 0.8, 1.0))
-			draw_circle(Vector2(player_x, PLAYER_Y + 3), 7.0, Color(1.0, 0.9, 0.3))
+			
+			draw_player_ship_25d(Vector2(player_x, PLAYER_Y))
+
 		if ability_time > 0.0:
 			draw_arc(Vector2(player_x, PLAYER_Y), 43.0, 0.0, TAU, 48, Color(0.3, 0.95, 1.0, 0.95), 5.0)
 	for bullet in player_bullets:
@@ -1448,45 +1797,27 @@ func _draw() -> void:
 	for shot in enemy_bullets:
 		draw_circle(shot, 7.0, Color(1.0, 0.3, 0.18))
 	for bullet in radial_bullets:
-		draw_circle(bullet["pos"], 9.0, bullet.get("color", Color(1.0, 0.35, 0.65)))
-		draw_circle(bullet["pos"], 4.0, Color(1.0, 0.88, 0.7))
+		var radial_pos: Vector2 = bullet["pos"]
+		if radial_pos.x < -10.0 or radial_pos.x > W + 10.0 or radial_pos.y < -10.0 or radial_pos.y > H + 10.0:
+			continue
+		draw_circle(radial_pos, 9.0, bullet.get("color", Color(1.0, 0.35, 0.65)))
+		draw_circle(radial_pos, 4.0, Color(1.0, 0.88, 0.7))
 	for enemy in enemies:
 		var pos: Vector2 = enemy["pos"]
+		# Visibility check affects rendering only: off-screen enemies still fly,
+		# shoot, take damage and count toward level completion as before.
+		if pos.x < -58.0 or pos.x > W + 58.0 or pos.y < -58.0 or pos.y > H + 58.0:
+			continue
 		match int(enemy["kind"]):
-			0: # Jellyfish: glowing bell and trailing tentacles
-				draw_circle(pos + Vector2(0, -5), 23.0, Color(0.45, 0.75, 1.0))
-				draw_arc(pos + Vector2(0, -5), 22.0, PI, TAU, 20, Color(0.75, 0.95, 1.0), 4.0)
-				for t in range(-2, 3):
-					draw_line(pos + Vector2(t * 8.0, 8), pos + Vector2(t * 8.0 + sin(level_time * 4.0 + t) * 6.0, 31), Color(0.5, 0.9, 1.0), 3.0)
-			1: # Armored crab: broad shell and pincers
-				draw_circle(pos, 22.0, Color(0.95, 0.35, 0.22))
-				draw_rect(Rect2(pos.x - 20, pos.y - 7, 40, 16), Color(0.55, 0.16, 0.16))
-				draw_circle(pos + Vector2(-27, 7), 11.0, Color(1.0, 0.48, 0.3))
-				draw_circle(pos + Vector2(27, 7), 11.0, Color(1.0, 0.48, 0.3))
-			2: # Electric eel: thick connected body instead of a self-intersecting polygon.
-				var wiggle := sin(level_time * 8.0 + pos.x * 0.015) * 7.0
-				var tail := pos + Vector2(-22, 17 + wiggle)
-				var mid := pos + Vector2(5, 5 - wiggle)
-				var head := pos + Vector2(13, -16)
-				draw_line(tail, mid, Color(0.16, 0.36, 0.1), 20.0, true)
-				draw_line(mid, head, Color(0.16, 0.36, 0.1), 21.0, true)
-				draw_line(tail, mid, Color(0.65, 1.0, 0.22), 14.0, true)
-				draw_line(mid, head, Color(0.65, 1.0, 0.22), 15.0, true)
-				draw_circle(head, 11.0, Color(0.65, 1.0, 0.22))
-				draw_circle(head + Vector2(-3, -3), 3.0, Color.WHITE)
-				draw_circle(head + Vector2(-3, -3), 1.2, Color(0.09, 0.16, 0.06))
+			0:
+				draw_jellyfish_25d(pos)
+			1:
+				draw_crab_25d(pos)
+			2:
+				draw_eel_25d(pos)
 	if boss_active and not boss.is_empty():
 		var pos: Vector2 = boss["pos"]
-		if level == MAX_LEVEL:
-			# Massive central body and orbiting armored plates for Zagreb's guardian.
-			draw_circle(pos, 112.0, Color(0.12, 0.25, 0.36))
-			draw_arc(pos, 116.0, 0.0, TAU, 64, Color(0.35, 0.9, 1.0), 7.0)
-		draw_circle(pos, 68.0, Color(0.24, 0.62, 0.48))
-		for i in range(6):
-			var angle := i * TAU / 6.0 + spin_rotation
-			var p := pos + Vector2(cos(angle), sin(angle)) * 88.0
-			draw_line(pos, p, Color(0.6, 0.9, 0.65), 13.0)
-		draw_circle(pos, 25.0, Color(0.9, 0.2, 0.2) if boss_shields == 0 else Color(0.2, 0.65, 1.0))
+		draw_boss_25d(pos)
 		if spin_countdown > 0.0:
 			draw_arc(pos, 106.0, 0.0, TAU, 64, Color(1.0, 0.25, 0.65, 0.9), 5.0)
 			text_at("360 ATTACK!  R SHIELD!", 201, 230, 25, Color(1.0, 0.5, 0.65))
@@ -1529,14 +1860,6 @@ func _draw() -> void:
 	for effect in explosions:
 		var pos: Vector2 = effect["pos"]
 		draw_arc(pos, 30.0 * float(effect["time"]) / 0.3 + 8.0, 0, TAU, 20, Color(1.0, 0.68, 0.2), 4.0)
-	if state == "boss_rewards":
-		draw_rect(Rect2(75.0, 209.0, 570.0, 92.0), Color(0.05, 0.1, 0.22, 0.89))
-		if level == MAX_LEVEL:
-			text_at("ZONE GUARDIAN DEFEATED!", 118, 244, 27, Color(0.9, 0.98, 1.0))
-			text_at("COLLECT THE WHITE ORB - %d s" % int(ceil(boss_reward_time)), 153, 283, 21, Color(1.0, 1.0, 1.0))
-		else:
-			text_at("LIEUTENANT DEFEATED!", 156, 244, 27, Color(0.68, 1.0, 0.72))
-			text_at("COLLECT THE ORB - %d s" % int(ceil(boss_reward_time)), 198, 283, 22, Color(1.0, 0.89, 0.46))
 	if state == "boss_intro":
 		# Separate lieutenant announcement instead of an abrupt boss spawn.
 		draw_rect(Rect2(42, 338, 636, 190), Color(0.08, 0.07, 0.17, 0.94))
@@ -1557,6 +1880,11 @@ func _draw() -> void:
 		var title_size := 35
 		var title_width := font.get_string_size(level_title, HORIZONTAL_ALIGNMENT_LEFT, -1, title_size).x
 		text_at(level_title, (W - title_width) / 2.0, 442, title_size, Color(0.92, 0.97, 1.0))
+	if state == "boss_rewards" and level == MAX_LEVEL:
+		# Keep this message visible even before the white orb is collected.
+		draw_rect(Rect2(156.0, 205.0, 408.0, 63.0), Color(0.06, 0.16, 0.23, 0.88))
+		text_at("ZONE LIBERATED", 195, 249, 33, Color(0.61, 1.0, 0.74))
+		draw_final_orb_speech()
 	if state == "shop":
 		draw_rect(Rect2(52, 190, 616, 555), Color(0.07, 0.12, 0.23, 0.96))
 		text_at("%s LIBERATED!" % city_name(), 185, 250, 30)
@@ -1606,3 +1934,9 @@ func _draw() -> void:
 		draw_city_flight()
 	if debug_level_menu:
 		draw_debug_level_menu()
+	if show_performance_stats:
+		var fps := Engine.get_frames_per_second()
+		var frame_ms := Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0
+		draw_rect(Rect2(474.0, 236.0, 231.0, 65.0), Color(0.025, 0.06, 0.13, 0.94))
+		text_at("FPS %d" % fps, 492.0, 264.0, 23, Color(0.52, 1.0, 0.63) if fps >= 55 else Color(1.0, 0.58, 0.43))
+		text_at("CPU frame %.1f ms [F3]" % frame_ms, 490.0, 288.0, 15, Color(0.84, 0.91, 1.0))
