@@ -3489,46 +3489,32 @@ func _draw() -> void:
 			else:
 				text_at("GAME OVER", 258, 174, 29, Color(1.0, 0.35, 0.4))
 	if state == "shop_arrival":
-		# Arcade warp-jump transition: ship rockets offscreen, then a fast
-		# tunnel of streaming stars takes over. All motion uses the 6s clock.
-		var warp_t: float = clampf(shop_arrival_elapsed / SHOP_ARRIVAL_SECONDS, 0.0, 1.0)
-		var jump_t: float = clampf(shop_arrival_elapsed / 1.75, 0.0, 1.0)
-		var acceleration: float = jump_t * jump_t * jump_t
-		# Cover the entire screen so the old enemy formation is not visible.
-		draw_rect(Rect2(0.0, 0.0, W, H), Color(0.012, 0.024, 0.085, 1.0))
-		var center := Vector2(W * 0.5, H * 0.43)
-		var warp_strength: float = smoothstep(0.10, 0.43, warp_t) * (1.0 - smoothstep(0.82, 1.0, warp_t))
-		for star_index in range(92):
-			# Deterministic radial rays: smooth and stable between frames.
-			var star_angle: float = float(star_index) * 2.399963
-			var star_radius: float = 0.14 + float((star_index * 37) % 83) / 100.0
-			var cycle: float = fposmod(warp_t * (1.4 + warp_strength * 2.6) + float((star_index * 29) % 97) / 97.0, 1.0)
-			var distance: float = 14.0 + cycle * cycle * 730.0 * star_radius
-			var direction := Vector2(cos(star_angle), sin(star_angle))
-			var ray_end := center + direction * distance
-			var ray_length: float = (4.0 + 115.0 * cycle * warp_strength) * star_radius
-			var ray_start := ray_end - direction * ray_length
-			draw_line(ray_start, ray_end, Color(0.45, 0.83, 1.0, 0.20 + warp_strength * 0.75), 1.0 + warp_strength * 1.7, true)
-		# Pilot leaves the playfield in under two seconds rather than hovering.
-		if jump_t < 1.0:
-			var departure_y: float = PLAYER_Y - 1100.0 * acceleration
-			var ship_scale: float = 1.0 - 0.65 * jump_t
-			draw_set_transform(Vector2(W * 0.5, departure_y), 0.0, Vector2.ONE * ship_scale)
-			draw_player_ship_25d(Vector2.ZERO, 1.2 + jump_t * 4.0)
-			draw_set_transform(Vector2.ZERO)
-			for streak in range(3):
-				var streak_x: float = W * 0.5 + (float(streak) - 1.0) * 11.0
-				var streak_start: float = departure_y + 21.0 * ship_scale
-				draw_line(Vector2(streak_x, streak_start), Vector2(streak_x, streak_start + 75.0 + 280.0 * acceleration), Color(0.25, 0.77, 1.0, 0.85 - jump_t * 0.65), 3.0, true)
-		if warp_t > 0.28:
-			var tunnel_radius: float = 36.0 + 145.0 * warp_strength
-			draw_arc(center, tunnel_radius, 0.0, TAU, 72, Color(0.22, 0.75, 1.0, warp_strength * 0.55), 3.5)
-		# Simple transition text; never interrupt the six-second flight.
-		text_at("WARP JUMP", 255, 143, 33, Color(0.72, 0.94, 1.0))
-		if warp_t > 0.78:
-			var arrival_alpha: float = smoothstep(0.78, 1.0, warp_t)
-			draw_rect(Rect2(116, 731, 488, 75), Color(0.03, 0.12, 0.23, 0.86 * arrival_alpha))
-			text_at("SHOP APPROACH", 224, 782, 27, Color(0.68, 1.0, 0.86, arrival_alpha))
+		# Fast atmospheric flight to the shop, no teleporting and no warp tunnel.
+		# Ship accelerates vertically, exits the top edge and the scenery rushes
+		# past until the six-second arrival finishes.
+		var flight_t: float = clampf(shop_arrival_elapsed / SHOP_ARRIVAL_SECONDS, 0.0, 1.0)
+		var takeoff_t: float = clampf(shop_arrival_elapsed / 2.1, 0.0, 1.0)
+		var engine_boost: float = smoothstep(0.0, 0.45, takeoff_t)
+		var departure_y: float = PLAYER_Y - 1100.0 * takeoff_t * takeoff_t
+		# Vertical motion blur of passing scenery, like a fast arcade flyaway.
+		var speed_effect: float = smoothstep(0.08, 0.34, flight_t) * (1.0 - smoothstep(0.74, 1.0, flight_t))
+		for line_index in range(45):
+			var lane_x: float = 20.0 + float((line_index * 71) % 680)
+			var stream: float = fposmod(flight_t * (1500.0 + 1700.0 * speed_effect) + float((line_index * 113) % 930), H + 190.0) - 95.0
+			var streak_length: float = 20.0 + speed_effect * (45.0 + float((line_index * 19) % 110))
+			draw_line(Vector2(lane_x, stream), Vector2(lane_x, stream + streak_length), Color(0.70, 0.91, 1.0, 0.09 + speed_effect * 0.31), 1.0 + speed_effect, true)
+		if takeoff_t < 1.0:
+			# Ship retains its normal size; it really travels off the screen.
+			var ship_pos := Vector2(player_x, departure_y)
+			draw_player_ship_25d(ship_pos, 1.0 + engine_boost * 4.0)
+			for flame_index in range(3):
+				var offset_x: float = (float(flame_index) - 1.0) * 9.0
+				draw_line(ship_pos + Vector2(offset_x, 22.0), ship_pos + Vector2(offset_x, 68.0 + engine_boost * 160.0), Color(0.26, 0.77, 1.0, 0.4 + engine_boost * 0.45), 2.0 + engine_boost * 2.0, true)
+		# The view fades only as the ship reaches the shop, not via a warp effect.
+		var arrival_fade: float = smoothstep(0.72, 1.0, flight_t)
+		draw_rect(Rect2(0.0, 0.0, W, H), Color(0.025, 0.07, 0.13, arrival_fade * 0.94))
+		if flight_t > 0.72:
+			text_at("APPROACHING SHOP", 187, 459, 31, Color(0.82, 0.97, 1.0, arrival_fade))
 	if state in ["playing", "intermission", "boss_intro", "boss_rewards", "shop"]:
 		text_at("M music %s [%d%%]  [ ] volume   , . SFX [%d%%]" % ["ON" if music_enabled else "OFF", int(music_volume * 100.0), int(sfx_volume * 100.0)], 19, H - 42, 15, Color(0.74, 0.90, 1.0))
 	if show_stats_modal and (state == "playing" or state == "intermission" or state == "boss_intro" or state == "boss_rewards"):
