@@ -2644,23 +2644,24 @@ func update_pickups(delta: float) -> void:
 		if pos.distance_to(Vector2(player_x, PLAYER_Y)) < 34.0:
 			play_arcade_sfx("pickup")
 			if drops[i].get("kind", "scrap") == "double_shot":
-				if damage_level < 3:
-					damage_level = 3
-					single_shot_kills_since_drop = 0
-				else:
+				# Always equip the last collected weapon, including Triple -> Double.
+				# Only a duplicate of the CURRENT weapon upgrades rate or score.
+				if damage_level >= 3 and damage_level < 6:
 					if rate_level >= 4:
 						score += 10000
 					else:
 						rate_level += 1
+				damage_level = 3
+				single_shot_kills_since_drop = 0
 				explosions.append({"pos": Vector2(player_x, PLAYER_Y), "time": 0.32})
 			elif drops[i].get("kind", "scrap") == "triple_shot":
-				if damage_level < 6:
-					damage_level = 6
-				else:
+				# Double -> Triple immediately; another Triple is a fire-rate bonus.
+				if damage_level >= 6:
 					if rate_level >= 4:
 						score += 10000
 					else:
 						rate_level += 1
+				damage_level = 6
 				explosions.append({"pos": Vector2(player_x, PLAYER_Y), "time": 0.32})
 			elif drops[i].get("kind", "scrap") == "life_orb":
 				collect_life_orb(int(drops[i]["orb_index"]))
@@ -3503,22 +3504,10 @@ func _draw() -> void:
 		var boost: float = smoothstep(0.0, 0.70, boost_t)
 		var distance: float = 1200.0 * boost_t * boost_t * boost_t
 		var ship_pos := Vector2(player_x, PLAYER_Y - distance)
-		var speed_lines: float = smoothstep(0.12, 0.40, flight_t) * (1.0 - smoothstep(0.83, 1.0, flight_t))
-		# Motion streaks fade in smoothly on the existing city background.
-		for streak_index in range(36):
-			var lane_x: float = 15.0 + float((streak_index * 79) % 685)
-			var phase: float = float((streak_index * 131) % 991)
-			var line_y: float = fposmod(shop_arrival_elapsed * (470.0 + speed_lines * 1250.0) + phase, H + 145.0) - 90.0
-			var length: float = 15.0 + speed_lines * (36.0 + float((streak_index * 13) % 85))
-			draw_line(Vector2(lane_x, line_y), Vector2(lane_x, line_y + length), Color(0.58, 0.86, 1.0, speed_lines * 0.35), 1.0 + speed_lines, true)
+		# No separately drawn streaks or persistent exhaust trails. The ship
+		# and its built-in animated engine flame are drawn once per frame.
 		if ship_pos.y > -100.0:
-			# The actual ship leaves frame smoothly as its engines grow stronger.
 			draw_player_ship_25d(ship_pos, 1.0 + boost * 3.3)
-			for flame_index in range(3):
-				var offset_x: float = (float(flame_index) - 1.0) * 8.0
-				var flame_from := ship_pos + Vector2(offset_x, 20.0)
-				var flame_to := ship_pos + Vector2(offset_x, 48.0 + boost * 137.0)
-				draw_line(flame_from, flame_to, Color(0.24, 0.77, 1.0, boost * 0.78), 2.0 + boost * 1.8, true)
 		# Fade into the map (or final shop) near the end, no message overlay.
 		var fade_amount: float = smoothstep(0.80, 1.0, flight_t)
 		draw_rect(Rect2(0.0, 0.0, W, H), Color(0.015, 0.04, 0.08, fade_amount))
