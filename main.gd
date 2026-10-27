@@ -2611,6 +2611,23 @@ func _on_score_name_submitted(player_name: String) -> void:
 	awaiting_score_name = false
 	score_name_field.hide()
 	score_name_field.release_focus()
+	if state == "gameover":
+		# Defer transition to avoid ENTER activating a Main Menu item.
+		call_deferred("return_to_main_menu")
+	queue_redraw()
+
+func return_to_main_menu() -> void:
+	awaiting_score_name = false
+	if score_name_field != null:
+		score_name_field.hide()
+		score_name_field.release_focus()
+	game_paused = false
+	show_stats_modal = false
+	debug_level_menu = false
+	victory_show_scores = false
+	read_campaign_save()
+	main_menu_selection = 0 if save_available else 1
+	state = "main_menu"
 	queue_redraw()
 
 func draw_campaign_finale() -> void:
@@ -2667,7 +2684,7 @@ func draw_leaderboard() -> void:
 		text_at("ENTER / ESC - Back", 248, 781, 21, Color(0.55, 0.89, 1.0))
 	else:
 		text_at("Your score: %d" % score, 254, 738, 22, Color(1.0, 0.87, 0.60))
-		text_at("ENTER - New game", 257, 781, 21, Color(0.55, 0.89, 1.0))
+		text_at("ENTER - Main Menu", 245, 781, 21, Color(0.55, 0.89, 1.0))
 
 const DOUBLE_SHOT_PRICE := 540
 const TRIPLE_SHOT_PRICE := 1580
@@ -2940,8 +2957,8 @@ func _unhandled_key_input(event: InputEvent) -> void:
 				else:
 					state = "main_menu"
 		else:
-			if event.keycode == KEY_ENTER or event.keycode == KEY_KP_ENTER:
-				start_new_campaign()
+			if event.keycode == KEY_ENTER or event.keycode == KEY_KP_ENTER or event.keycode == KEY_ESCAPE:
+				return_to_main_menu()
 	queue_redraw()
 
 func text_at(value: String, x: float, y: float, size: int = 22, color: Color = Color.WHITE) -> void:
