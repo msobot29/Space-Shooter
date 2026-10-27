@@ -1759,7 +1759,7 @@ func start_level(resume_boss: bool = false) -> void:
 	explosions.clear()
 	boss.clear()
 	boss_active = false
-	boss_pending = level % 5 == 0 # Boss every 5 levels; shop opens before boss
+	boss_pending = level % 5 == 0 # Guardians at 5/10/15/20/25; final shop follows the boss
 	pre_boss_shop = false
 	boss_intro_time = 0.0
 	boss_reward_time = 0.0
@@ -1798,8 +1798,9 @@ func start_level(resume_boss: bool = false) -> void:
 		begin_boss_intro()
 		save_campaign_checkpoint("pre_boss")
 	elif level == MAX_LEVEL:
-		# Final encounter has no normal waves, so shop opens before the intro.
-		open_pre_boss_shop()
+		# Final guardian starts immediately; its shop comes AFTER the fight.
+		begin_boss_intro()
+		save_campaign_checkpoint("playing")
 	else:
 		spawn_wave()
 		save_campaign_checkpoint("playing")
@@ -2611,9 +2612,11 @@ func update_effects(delta: float) -> void:
 			explosions.remove_at(i)
 
 func complete_level() -> void:
-	# Shopping is done BEFORE each guardian. No additional post-boss shop.
+	# Regular city mini-boss shops are before combat; final guardian shop is after.
 	if level >= MAX_LEVEL:
-		finish_run(true)
+		state = "shop"
+		pre_boss_shop = false
+		save_campaign_checkpoint("shop")
 	elif level % 5 == 0:
 		show_city_map()
 	else:
