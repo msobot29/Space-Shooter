@@ -3489,23 +3489,46 @@ func _draw() -> void:
 			else:
 				text_at("GAME OVER", 258, 174, 29, Color(1.0, 0.35, 0.4))
 	if state == "shop_arrival":
-		# Six-second animated docking: hard acceleration followed by soft braking.
-		var progress: float = clampf(shop_arrival_elapsed / SHOP_ARRIVAL_SECONDS, 0.0, 1.0)
-		var throttle: float = smoothstep(0.0, 0.35, progress) * (1.0 - smoothstep(0.55, 1.0, progress))
-		var travel: float = 105.0 * (progress * progress * (3.0 - 2.0 * progress))
-		var ship_pos := Vector2(360.0, PLAYER_Y - travel)
-		var engine_power: float = 0.35 + throttle * 2.4
-		draw_player_ship_25d(ship_pos, engine_power)
-		for trail_index in range(5):
-			var trail_progress: float = float(trail_index) / 4.0
-			var flame_length: float = (14.0 + throttle * 68.0) * (1.0 - trail_progress * 0.75)
-			var flame_pos := ship_pos + Vector2(0.0, 22.0 + float(trail_index) * 14.0 + flame_length)
-			draw_circle(flame_pos, 3.0 + throttle * 5.0 * (1.0 - trail_progress), Color(0.25, 0.84, 1.0, throttle * (1.0 - trail_progress) * 0.60))
-		draw_rect(Rect2(112, 215, 496, 111), Color(0.04, 0.09, 0.18, 0.86))
-		text_at("DOCKING AT THE SHOP", 167, 263, 28, Color(0.65, 0.94, 1.0))
-		text_at("ENGINE BOOST" if progress < 0.57 else "SLOWING DOWN", 261, 294, 19, Color(1.0, 0.85, 0.54))
-		draw_rect(Rect2(145, 310, 430, 7), Color(0.13, 0.22, 0.31))
-		draw_rect(Rect2(145, 310, 430.0 * progress, 7), Color(0.29, 0.85, 1.0))
+		# Arcade warp-jump transition: ship rockets offscreen, then a fast
+		# tunnel of streaming stars takes over. All motion uses the 6s clock.
+		var warp_t: float = clampf(shop_arrival_elapsed / SHOP_ARRIVAL_SECONDS, 0.0, 1.0)
+		var jump_t: float = clampf(shop_arrival_elapsed / 1.75, 0.0, 1.0)
+		var acceleration: float = jump_t * jump_t * jump_t
+		# Cover the entire screen so the old enemy formation is not visible.
+		draw_rect(Rect2(0.0, 0.0, W, H), Color(0.012, 0.024, 0.085, 1.0))
+		var center := Vector2(W * 0.5, H * 0.43)
+		var warp_strength: float = smoothstep(0.10, 0.43, warp_t) * (1.0 - smoothstep(0.82, 1.0, warp_t))
+		for star_index in range(92):
+			# Deterministic radial rays: smooth and stable between frames.
+			var star_angle: float = float(star_index) * 2.399963
+			var star_radius: float = 0.14 + float((star_index * 37) % 83) / 100.0
+			var cycle: float = fposmod(warp_t * (1.4 + warp_strength * 2.6) + float((star_index * 29) % 97) / 97.0, 1.0)
+			var distance: float = 14.0 + cycle * cycle * 730.0 * star_radius
+			var direction := Vector2(cos(star_angle), sin(star_angle))
+			var ray_end := center + direction * distance
+			var ray_length: float = (4.0 + 115.0 * cycle * warp_strength) * star_radius
+			var ray_start := ray_end - direction * ray_length
+			draw_line(ray_start, ray_end, Color(0.45, 0.83, 1.0, 0.20 + warp_strength * 0.75), 1.0 + warp_strength * 1.7, true)
+		# Pilot leaves the playfield in under two seconds rather than hovering.
+		if jump_t < 1.0:
+			var departure_y: float = PLAYER_Y - 1100.0 * acceleration
+			var ship_scale: float = 1.0 - 0.65 * jump_t
+			draw_set_transform(Vector2(W * 0.5, departure_y), 0.0, Vector2.ONE * ship_scale)
+			draw_player_ship_25d(Vector2.ZERO, 1.2 + jump_t * 4.0)
+			draw_set_transform(Vector2.ZERO)
+			for streak in range(3):
+				var streak_x: float = W * 0.5 + (float(streak) - 1.0) * 11.0
+				var streak_start: float = departure_y + 21.0 * ship_scale
+				draw_line(Vector2(streak_x, streak_start), Vector2(streak_x, streak_start + 75.0 + 280.0 * acceleration), Color(0.25, 0.77, 1.0, 0.85 - jump_t * 0.65), 3.0, true)
+		if warp_t > 0.28:
+			var tunnel_radius: float = 36.0 + 145.0 * warp_strength
+			draw_arc(center, tunnel_radius, 0.0, TAU, 72, Color(0.22, 0.75, 1.0, warp_strength * 0.55), 3.5)
+		# Simple transition text; never interrupt the six-second flight.
+		text_at("WARP JUMP", 255, 143, 33, Color(0.72, 0.94, 1.0))
+		if warp_t > 0.78:
+			var arrival_alpha: float = smoothstep(0.78, 1.0, warp_t)
+			draw_rect(Rect2(116, 731, 488, 75), Color(0.03, 0.12, 0.23, 0.86 * arrival_alpha))
+			text_at("SHOP APPROACH", 224, 782, 27, Color(0.68, 1.0, 0.86, arrival_alpha))
 	if state in ["playing", "intermission", "boss_intro", "boss_rewards", "shop"]:
 		text_at("M music %s [%d%%]  [ ] volume   , . SFX [%d%%]" % ["ON" if music_enabled else "OFF", int(music_volume * 100.0), int(sfx_volume * 100.0)], 19, H - 42, 15, Color(0.74, 0.90, 1.0))
 	if show_stats_modal and (state == "playing" or state == "intermission" or state == "boss_intro" or state == "boss_rewards"):
