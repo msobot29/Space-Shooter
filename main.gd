@@ -39,6 +39,7 @@ const ENEMIES_PER_WAVE := 10
 const ENEMY_TOTAL_BY_CITY_STAGE := [20, 20, 30, 30, 40]
 const BOSS_REWARD_SECONDS := 8.0
 const SHOP_ARRIVAL_SECONDS := 6.0
+const PRE_BOSS_SHOP_DELAY_SECONDS := 4.0
 const CAMPAIGN_BASE := Vector2(492.0, 616.0)
 const DOUBLE_DROP_CHANCE := 0.12
 const DOUBLE_DROP_PITY_KILLS := 18
@@ -214,6 +215,7 @@ var waves_spawned := 0
 var wave_path_ids: Array[int] = []
 var boss_pending := false
 var pre_boss_shop := false
+var pre_boss_shop_wait_time := 0.0
 
 
 func update_background(delta: float) -> void:
@@ -1810,8 +1812,9 @@ func start_level(resume_boss: bool = false) -> void:
 		begin_boss_intro()
 		save_campaign_checkpoint("pre_boss")
 	elif level == MAX_LEVEL:
-		# Final guardian starts immediately; its shop comes AFTER the fight.
-		begin_boss_intro()
+		# The final guardian also has a shop BEFORE combat. Give any
+		# remaining rewards time to fall, then wait four clear seconds.
+		begin_pre_boss_shop_wait()
 		save_campaign_checkpoint("playing")
 	else:
 		spawn_wave()
@@ -1986,6 +1989,23 @@ func finish_shop_arrival() -> void:
 		queue_redraw()
 
 
+func begin_pre_boss_shop_wait() -> void:
+	# Stop combat, but leave the ship controllable so rewards can be caught.
+	# No shop opens until all drops disappear AND four clear seconds pass.
+	if state == "pre_boss_shop_wait":
+		return
+	state = "pre_boss_shop_wait"
+	pre_boss_shop_wait_time = PRE_BOSS_SHOP_DELAY_SECONDS
+	boss_pending = false
+	boss_active = false
+	enemies.clear()
+	player_bullets.clear()
+	enemy_bullets.clear()
+	radial_bullets.clear()
+	fire_held = false
+	queue_redraw()
+
+
 func open_pre_boss_shop() -> void:
 	# Shop after the last regular enemy and before the city guardian.
 	state = "shop"
@@ -2043,7 +2063,7 @@ func _process(delta: float) -> void:
 		queue_redraw()
 		return
 	
-	if state in ["playing", "intermission", "boss_intro", "boss_rewards", "shop_arrival"]:
+	if state in ["playing", "intermission", "boss_intro", "boss_rewards", "shop_arrival", "pre_boss_shop_wait"]:
 		if city_name() == "ZADAR":
 			update_background(delta)
 		elif city_name() == "RIJEKA":
@@ -2067,6 +2087,20 @@ func _process(delta: float) -> void:
 		queue_redraw()
 		return
 	if state == "city_select":
+		queue_redraw()
+		return
+	if state == "pre_boss_shop_wait":
+		update_player(delta)
+		update_pickups(delta)
+		update_multiplier_timers(delta)
+		update_effects(delta)
+		if drops.is_empty():
+			pre_boss_shop_wait_time = maxf(0.0, pre_boss_shop_wait_time - delta)
+			if pre_boss_shop_wait_time <= 0.0:
+				open_pre_boss_shop()
+		else:
+			# Four-second countdown starts fresh after the last pickup leaves.
+			pre_boss_shop_wait_time = PRE_BOSS_SHOP_DELAY_SECONDS
 		queue_redraw()
 		return
 	if state == "shop_arrival":
@@ -2147,7 +2181,7 @@ func _process(delta: float) -> void:
 	elif not boss_active and waves_spawned == waves_for_level() and enemies.is_empty():
 		# Pickups do not block level progression.
 		if boss_pending:
-			open_pre_boss_shop()
+			begin_pre_boss_shop_wait()
 		elif level == MAX_LEVEL:
 			# Final boss has zero regular waves; it must not complete itself.
 			pass
@@ -2923,7 +2957,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		queue_redraw()
 		return
 	# ESC opens a proper pause menu instead of leaving or unpausing directly.
-	if state in ["playing", "intermission", "boss_intro", "boss_rewards"] and event.keycode == KEY_ESCAPE:
+	if state in ["playing", "intermission", "boss_intro", "boss_rewards", "pre_boss_shop_wait"] and event.keycode == KEY_ESCAPE:
 		if not game_paused:
 			game_paused = true
 			show_stats_modal = false
@@ -3161,7 +3195,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
 					finish_run(true)
 				else:
 					show_city_map()
-	elif state == "playing" or state == "intermission" or state == "boss_intro" or state == "boss_rewards":
+	elif state == "playing" or state == "intermission" or state == "boss_intro" or state == "boss_rewards" or state == "pre_boss_shop_wait":
 		if event.physical_keycode == bindings[4] or event.keycode == bindings[4]:
 			pause_screen = "menu"
 			pause_menu_selection = 0
@@ -3295,7 +3329,7 @@ func _draw() -> void:
 			text_at("CPU frame %.1f ms [F3]" % frame_ms_scores, 490.0, 288.0, 15, Color(0.84, 0.91, 1.0))
 		return
 	
-	var is_playfield := state in ["playing", "intermission", "boss_intro", "boss_rewards", "shop_arrival"]
+	var is_playfield := state in ["playing", "intermission", "boss_intro", "boss_rewards", "shop_arrival", "pre_boss_shop_wait"]
 	var has_animated_port := is_playfield and city_name() in ["ZADAR", "RIJEKA", "SPLIT", "OSIJEK", "ZAGREB"]
 	if has_animated_port:
 		if city_name() == "ZADAR":
@@ -3344,7 +3378,7 @@ func _draw() -> void:
 		draw_rect(Rect2(385, 168, 316, 65), Color(0.17, 0.10, 0.26, 0.90))
 		text_at("SCORE x%d" % score_multiplier(), 399, 195, 24, Color(1.0, 0.85, 0.35))
 		text_at("%.1fs remaining" % multiplier_time_left(), 400, 220, 17, Color(0.95, 0.85, 1.0))
-	if state == "playing" or state == "intermission" or state == "boss_intro" or state == "boss_rewards":
+	if state == "playing" or state == "intermission" or state == "boss_intro" or state == "boss_rewards" or state == "pre_boss_shop_wait":
 		if invulnerable <= 0.0 or int(Time.get_ticks_msec() / 100) % 2 == 0:
 			
 			draw_player_ship_25d(Vector2(player_x, PLAYER_Y))
@@ -3525,11 +3559,11 @@ func _draw() -> void:
 		# Fade into the map (or final shop) near the end, no message overlay.
 		var fade_amount: float = smoothstep(0.80, 1.0, flight_t)
 		draw_rect(Rect2(0.0, 0.0, W, H), Color(0.015, 0.04, 0.08, fade_amount))
-	if state in ["playing", "intermission", "boss_intro", "boss_rewards", "shop"]:
+	if state in ["playing", "intermission", "boss_intro", "boss_rewards", "pre_boss_shop_wait", "shop"]:
 		text_at("M music %s [%d%%]  [ ] volume   , . SFX [%d%%]" % ["ON" if music_enabled else "OFF", int(music_volume * 100.0), int(sfx_volume * 100.0)], 19, H - 42, 15, Color(0.74, 0.90, 1.0))
 	if show_stats_modal and (state == "playing" or state == "intermission" or state == "boss_intro" or state == "boss_rewards"):
 		draw_ship_status_modal()
-	if game_paused and state in ["playing", "intermission", "boss_intro", "boss_rewards"]:
+	if game_paused and state in ["playing", "intermission", "boss_intro", "boss_rewards", "pre_boss_shop_wait"]:
 		draw_rect(Rect2(0, 0, W, H), Color(0.0, 0.02, 0.06, 0.78))
 		if pause_screen == "options":
 			draw_options_menu(true)
