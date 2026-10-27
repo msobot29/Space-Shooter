@@ -1095,7 +1095,7 @@ func update_retro_music() -> void:
 	var needed := ""
 	if state in ["main_menu", "menu_confirm_new", "menu_options", "menu_highscores", "menu_bindings"]:
 		needed = "menu"
-	elif state in ["playing", "intermission", "boss_intro", "boss_rewards", "shop_arrival"]:
+	elif state in ["playing", "intermission", "boss_intro", "boss_rewards", "shop_arrival", "pre_boss_shop_wait"]:
 		needed = "boss" if boss_active or state in ["boss_intro", "boss_rewards"] else "stage"
 	elif state == "victory":
 		needed = "victory"
