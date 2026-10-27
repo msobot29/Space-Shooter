@@ -25,20 +25,47 @@ const LEVEL_TITLE_SECONDS := 3.5 # Enemies begin after the title is shown
 const BOSS_INTRO_SECONDS := 3.8
 const STORM_WARNING_SECONDS := 1.3
 const STORM_PULSE_INTERVAL := 0.62
+const STORM_BULLET_SPACING := 16.0 # Dense wall: no accidental dodge gaps between bullets
+const STORM_SAFE_HALF_WIDTH := 39.0 # One deliberate corridor, about 78px wide
 const ORB_COLORS := [Color(1.0, 0.28, 0.3), Color(0.3, 0.68, 1.0), Color(0.38, 1.0, 0.52), Color(1.0, 0.78, 0.22)]
 const ENEMIES_PER_WAVE := 10
 # Warblade-inspired pacing, not verified exact Warblade Classic stage counts.
-# 20/30/40 enemies per stage, launched as successive ten-enemy formations.
-const ENEMY_WAVES_BY_CITY_STAGE := [2, 2, 3, 3, 4]
+# Two waves per normal level. Each wave contains 10, 15 or 20 enemies,
+# preserving the original 20/20/30/30/40 total for missions 1..5.
+const ENEMY_TOTAL_BY_CITY_STAGE := [20, 20, 30, 30, 40]
 const BOSS_REWARD_SECONDS := 8.0
 const CAMPAIGN_BASE := Vector2(492.0, 616.0)
 const DOUBLE_DROP_CHANCE := 0.12
 const DOUBLE_DROP_PITY_KILLS := 18
+const MENU_ITEMS := ["CONTINUE", "NEW GAME", "HIGH SCORES", "OPTIONS", "EXIT"]
+const CAMPAIGN_SAVE_FILE := "user://campaign_save.cfg"
+const CAMPAIGN_SAVE_VERSION := 1
 
 var font: Font
+
+# Short synthesized arcade samples. Generated once on startup, never in _draw().
+# Each sound has a small voice pool so fast shooting does not interrupt itself.
+const SFX_SAMPLE_RATE := 22050
+const SFX_VOICE_POOL := 4
+var sfx_streams: Dictionary = {}
+var sfx_voices: Dictionary = {}
+var sfx_next_voice: Dictionary = {}
+
+# Original looping chiptune themes, rendered once at startup.
+# No internet downloads or copyrighted music samples are needed.
+const MUSIC_SAMPLE_RATE := 11025
+const MUSIC_STEP_SECONDS := 0.25
+const MUSIC_STEPS := 32 # 8-second seamless loop, 120 BPM / 16th-note grid
+var music_streams: Dictionary = {}
+var music_player: AudioStreamPlayer
+var current_music := ""
+var music_enabled := true
+var music_volume := 0.35 # Linear 0..1
+var sfx_volume := 0.75
+var sfx_base_db: Dictionary = {}
 var stars: Array[Vector2] = []
 
-# ZADAR - ANIMATED BACKGROUND
+# ZADAR / RIJEKA - ANIMATED BACKGROUNDS
 var bg_scroll_far := 0.0
 var bg_scroll_mid := 0.0
 var bg_scroll_near := 0.0
@@ -46,6 +73,38 @@ var bg_scroll_near := 0.0
 const BG_SPEED_FAR := 22.0
 const BG_SPEED_MID := 48.0
 const BG_SPEED_NEAR := 90.0
+
+# Rijeka has its own seamless scrolling periods (multiples of object spacing).
+var rijeka_water_scroll := 0.0
+var rijeka_dock_scroll := 0.0
+var rijeka_detail_scroll := 0.0
+const RIJEKA_DOCK_SPACING := 270.0
+const RIJEKA_DOCK_COUNT := 6
+const RIJEKA_DOCK_PERIOD := RIJEKA_DOCK_SPACING * RIJEKA_DOCK_COUNT
+
+# Split waterfront: independent looping layers with tile-aligned wrapping.
+var split_water_scroll := 0.0
+var split_coast_scroll := 0.0
+var split_foam_scroll := 0.0
+const SPLIT_COAST_SPACING := 290.0
+const SPLIT_COAST_TILES := 6
+const SPLIT_COAST_PERIOD := SPLIT_COAST_SPACING * SPLIT_COAST_TILES
+
+# Osijek: drifting Drava water, lush riverbanks and bridges, all on seamless loops.
+var osijek_water_scroll := 0.0
+var osijek_bank_scroll := 0.0
+var osijek_ripple_scroll := 0.0
+const OSIJEK_BANK_SPACING := 320.0
+const OSIJEK_BANK_TILES := 6
+const OSIJEK_BANK_PERIOD := OSIJEK_BANK_SPACING * OSIJEK_BANK_TILES
+
+# Zagreb final zone: ruined urban blocks, tram rails and smouldering rooftops.
+# A single 6-tile loop avoids the abrupt background jumps fixed in Zadar.
+var zagreb_city_scroll := 0.0
+var zagreb_detail_scroll := 0.0
+const ZAGREB_BLOCK_SPACING := 300.0
+const ZAGREB_BLOCK_COUNT := 6
+const ZAGREB_BLOCK_PERIOD := ZAGREB_BLOCK_SPACING * ZAGREB_BLOCK_COUNT
 
 var player_x := 360.0
 var lives := 3
@@ -58,10 +117,16 @@ var speed_level := 0
 var ability_level := 1 # 1/2/3 = 2/4/6 seconds
 var ability_time := 0.0
 var ability_cooldown := 0.0
-var state := "city_select" # city_select, city_flight, playing, intermission, boss_intro, shop, gameover, victory
+var state := "main_menu" # main_menu, menu_confirm_new, menu_options, menu_highscores, city_select, city_flight, playing, intermission, boss_intro, shop, gameover, victory
+var main_menu_selection := 0
+var pending_campaign_save: Dictionary = {}
+var save_available := false
+var options_menu_selection := 0
+var menu_anim_time := 0.0
 var city_route: Array[int] = []
 var selected_city := 0
 var city_flight_time := 0.0
+var briefing_city_index := 0
 var boss_reward_time := 0.0
 var boss_intro_time := 0.0
 var level_transition_time := 0.0
@@ -92,13 +157,19 @@ var boss: Dictionary = {}
 var boss_active := false
 var boss_fire_clock := 0.0
 var boss_phase := 1
-var boss_shields := 2
+var boss_shields := 2 # Visible shield layers: 2 for lieutenants, 4 for Zone Guardian
+var boss_shield_hp := 0.0
+var boss_shield_max_hp := 0.0
+const BOSS_SHIELD_HP_RATIO := 0.70
 var boss_shield_round := 1
 var storm_warning_time := 0.0
 var storm_pulses_remaining := 0
 var storm_pulse_time := 0.0
 var storm_safe_lane := 4
+var storm_pending := false # Wait for existing red bullets to finish before starting Storm
 var collected_orb_mask := 0
+var campaign_orbs_found_mask := 0 # Historical orb pickups for the ending; not consumed for extra lives
+var victory_show_scores := false
 var white_orb_collected := false # Final Zagreb guardian trophy, independent of four life-orb colors
 # Final boss dialogue is triggered only when the player physically collects the white orb.
 # Stage 1: crew report. Stage 2: captain's reply.
@@ -198,6 +269,307 @@ func draw_zadar_background() -> void:
 			1.5,
 			true
 		)
+func update_rijeka_background(delta: float) -> void:
+	# Three independent seamless layers; never reset while a tile is on-screen.
+	rijeka_water_scroll = fposmod(rijeka_water_scroll + 24.0 * delta, 12.0 * 100.0)
+	rijeka_dock_scroll = fposmod(rijeka_dock_scroll + 46.0 * delta, RIJEKA_DOCK_PERIOD)
+	rijeka_detail_scroll = fposmod(rijeka_detail_scroll + 83.0 * delta, 20.0 * 70.0)
+
+
+func draw_rijeka_background() -> void:
+	# Stylized Rijeka port: dark Kvarner sea, container docks, cranes and cargo ships.
+	# All decoration is visual only; no collision or gameplay changes.
+	draw_rect(Rect2(0.0, 0.0, W, H), Color(0.027, 0.12, 0.19))
+	# Slow current and reflected harbor lights.
+	for i in range(12):
+		var y := fposmod(float(i) * 100.0 + rijeka_water_scroll + 100.0, 1200.0) - 100.0
+		if y > H or y + 45.0 < 0.0:
+			continue
+		draw_rect(Rect2(0.0, y, W, 28.0), Color(0.10, 0.27, 0.35, 0.27))
+		draw_line(Vector2(230.0, y + 17.0), Vector2(415.0, y + 20.0), Color(0.28, 0.52, 0.59, 0.24), 2.0)
+
+	# Repeating 270-pixel dock tiles; one complete cycle is 1620px.
+	for i in range(RIJEKA_DOCK_COUNT):
+		var y := fposmod(float(i) * RIJEKA_DOCK_SPACING + rijeka_dock_scroll + RIJEKA_DOCK_SPACING, RIJEKA_DOCK_PERIOD) - RIJEKA_DOCK_SPACING
+		if y > H + 25.0 or y + 205.0 < -25.0:
+			continue
+		var left_dock := i % 2 == 0
+		var dock_x := 0.0 if left_dock else W - 154.0
+		var rim_x := 154.0 if left_dock else W - 154.0
+		# Concrete pier and edge shading.
+		draw_rect(Rect2(dock_x + 4.0, y + 20.0, 150.0, 181.0), Color(0.013, 0.045, 0.06, 0.38))
+		draw_rect(Rect2(dock_x, y + 14.0, 150.0, 174.0), Color(0.21, 0.27, 0.30))
+		draw_rect(Rect2(rim_x - 7.0 if left_dock else rim_x, y + 14.0, 7.0, 174.0), Color(0.70, 0.65, 0.42))
+		for stripe in range(4):
+			var sy := y + 33.0 + float(stripe) * 39.0
+			draw_line(Vector2(dock_x + 14.0, sy), Vector2(dock_x + 136.0, sy), Color(0.11, 0.17, 0.21, 0.55), 2.0)
+		# Two containers with top lighting and different industrial colours.
+		var containers := [Color(0.63, 0.29, 0.19), Color(0.23, 0.48, 0.57)]
+		for j in range(2):
+			var bx := dock_x + (18.0 if j == 0 else 72.0)
+			var by := y + 44.0 + (46.0 if j == 1 else 0.0)
+			var paint: Color = containers[(i + j) % 2]
+			draw_rect(Rect2(bx + 4.0, by + 5.0, 47.0, 72.0), Color(0.02, 0.05, 0.07, 0.35))
+			draw_rect(Rect2(bx, by, 47.0, 72.0), paint)
+			draw_rect(Rect2(bx, by, 47.0, 6.0), paint.lightened(0.25))
+			for line_index in range(4):
+				var lx := bx + 8.0 + float(line_index) * 9.0
+				draw_line(Vector2(lx, by + 11.0), Vector2(lx, by + 66.0), paint.darkened(0.35), 2.0)
+		# Quayside loading crane reaching over the water.
+		var crane_base_x := 131.0 if left_dock else W - 131.0
+		var crane_top := Vector2(crane_base_x, y + 12.0)
+		var over_water_x := crane_base_x + (115.0 if left_dock else -115.0)
+		draw_line(Vector2(crane_base_x, y + 166.0), crane_top, Color(0.15, 0.19, 0.23), 11.0)
+		draw_line(Vector2(crane_base_x, y + 166.0), crane_top, Color(0.82, 0.69, 0.31), 6.0)
+		draw_line(crane_top, Vector2(over_water_x, y + 25.0), Color(0.87, 0.74, 0.34), 7.0)
+		draw_line(Vector2(over_water_x, y + 25.0), Vector2(over_water_x, y + 100.0), Color(0.16, 0.24, 0.29), 2.0)
+		draw_rect(Rect2(over_water_x - 14.0, y + 100.0, 28.0, 10.0), Color(0.78, 0.61, 0.28))
+		# Long cargo vessel, separate from dock geometry but on same looping tile.
+		if i % 3 != 1:
+			var ship_x := 344.0 if left_dock else 355.0
+			var ship_y := y + 58.0
+			draw_colored_polygon(PackedVector2Array([
+				Vector2(ship_x - 38.0, ship_y - 15.0), Vector2(ship_x + 38.0, ship_y - 15.0),
+				Vector2(ship_x + 43.0, ship_y + 95.0), Vector2(ship_x, ship_y + 116.0),
+				Vector2(ship_x - 43.0, ship_y + 95.0)
+			]), Color(0.055, 0.11, 0.15))
+			draw_rect(Rect2(ship_x - 29.0, ship_y + 1.0, 58.0, 83.0), Color(0.31, 0.39, 0.40))
+			for box_i in range(3):
+				draw_rect(Rect2(ship_x - 23.0, ship_y + 7.0 + box_i * 23.0, 46.0, 18.0), Color(0.21, 0.44, 0.52) if box_i % 2 == 0 else Color(0.64, 0.33, 0.21))
+			draw_rect(Rect2(ship_x - 16.0, ship_y + 89.0, 32.0, 16.0), Color(0.83, 0.86, 0.80))
+			# Wake, visible along the sides of moving vessel.
+			draw_line(Vector2(ship_x - 49.0, ship_y + 104.0), Vector2(ship_x - 53.0, ship_y + 133.0), Color(0.65, 0.89, 0.94, 0.43), 2.0)
+			draw_line(Vector2(ship_x + 49.0, ship_y + 104.0), Vector2(ship_x + 53.0, ship_y + 133.0), Color(0.65, 0.89, 0.94, 0.43), 2.0)
+
+	# Near-surface highlights; these scroll fastest but remain subtle.
+	for i in range(20):
+		var y := fposmod(float(i) * 70.0 + rijeka_detail_scroll + 70.0, 1400.0) - 70.0
+		if y > H + 8.0 or y + 12.0 < -8.0:
+			continue
+		var x := 170.0 + float((i * 109) % 370)
+		draw_line(Vector2(x, y), Vector2(x + 54.0, y + 3.0), Color(0.52, 0.77, 0.83, 0.28), 2.0, true)
+
+
+func update_split_background(delta: float) -> void:
+	# Periods are exact multiples of spacing, preventing visible seams.
+	split_water_scroll = fposmod(split_water_scroll + 21.0 * delta, 1200.0)
+	split_coast_scroll = fposmod(split_coast_scroll + 44.0 * delta, SPLIT_COAST_PERIOD)
+	split_foam_scroll = fposmod(split_foam_scroll + 76.0 * delta, 1400.0)
+
+
+func draw_split_background() -> void:
+	# Split: sunlit Adriatic, limestone quay, terracotta roofs and the Riva.
+	# Entirely decorative, with no physics or enemy logic changes.
+	draw_rect(Rect2(0.0, 0.0, W, H), Color(0.035, 0.22, 0.30))
+	# Deep-water bands and subtle distant reflections.
+	for i in range(12):
+		var y := fposmod(float(i) * 100.0 + split_water_scroll + 100.0, 1200.0) - 100.0
+		if y > H or y + 48.0 < 0.0:
+			continue
+		draw_rect(Rect2(0.0, y, W, 34.0), Color(0.12, 0.43, 0.49, 0.15))
+		draw_line(Vector2(232.0, y + 16.0), Vector2(500.0, y + 18.0), Color(0.49, 0.84, 0.80, 0.15), 2.0)
+
+	# Alternating waterfront blocks; all props move in the same seamless tile.
+	for i in range(SPLIT_COAST_TILES):
+		var y := fposmod(float(i) * SPLIT_COAST_SPACING + split_coast_scroll + SPLIT_COAST_SPACING, SPLIT_COAST_PERIOD) - SPLIT_COAST_SPACING
+		if y > H + 25.0 or y + 255.0 < -25.0:
+			continue
+		var left_side := i % 2 == 0
+		var edge := 150.0 if left_side else W - 150.0
+		var building_x := 0.0 if left_side else W - 142.0
+		# Stone coast foundation, shadow on the water and bright quay border.
+		draw_rect(Rect2(building_x + (7.0 if left_side else -7.0), y + 14.0, 142.0, 228.0), Color(0.0, 0.06, 0.08, 0.28))
+		draw_rect(Rect2(building_x, y + 7.0, 142.0, 223.0), Color(0.52, 0.49, 0.39))
+		draw_rect(Rect2(edge - 10.0 if left_side else edge, y + 7.0, 10.0, 223.0), Color(0.82, 0.78, 0.60))
+		# Limestone paving joints along the coastal promenade.
+		for stone in range(5):
+			var sy := y + 24.0 + float(stone) * 44.0
+			draw_line(Vector2(building_x + 7.0, sy), Vector2(building_x + 132.0, sy), Color(0.39, 0.38, 0.32, 0.45), 1.5)
+		# Terracotta roofs and warm plaster facades viewed from above.
+		for house in range(2):
+			var hx := building_x + (17.0 if house == 0 else 70.0)
+			var hy := y + 22.0 + float(house) * 91.0
+			draw_rect(Rect2(hx + 5.0, hy + 7.0, 52.0, 78.0), Color(0.12, 0.13, 0.13, 0.35))
+			draw_rect(Rect2(hx, hy, 52.0, 78.0), Color(0.75, 0.66, 0.50))
+			draw_colored_polygon(PackedVector2Array([
+				Vector2(hx - 4.0, hy + 11.0), Vector2(hx + 26.0, hy - 5.0),
+				Vector2(hx + 56.0, hy + 11.0), Vector2(hx + 56.0, hy + 67.0),
+				Vector2(hx + 26.0, hy + 84.0), Vector2(hx - 4.0, hy + 67.0)
+			]), Color(0.69, 0.31, 0.22) if (i + house) % 2 == 0 else Color(0.77, 0.42, 0.28))
+			draw_line(Vector2(hx + 26.0, hy - 3.0), Vector2(hx + 26.0, hy + 83.0), Color(0.96, 0.65, 0.42, 0.52), 2.0)
+		# Narrow pier extending from the Riva into open water.
+		var pier_x := edge if left_side else edge - 96.0
+		draw_rect(Rect2(pier_x, y + 187.0, 96.0, 22.0), Color(0.73, 0.67, 0.53))
+		draw_line(Vector2(pier_x, y + 190.0), Vector2(pier_x + 96.0, y + 190.0), Color(0.94, 0.85, 0.67), 3.0)
+		# White moored sailing boat with soft shadow and an unobtrusive wake.
+		if i % 3 != 1:
+			var boat_x := 330.0 if left_side else 400.0
+			var boat_y := y + 83.0
+			draw_colored_polygon(PackedVector2Array([
+				Vector2(boat_x, boat_y - 44.0), Vector2(boat_x - 15.0, boat_y + 20.0),
+				Vector2(boat_x, boat_y + 46.0), Vector2(boat_x + 15.0, boat_y + 20.0)
+			]), Color(0.06, 0.15, 0.19, 0.28))
+			draw_colored_polygon(PackedVector2Array([
+				Vector2(boat_x, boat_y - 51.0), Vector2(boat_x - 12.0, boat_y + 14.0),
+				Vector2(boat_x, boat_y + 38.0), Vector2(boat_x + 12.0, boat_y + 14.0)
+			]), Color(0.88, 0.90, 0.80))
+			draw_line(Vector2(boat_x, boat_y - 28.0), Vector2(boat_x, boat_y + 30.0), Color(0.25, 0.43, 0.48), 2.0)
+			draw_line(Vector2(boat_x - 19.0, boat_y + 28.0), Vector2(boat_x - 24.0, boat_y + 57.0), Color(0.78, 0.96, 0.94, 0.32), 2.0)
+			draw_line(Vector2(boat_x + 19.0, boat_y + 28.0), Vector2(boat_x + 24.0, boat_y + 57.0), Color(0.78, 0.96, 0.94, 0.32), 2.0)
+
+	# Light foam bands float above the water, separate from the coastline.
+	for i in range(20):
+		var y := fposmod(float(i) * 70.0 + split_foam_scroll + 70.0, 1400.0) - 70.0
+		if y > H + 10.0 or y + 16.0 < -10.0:
+			continue
+		var x := 178.0 + float((i * 137) % 355)
+		draw_line(Vector2(x, y), Vector2(x + 66.0, y + 4.0), Color(0.78, 0.96, 0.89, 0.28), 2.0, true)
+		draw_line(Vector2(x + 23.0, y + 11.0), Vector2(x + 51.0, y + 13.0), Color(0.91, 0.96, 0.84, 0.16), 1.0, true)
+
+
+func update_osijek_background(delta: float) -> void:
+	# Always wrap at an exact multiple of the element spacing: no visible snaps.
+	osijek_water_scroll = fposmod(osijek_water_scroll + 19.0 * delta, 1200.0)
+	osijek_bank_scroll = fposmod(osijek_bank_scroll + 43.0 * delta, OSIJEK_BANK_PERIOD)
+	osijek_ripple_scroll = fposmod(osijek_ripple_scroll + 72.0 * delta, 1400.0)
+
+
+func draw_osijek_background() -> void:
+	# Osijek: Drava river, shaded green embankments, pedestrian bridges and foliage.
+	# Pure background artwork: no added nodes, collisions or gameplay modifications.
+	draw_rect(Rect2(0.0, 0.0, W, H), Color(0.055, 0.205, 0.225))
+	# Wide calm-current patches, repeated seamlessly.
+	for i in range(12):
+		var y := fposmod(float(i) * 100.0 + osijek_water_scroll + 100.0, 1200.0) - 100.0
+		if y > H + 5.0 or y + 54.0 < -5.0:
+			continue
+		draw_rect(Rect2(0.0, y, W, 48.0), Color(0.12, 0.35, 0.32, 0.18))
+		draw_line(Vector2(208.0, y + 18.0), Vector2(512.0, y + 19.0), Color(0.46, 0.72, 0.58, 0.14), 2.0)
+	# Each tile is 320px high, and all decorations for that tile move together.
+	for i in range(OSIJEK_BANK_TILES):
+		var y := fposmod(float(i) * OSIJEK_BANK_SPACING + osijek_bank_scroll + OSIJEK_BANK_SPACING, OSIJEK_BANK_PERIOD) - OSIJEK_BANK_SPACING
+		if y > H + 30.0 or y + 320.0 < -30.0:
+			continue
+		var left := i % 2 == 0
+		# Two river banks, with different shades for a little top-down depth.
+		for side in range(2):
+			var on_left := side == 0
+			var edge_x := 139.0 if on_left else W - 139.0
+			var land_x := 0.0 if on_left else W - 139.0
+			draw_rect(Rect2(land_x, y + 8.0, 139.0, 300.0), Color(0.16, 0.31, 0.16))
+			draw_rect(Rect2(land_x, y + 14.0, 139.0, 278.0), Color(0.22, 0.39, 0.19))
+			draw_rect(Rect2(edge_x - 11.0 if on_left else edge_x, y + 8.0, 11.0, 300.0), Color(0.43, 0.49, 0.29))
+			# Embankment walkway with paving, visible from above.
+			var walk_x := 110.0 if on_left else W - 119.0
+			draw_rect(Rect2(walk_x, y + 14.0, 9.0, 278.0), Color(0.64, 0.60, 0.46))
+			for k in range(6):
+				var tree_y := y + 37.0 + float(k) * 47.0
+				var tree_x := 36.0 + float((i * 13 + k * 19) % 52) if on_left else W - 36.0 - float((i * 11 + k * 17) % 52)
+				draw_circle(Vector2(tree_x + 5.0, tree_y + 7.0), 20.0, Color(0.035, 0.12, 0.07, 0.30))
+				draw_circle(Vector2(tree_x, tree_y), 19.0, Color(0.09, 0.28, 0.12))
+				draw_circle(Vector2(tree_x - 5.0, tree_y - 4.0), 12.0, Color(0.20, 0.47, 0.20))
+		# A long bridge every second tile. It travels with this exact tile.
+		if i % 2 == 0:
+			var bridge_y := y + 184.0
+			draw_rect(Rect2(103.0, bridge_y + 9.0, 514.0, 25.0), Color(0.02, 0.08, 0.09, 0.32))
+			draw_rect(Rect2(103.0, bridge_y, 514.0, 20.0), Color(0.58, 0.61, 0.55))
+			draw_line(Vector2(103.0, bridge_y + 2.0), Vector2(617.0, bridge_y + 2.0), Color(0.88, 0.85, 0.70), 3.0)
+			draw_line(Vector2(103.0, bridge_y + 18.0), Vector2(617.0, bridge_y + 18.0), Color(0.24, 0.32, 0.31), 3.0)
+			for j in range(9):
+				var bx := 130.0 + float(j) * 56.0
+				draw_line(Vector2(bx, bridge_y - 1.0), Vector2(bx, bridge_y + 19.0), Color(0.80, 0.82, 0.74), 2.0)
+		else:
+			# Reed beds along the river edge on tiles without a bridge.
+			var reeds_x := 145.0 if left else W - 145.0
+			for reed in range(7):
+				var ry := y + 30.0 + float(reed) * 39.0
+				draw_line(Vector2(reeds_x - 4.0, ry + 11.0), Vector2(reeds_x + 7.0, ry - 8.0), Color(0.47, 0.61, 0.26, 0.72), 2.0)
+	# Subtle close water glints, scrolling independently from the bridges.
+	for i in range(20):
+		var y := fposmod(float(i) * 70.0 + osijek_ripple_scroll + 70.0, 1400.0) - 70.0
+		if y > H + 10.0 or y + 12.0 < -10.0:
+			continue
+		var x := 178.0 + float((i * 127) % 340)
+		draw_line(Vector2(x, y), Vector2(x + 52.0, y + 2.0), Color(0.61, 0.88, 0.73, 0.24), 2.0, true)
+
+
+func update_zagreb_background(delta: float) -> void:
+	# Both periodic layers wrap only after their full tile sets, never mid-scene.
+	zagreb_city_scroll = fposmod(zagreb_city_scroll + 43.0 * delta, ZAGREB_BLOCK_PERIOD)
+	zagreb_detail_scroll = fposmod(zagreb_detail_scroll + 24.0 * delta, 1440.0)
+
+
+func draw_zagreb_background() -> void:
+	# Zagreb during the invasion: dark asphalt, tram tracks, damaged rooftops,
+	# courtyard trees, distant smoke and a handful of warning beacons.
+	# Presentation only. No new physics objects or gameplay entities.
+	draw_rect(Rect2(0.0, 0.0, W, H), Color(0.085, 0.095, 0.13))
+	# Central boulevard and rails, designed to scroll smoothly under the ship.
+	draw_rect(Rect2(255.0, 0.0, 210.0, H), Color(0.14, 0.155, 0.175))
+	draw_rect(Rect2(261.0, 0.0, 5.0, H), Color(0.29, 0.30, 0.30))
+	draw_rect(Rect2(454.0, 0.0, 5.0, H), Color(0.29, 0.30, 0.30))
+	draw_line(Vector2(322.0, 0.0), Vector2(322.0, H), Color(0.47, 0.45, 0.35, 0.65), 2.0)
+	draw_line(Vector2(397.0, 0.0), Vector2(397.0, H), Color(0.47, 0.45, 0.35, 0.65), 2.0)
+	# Distant shifting clouds / low-contrast smoke shadows.
+	for cloud in range(12):
+		var cloud_y := fposmod(float(cloud) * 120.0 + zagreb_detail_scroll + 120.0, 1440.0) - 120.0
+		if cloud_y > H + 65.0 or cloud_y < -90.0:
+			continue
+		var cloud_x := 60.0 + float((cloud * 173) % 585)
+		draw_circle(Vector2(cloud_x, cloud_y), 50.0, Color(0.23, 0.24, 0.28, 0.08))
+		draw_circle(Vector2(cloud_x + 28.0, cloud_y + 18.0), 39.0, Color(0.27, 0.26, 0.29, 0.08))
+	# Street furniture and left/right masonry repeat as a complete 1800px cycle.
+	for block in range(ZAGREB_BLOCK_COUNT):
+		var block_y := fposmod(float(block) * ZAGREB_BLOCK_SPACING + zagreb_city_scroll + ZAGREB_BLOCK_SPACING, ZAGREB_BLOCK_PERIOD) - ZAGREB_BLOCK_SPACING
+		if block_y > H + 30.0 or block_y + ZAGREB_BLOCK_SPACING < -30.0:
+			continue
+		for side in range(2):
+			var on_left := side == 0
+			var building_x := 18.0 if on_left else 483.0
+			var facade := Color(0.30, 0.31, 0.33) if block % 2 == 0 else Color(0.35, 0.29, 0.28)
+			var roof := Color(0.47, 0.24, 0.21) if block % 3 != 0 else Color(0.31, 0.34, 0.36)
+			# Offset shadow provides depth without sprites or per-frame allocation of textures.
+			draw_rect(Rect2(building_x + 12.0, block_y + 31.0, 221.0, 231.0), Color(0.015, 0.02, 0.035, 0.42))
+			draw_rect(Rect2(building_x, block_y + 20.0, 218.0, 227.0), facade)
+			draw_rect(Rect2(building_x + 9.0, block_y + 28.0, 198.0, 210.0), roof)
+			draw_rect(Rect2(building_x + 21.0, block_y + 42.0, 173.0, 180.0), Color(0.38, 0.21, 0.20, 0.65))
+			for window_row in range(4):
+				for window_column in range(3):
+					var win_x := building_x + 38.0 + float(window_column) * 55.0
+					var win_y := block_y + 52.0 + float(window_row) * 42.0
+					var broken := (block + side + window_row * 3 + window_column) % 5 == 0
+					draw_rect(Rect2(win_x, win_y, 16.0, 20.0), Color(0.065, 0.10, 0.13) if broken else Color(0.57, 0.58, 0.53))
+			# Scorched roof corner and exposed beams; all fixed to the same tile.
+			if (block + side) % 3 == 0:
+				var burn_x := building_x + (151.0 if on_left else 36.0)
+				draw_colored_polygon(PackedVector2Array([
+					Vector2(burn_x, block_y + 34.0),
+					Vector2(burn_x + 39.0, block_y + 43.0),
+					Vector2(burn_x + 31.0, block_y + 79.0),
+					Vector2(burn_x - 5.0, block_y + 70.0)
+				]), Color(0.08, 0.075, 0.085))
+				draw_line(Vector2(burn_x + 6.0, block_y + 48.0), Vector2(burn_x + 25.0, block_y + 69.0), Color(0.63, 0.31, 0.16), 3.0)
+			else:
+				# Small rooftop planter for depth / variation.
+				draw_rect(Rect2(building_x + 86.0, block_y + 103.0, 43.0, 35.0), Color(0.18, 0.25, 0.20))
+				draw_circle(Vector2(building_x + 108.0, block_y + 118.0), 14.0, Color(0.20, 0.34, 0.19))
+		# Road crossing and zebra stripes are attached to the same tile period.
+		var crossing_y := block_y + 270.0
+		draw_rect(Rect2(265.0, crossing_y - 2.0, 190.0, 4.0), Color(0.24, 0.25, 0.25))
+		for stripe in range(7):
+			draw_rect(Rect2(282.0 + float(stripe) * 24.0, crossing_y + 6.0, 12.0, 27.0), Color(0.70, 0.67, 0.55, 0.50))
+		# Tram rail sleepers / paving marks.
+		for sleeper in range(5):
+			var sleeper_y := block_y + 25.0 + float(sleeper) * 55.0
+			draw_rect(Rect2(318.0, sleeper_y, 84.0, 4.0), Color(0.37, 0.35, 0.33, 0.48))
+		# A warning lamp flashes gently on a building roof, not on the HUD.
+		if block % 2 == 0:
+			var beacon_x := 223.0 if block % 4 == 0 else 496.0
+			var beacon_y := block_y + 26.0
+			var brightness := 0.50 + 0.38 * sin(level_time * 4.2 + float(block))
+			draw_circle(Vector2(beacon_x, beacon_y), 5.0, Color(1.0, 0.22, 0.13, brightness))
+
+
 func draw_player_ship_25d(pos: Vector2) -> void:
 	
 	# Shadow
@@ -366,6 +738,13 @@ func draw_boss_25d(pos: Vector2) -> void:
 		draw_city_lieutenant_25d(pos, city_name())
 
 
+func rotate_polygon_points(points: Array[Vector2], center: Vector2, angle: float) -> PackedVector2Array:
+	var result := PackedVector2Array()
+	for point in points:
+		result.append(center + (point - center).rotated(angle))
+	return result
+
+
 func draw_city_lieutenant_25d(pos: Vector2, city: String) -> void:
 	# Four distinct silhouettes and color palettes without any gameplay changes.
 	var shell := Color(0.12, 0.48, 0.51)
@@ -428,8 +807,12 @@ func draw_city_lieutenant_25d(pos: Vector2, city: String) -> void:
 	draw_circle(pos + Vector2(3, 5), 26.0, armor.darkened(0.5))
 	draw_circle(pos, 23.0, core_light)
 	draw_circle(pos + Vector2(-7, -8), 8.0, Color(1.0, 1.0, 1.0, 0.72))
-	if boss_shields > 0:
-		draw_arc(pos, 70.0, 0.0, TAU, 38, Color(0.3, 0.91, 1.0, 0.7), 3.0)
+	# Every shield hit strips one visible shell from the lieutenant.
+	# Two rings correspond to the two existing shield hit points.
+	for shield_layer in range(boss_shields):
+		var layer_radius := 70.0 + float(shield_layer) * 7.0
+		var layer_alpha := 0.92 - float(shield_layer) * 0.17
+		draw_arc(pos, layer_radius, 0.0, TAU, 48, Color(0.32, 0.89, 1.0, layer_alpha), 3.5)
 
 
 func draw_zone_guardian_25d(pos: Vector2) -> void:
@@ -439,11 +822,20 @@ func draw_zone_guardian_25d(pos: Vector2) -> void:
 	var dark := Color(0.07, 0.13, 0.23)
 	var steel := Color(0.17, 0.38, 0.51)
 	var glow := Color(0.38, 0.91, 1.0)
+	# Before Adriatic Storm the Guardian now performs a full in-place spin while
+	# the red warning orb flashes exactly three times.
+	var pre_attack_spin := level == MAX_LEVEL and storm_warning_time > 0.0 and storm_pulses_remaining > 0
+	var body_rotation := 0.0
+	var flash_on := false
+	if pre_attack_spin:
+		var storm_progress := clampf(1.0 - storm_warning_time / STORM_WARNING_SECONDS, 0.0, 1.0)
+		body_rotation = TAU * storm_progress
+		flash_on = int(floor(storm_progress * 6.0)) % 2 == 0
 	draw_circle(pos + Vector2(9, 15), 111.0, Color(0.0, 0.02, 0.08, 0.37))
 	draw_circle(pos, 108.0, dark)
 	draw_arc(pos, 107.0, 0.0, TAU, 48, glow.darkened(0.25), 8.0)
 	for segment in range(8):
-		var angle := float(segment) * TAU / 8.0 + spin_rotation * 0.19
+		var angle := float(segment) * TAU / 8.0 + spin_rotation * 0.19 + body_rotation
 		var direction := Vector2(cos(angle), sin(angle))
 		var anchor := pos + direction * 79.0
 		draw_line(pos + direction * 47.0, anchor, steel, 17.0, true)
@@ -451,25 +843,43 @@ func draw_zone_guardian_25d(pos: Vector2) -> void:
 		draw_circle(anchor, 15.0, steel)
 		draw_circle(anchor + Vector2(-4.0, -5.0), 6.0, glow)
 	# Angular inner hull, layered to suggest height and machinery.
-	draw_colored_polygon(PackedVector2Array([
+	var hull_outer: Array[Vector2] = [
 		pos + Vector2(0, -69), pos + Vector2(-65, -10),
 		pos + Vector2(-48, 47), pos + Vector2(0, 70),
 		pos + Vector2(48, 47), pos + Vector2(65, -10)
-	]), steel)
-	draw_colored_polygon(PackedVector2Array([
+	]
+	draw_colored_polygon(rotate_polygon_points(hull_outer, pos, body_rotation), steel)
+	var hull_inner: Array[Vector2] = [
 		pos + Vector2(0, -57), pos + Vector2(-40, -8),
 		pos + Vector2(-30, 34), pos + Vector2(0, 49),
 		pos + Vector2(30, 34), pos + Vector2(40, -8)
-	]), Color(0.11, 0.25, 0.39))
-	draw_line(pos + Vector2(-33, -12), pos + Vector2(0, -48), glow, 4.0, true)
-	draw_line(pos + Vector2(33, -12), pos + Vector2(0, -48), glow, 4.0, true)
+	]
+	draw_colored_polygon(rotate_polygon_points(hull_inner, pos, body_rotation), Color(0.11, 0.25, 0.39))
+	draw_line(pos + Vector2(-33, -12).rotated(body_rotation), pos + Vector2(0, -48).rotated(body_rotation), glow, 4.0, true)
+	draw_line(pos + Vector2(33, -12).rotated(body_rotation), pos + Vector2(0, -48).rotated(body_rotation), glow, 4.0, true)
 	var core_glow := glow if boss_shields > 0 else Color(1.0, 0.35, 0.40)
-	draw_circle(pos + Vector2(4, 7), 32.0, dark)
+	draw_circle(pos + Vector2(4, 7).rotated(body_rotation), 32.0, dark)
 	draw_circle(pos, 29.0, core_glow)
-	draw_circle(pos + Vector2(-9, -10), 11.0, Color(0.92, 0.99, 1.0))
-	# Two shield rounds are already controlled by existing boss-shield state.
-	if boss_shields > 0:
-		draw_arc(pos, 114.0, 0.0, TAU, 56, Color(0.40, 0.92, 1.0, 0.88), 5.0)
+	draw_circle(pos + Vector2(-9, -10).rotated(body_rotation), 11.0, Color(0.92, 0.99, 1.0))
+	# Red warning orb used to telegraph Adriatic Storm.
+	var orb_pos := pos + Vector2(0.0, -82.0).rotated(body_rotation)
+	var orb_shadow := pos + Vector2(3.0, -77.0).rotated(body_rotation)
+	var orb_color := Color(0.62, 0.12, 0.18)
+	var orb_halo := Color(0.95, 0.12, 0.18, 0.16)
+	if pre_attack_spin:
+		orb_color = Color(1.0, 0.15, 0.18) if flash_on else Color(0.68, 0.12, 0.18)
+		orb_halo = Color(1.0, 0.2, 0.24, 0.42 if flash_on else 0.18)
+	draw_circle(orb_shadow, 13.0, dark)
+	if pre_attack_spin:
+		draw_circle(orb_pos, 24.0, orb_halo)
+	draw_circle(orb_pos, 10.0, orb_color)
+	draw_circle(orb_pos + Vector2(-3.0, -4.0).rotated(body_rotation), 3.5, Color(1.0, 0.82, 0.82, 0.85))
+	# Each of the four shield hit points corresponds to a removable energy layer.
+	# Second shield phase adds the four rings back automatically at half HP.
+	for shield_layer in range(boss_shields):
+		var layer_radius := 113.0 + float(shield_layer) * 7.0
+		var layer_alpha := 0.90 - float(shield_layer) * 0.13
+		draw_arc(pos, layer_radius, 0.0, TAU, 64, Color(0.36, 0.88, 1.0, layer_alpha), 3.5)
 
 func city_name() -> String:
 	var slot := clampi(int((level - 1) / 5), 0, 4)
@@ -479,16 +889,246 @@ func city_mission() -> int:
 	return ((level - 1) % 5) + 1
 
 func waves_for_level() -> int:
-	# Warblade Classic's exact stage-by-stage enemy totals are not verified.
-	# Our ten-unit mirrored groups scale from 20 to 40 enemies per stage.
 	if level == MAX_LEVEL:
-		return 0 # Classic Warblade level 25 is a standalone boss fight.
-	return ENEMY_WAVES_BY_CITY_STAGE[city_mission() - 1]
+		return 0 # The final Zone Guardian is a standalone boss fight.
+	return 2
+
+func enemies_per_wave() -> int:
+	if level == MAX_LEVEL:
+		return 0
+	return int(ENEMY_TOTAL_BY_CITY_STAGE[city_mission() - 1] / 2)
+
+func make_arcade_sound(kind: String) -> AudioStreamWAV:
+	# PCM16 mono, entirely offline generated. No external sound files required.
+	var duration := 0.095
+	var start_hz := 680.0
+	var end_hz := 250.0
+	var amp := 0.29
+	match kind:
+		"shoot":
+			duration = 0.075
+			start_hz = 1100.0
+			end_hz = 410.0
+			amp = 0.21
+		"double_shoot":
+			duration = 0.11
+			start_hz = 990.0
+			end_hz = 365.0
+			amp = 0.19
+		"triple_shoot":
+			duration = 0.145
+			start_hz = 835.0
+			end_hz = 215.0
+			amp = 0.21
+		"shield_hit":
+			duration = 0.11
+			start_hz = 1450.0
+			end_hz = 620.0
+			amp = 0.25
+		"storm_charge":
+			duration = 1.28
+			start_hz = 95.0
+			end_hz = 320.0
+			amp = 0.30
+		"hit":
+			duration = 0.065
+			start_hz = 340.0
+			end_hz = 120.0
+			amp = 0.19
+		"destroy":
+			duration = 0.19
+			start_hz = 190.0
+			end_hz = 45.0
+			amp = 0.32
+		"pickup":
+			duration = 0.16
+			start_hz = 550.0
+			end_hz = 1100.0
+			amp = 0.20
+		"hurt":
+			duration = 0.24
+			start_hz = 320.0
+			end_hz = 65.0
+			amp = 0.36
+		"boss":
+			duration = 0.38
+			start_hz = 270.0
+			end_hz = 48.0
+			amp = 0.38
+	var frames := int(duration * float(SFX_SAMPLE_RATE))
+	var pcm := PackedByteArray()
+	pcm.resize(frames * 2)
+	var phase := 0.0
+	for i in range(frames):
+		var t := float(i) / float(frames)
+		var hz := lerpf(start_hz, end_hz, t)
+		phase += TAU * hz / float(SFX_SAMPLE_RATE)
+		var envelope := pow(1.0 - t, 1.8) * minf(1.0, t * 45.0)
+		var wave := sin(phase)
+		if kind == "double_shoot":
+			# Two rapid retro chirps in a single reusable audio sample.
+			wave = sin(phase * (1.0 if t < 0.50 else 1.32))
+			envelope *= 0.50 + 0.50 * absf(sin(t * TAU * 2.0))
+		elif kind == "triple_shoot":
+			wave = 0.62 * sin(phase) + 0.38 * sin(phase * 1.95)
+			envelope *= 0.48 + 0.52 * absf(sin(t * TAU * 3.0))
+		elif kind == "shield_hit":
+			wave = 0.52 * sin(phase) + 0.48 * sin(phase * 2.71)
+		elif kind == "storm_charge":
+			# Three bright pulses over a rising low-frequency charging hum.
+			wave = 0.72 * sin(phase) + 0.28 * sin(phase * 3.0)
+			envelope = (0.22 + 0.78 * t) * (0.40 + 0.60 * pow(absf(sin(t * TAU * 3.0)), 8.0))
+		elif kind == "destroy" or kind == "boss" or kind == "hurt":
+			wave = 0.65 * sin(phase) + 0.35 * sin(phase * 2.37)
+		var sample := clampi(int(wave * envelope * amp * 32767.0), -32767, 32767)
+		pcm.encode_s16(i * 2, sample)
+	var stream := AudioStreamWAV.new()
+	stream.format = AudioStreamWAV.FORMAT_16_BITS
+	stream.mix_rate = SFX_SAMPLE_RATE
+	stream.stereo = false
+	stream.data = pcm
+	return stream
+
+
+func music_note_hz(note: int) -> float:
+	return 440.0 * pow(2.0, (float(note) - 69.0) / 12.0)
+
+
+func generate_retro_music(theme: String) -> AudioStreamWAV:
+	# Three original 8-second chiptune arrangements at 120 BPM.
+	# Frequencies and envelopes are sampled into 16-bit WAV once, not per frame.
+	var lead: Array[int] = []
+	var bass: Array[int] = []
+	var tempo_amp := 0.24
+	match theme:
+		"menu":
+			lead = [72, -1, 76, 79, 76, -1, 74, 72, 71, -1, 74, 76, 79, -1, 76, 74,
+				72, -1, 76, 79, 83, -1, 79, 76, 74, -1, 72, 74, 76, -1, 71, -1]
+			bass = [45, 45, 48, 48, 43, 43, 41, 41]
+		"stage":
+			lead = [76, -1, 79, 83, 81, -1, 79, 76, 74, -1, 76, 79, 76, -1, 72, 74,
+				76, -1, 79, 83, 86, -1, 83, 79, 81, -1, 79, 76, 74, 76, 72, -1]
+			bass = [40, 40, 43, 40, 45, 45, 43, 40]
+		"boss":
+			lead = [64, 67, 70, -1, 64, 67, 72, 70, 63, 66, 69, -1, 63, 66, 73, 69,
+				64, 67, 70, 76, 75, 70, 67, -1, 63, 66, 69, 75, 73, 69, 66, -1]
+			bass = [40, 40, 39, 39, 38, 38, 35, 35]
+		"victory":
+			lead = [72, -1, 76, 79, 84, -1, 79, 76, 77, -1, 81, 84, 88, -1, 84, 81,
+				79, -1, 83, 86, 91, 88, 86, 83, 84, -1, 88, 91, 96, -1, 91, -1]
+			bass = [48, 48, 53, 53, 55, 55, 48, 48]
+	var total_frames := int(float(MUSIC_STEPS) * MUSIC_STEP_SECONDS * float(MUSIC_SAMPLE_RATE))
+	var pcm := PackedByteArray()
+	pcm.resize(total_frames * 2)
+	var lead_phase := 0.0
+	var bass_phase := 0.0
+	for i in range(total_frames):
+		var sec := float(i) / float(MUSIC_SAMPLE_RATE)
+		var step_f := sec / MUSIC_STEP_SECONDS
+		var step_index := mini(MUSIC_STEPS - 1, int(step_f))
+		var step_pos := step_f - float(step_index)
+		var note := lead[step_index]
+		var lead_signal := 0.0
+		if note >= 0:
+			lead_phase += TAU * music_note_hz(note) / float(MUSIC_SAMPLE_RATE)
+			var note_envelope := minf(1.0, step_pos * 23.0) * pow(1.0 - step_pos, 0.55)
+			lead_signal = (1.0 if sin(lead_phase) >= 0.0 else -1.0) * 0.17 * note_envelope
+		var bass_note := bass[(step_index / 4) % bass.size()]
+		bass_phase += TAU * music_note_hz(bass_note) / float(MUSIC_SAMPLE_RATE)
+		var beat_pos := fposmod(step_f, 4.0) / 4.0
+		var bass_envelope := pow(1.0 - beat_pos, 1.2)
+		var bass_signal := sin(bass_phase) * 0.22 * bass_envelope
+		# Soft, unpitched synthetic hi-hat from two clashing partials.
+		var hat_pos := fposmod(step_f, 2.0) / 2.0
+		var hat_envelope := pow(1.0 - hat_pos, 13.0)
+		var hat_signal := sin(sec * TAU * 1900.0) * sin(sec * TAU * 2710.0) * 0.05 * hat_envelope
+		var sample := clampi(int((lead_signal + bass_signal + hat_signal) * tempo_amp * 32767.0), -32767, 32767)
+		pcm.encode_s16(i * 2, sample)
+	var stream := AudioStreamWAV.new()
+	stream.format = AudioStreamWAV.FORMAT_16_BITS
+	stream.mix_rate = MUSIC_SAMPLE_RATE
+	stream.stereo = false
+	stream.data = pcm
+	stream.loop_mode = AudioStreamWAV.LOOP_FORWARD
+	stream.loop_begin = 0
+	stream.loop_end = total_frames
+	return stream
+
+
+func setup_retro_music() -> void:
+	for theme in ["menu", "stage", "boss", "victory"]:
+		music_streams[theme] = generate_retro_music(theme)
+	music_player = AudioStreamPlayer.new()
+	music_player.volume_db = linear_to_db(music_volume)
+	add_child(music_player)
+
+
+func update_retro_music() -> void:
+	if music_player == null:
+		return
+	var needed := ""
+	if state in ["main_menu", "menu_confirm_new", "menu_options", "menu_highscores"]:
+		needed = "menu"
+	elif state in ["playing", "intermission", "boss_intro", "boss_rewards"]:
+		needed = "boss" if boss_active or state in ["boss_intro", "boss_rewards"] else "stage"
+	elif state == "victory":
+		needed = "victory"
+	if not music_enabled or needed.is_empty():
+		music_player.stop()
+		current_music = ""
+		return
+	if current_music != needed:
+		current_music = needed
+		music_player.stream = music_streams[needed]
+		music_player.play()
+	music_player.stream_paused = game_paused or show_stats_modal or debug_level_menu
+	music_player.volume_db = linear_to_db(maxf(music_volume, 0.001))
+
+
+func update_sound_volumes() -> void:
+	for kind in sfx_voices:
+		var players: Array[AudioStreamPlayer] = sfx_voices[kind]
+		for player in players:
+			player.volume_db = float(sfx_base_db[kind]) + linear_to_db(maxf(sfx_volume, 0.001))
+	if music_player != null:
+		music_player.volume_db = linear_to_db(maxf(music_volume, 0.001))
+
+
+func setup_arcade_audio() -> void:
+	for kind in ["shoot", "double_shoot", "triple_shoot", "shield_hit", "storm_charge", "hit", "destroy", "pickup", "hurt", "boss"]:
+		var sample := make_arcade_sound(kind)
+		sfx_streams[kind] = sample
+		var players: Array[AudioStreamPlayer] = []
+		var voice_count := 1 if kind == "storm_charge" else SFX_VOICE_POOL
+		for voice in range(voice_count):
+			var player := AudioStreamPlayer.new()
+			player.stream = sample
+			player.volume_db = -14.0 if kind in ["shoot", "double_shoot", "triple_shoot", "hit"] else (-12.0 if kind == "shield_hit" else -9.0)
+			sfx_base_db[kind] = player.volume_db
+			add_child(player)
+			players.append(player)
+		sfx_voices[kind] = players
+		sfx_next_voice[kind] = 0
+
+
+func play_arcade_sfx(kind: String) -> void:
+	if not sfx_voices.has(kind):
+		return
+	var players: Array[AudioStreamPlayer] = sfx_voices[kind]
+	var voice_index: int = sfx_next_voice[kind]
+	players[voice_index].play()
+	sfx_next_voice[kind] = (voice_index + 1) % players.size()
+
 
 func _ready() -> void:
+	setup_arcade_audio()
+	setup_retro_music()
+	update_sound_volumes()
 	randomize()
 	font = ThemeDB.fallback_font
 	load_high_scores()
+	read_campaign_save()
+	main_menu_selection = 0 if save_available else 1
 	score_name_field = LineEdit.new()
 	score_name_field.position = Vector2(226, 724)
 	score_name_field.size = Vector2(268, 43)
@@ -499,7 +1139,135 @@ func _ready() -> void:
 	score_name_field.hide()
 	for i in range(110):
 		stars.append(Vector2(randf_range(0.0, W), randf_range(0.0, H)))
-	state = "city_select"
+	state = "main_menu"
+	queue_redraw()
+
+
+func read_campaign_save() -> void:
+	pending_campaign_save.clear()
+	save_available = false
+	var config := ConfigFile.new()
+	if config.load(CAMPAIGN_SAVE_FILE) != OK:
+		return
+	if int(config.get_value("campaign", "version", -1)) != CAMPAIGN_SAVE_VERSION:
+		return
+	var checkpoint_state := String(config.get_value("campaign", "checkpoint", ""))
+	if not checkpoint_state in ["city_select", "playing", "shop"]:
+		return
+	var saved_level := int(config.get_value("campaign", "level", 0))
+	var saved_lives := int(config.get_value("campaign", "lives", 0))
+	var route_value: Variant = config.get_value("campaign", "city_route", [])
+	if saved_level < 1 or saved_level > MAX_LEVEL or saved_lives <= 0 or not route_value is Array:
+		return
+	var validated_route: Array[int] = []
+	for raw_city in route_value:
+		var city_id := int(raw_city)
+		if city_id < 0 or city_id > 4 or validated_route.has(city_id):
+			return
+		validated_route.append(city_id)
+	if validated_route.size() > 5:
+		return
+	# Level 1 and city_select can be saved before choosing any city.
+	if checkpoint_state != "city_select" and validated_route.is_empty():
+		return
+	pending_campaign_save = {
+		"checkpoint": checkpoint_state,
+		"level": saved_level,
+		"lives": saved_lives,
+		"score": int(config.get_value("campaign", "score", 0)),
+		"scrap": int(config.get_value("campaign", "scrap", 0)),
+		"damage_level": int(config.get_value("campaign", "damage_level", 0)),
+		"rate_level": int(config.get_value("campaign", "rate_level", 0)),
+		"speed_level": int(config.get_value("campaign", "speed_level", 0)),
+		"ability_level": int(config.get_value("campaign", "ability_level", 1)),
+		"collected_orb_mask": int(config.get_value("campaign", "collected_orb_mask", 0)),
+		"campaign_orbs_found_mask": int(config.get_value("campaign", "campaign_orbs_found_mask", 0)),
+		"white_orb_collected": bool(config.get_value("campaign", "white_orb_collected", false)),
+		"total_kills": int(config.get_value("campaign", "total_kills", 0)),
+		"city_route": validated_route
+	}
+	save_available = true
+
+
+func save_campaign_checkpoint(checkpoint_state: String) -> void:
+	# Checkpoints are written at mission starts, city selection and shops.
+	# DEBUG sessions are never saved or submitted to High Scores.
+	if debug_run or not checkpoint_state in ["city_select", "playing", "shop"]:
+		return
+	var config := ConfigFile.new()
+	config.set_value("campaign", "version", CAMPAIGN_SAVE_VERSION)
+	config.set_value("campaign", "checkpoint", checkpoint_state)
+	config.set_value("campaign", "level", level)
+	config.set_value("campaign", "lives", lives)
+	config.set_value("campaign", "score", score)
+	config.set_value("campaign", "scrap", scrap)
+	config.set_value("campaign", "damage_level", damage_level)
+	config.set_value("campaign", "rate_level", rate_level)
+	config.set_value("campaign", "speed_level", speed_level)
+	config.set_value("campaign", "ability_level", ability_level)
+	config.set_value("campaign", "collected_orb_mask", collected_orb_mask)
+	config.set_value("campaign", "campaign_orbs_found_mask", campaign_orbs_found_mask)
+	config.set_value("campaign", "white_orb_collected", white_orb_collected)
+	config.set_value("campaign", "total_kills", total_kills)
+	config.set_value("campaign", "city_route", city_route)
+	var save_result := config.save(CAMPAIGN_SAVE_FILE)
+	if save_result != OK:
+		push_warning("Could not save campaign checkpoint: %d" % save_result)
+	else:
+		read_campaign_save()
+
+
+func erase_campaign_save() -> void:
+	if FileAccess.file_exists(CAMPAIGN_SAVE_FILE):
+		var error := DirAccess.remove_absolute(ProjectSettings.globalize_path(CAMPAIGN_SAVE_FILE))
+		if error != OK:
+			push_warning("Could not remove old campaign save: %d" % error)
+	read_campaign_save()
+
+
+func continue_campaign() -> void:
+	read_campaign_save()
+	if not save_available:
+		return
+	var data: Dictionary = pending_campaign_save
+	level = clampi(int(data["level"]), 1, MAX_LEVEL)
+	lives = maxi(1, int(data["lives"]))
+	score = maxi(0, int(data["score"]))
+	scrap = maxi(0, int(data["scrap"]))
+	damage_level = clampi(int(data["damage_level"]), 0, 6)
+	rate_level = clampi(int(data["rate_level"]), 0, 4)
+	speed_level = clampi(int(data["speed_level"]), 0, 4)
+	ability_level = clampi(int(data["ability_level"]), 1, 3)
+	collected_orb_mask = int(data["collected_orb_mask"])
+	campaign_orbs_found_mask = int(data.get("campaign_orbs_found_mask", 0))
+	white_orb_collected = bool(data["white_orb_collected"])
+	total_kills = maxi(0, int(data["total_kills"]))
+	city_route.clear()
+	for city_index in data["city_route"]:
+		city_route.append(int(city_index))
+	debug_run = false
+	game_paused = false
+	show_stats_modal = false
+	debug_level_menu = false
+	god_mode = false
+	awaiting_score_name = false
+	drops.clear()
+	active_multipliers.clear()
+	enemies.clear()
+	player_bullets.clear()
+	enemy_bullets.clear()
+	radial_bullets.clear()
+	boss.clear()
+	boss_active = false
+	player_x = W * 0.5
+	var checkpoint := String(data["checkpoint"])
+	if checkpoint == "shop":
+		state = "shop"
+	elif checkpoint == "city_select":
+		show_city_map()
+	else:
+		# A saved in-progress level restarts at its beginning, never mid-wave.
+		start_level()
 	queue_redraw()
 
 
@@ -507,6 +1275,15 @@ func city_selectable(city_index: int) -> bool:
 	if city_index < 0 or city_index >= 5 or city_route.has(city_index):
 		return false
 	return city_index != 4 or city_route.size() == 4
+
+
+func show_mission_briefing(city_index: int) -> void:
+	if not city_selectable(city_index):
+		return
+	selected_city = city_index
+	briefing_city_index = city_index
+	state = "mission_briefing"
+	queue_redraw()
 
 
 func start_city_flight(city_index: int) -> void:
@@ -527,7 +1304,52 @@ func show_city_map() -> void:
 		if city_selectable(city_index):
 			selected_city = city_index
 			break
+	save_campaign_checkpoint("city_select")
 	queue_redraw()
+
+
+func start_new_campaign() -> void:
+	erase_campaign_save()
+	god_mode = false
+	lives = 3
+	score = 0
+	scrap = 0
+	total_kills = 0
+	single_shot_kills_since_drop = 0
+	active_multipliers.clear()
+	debug_run = false
+	city_route.clear()
+	selected_city = 0
+	collected_orb_mask = 0
+	campaign_orbs_found_mask = 0
+	victory_show_scores = false
+	white_orb_collected = false
+	final_dialogue_stage = 0
+	final_dialogue_time = 0.0
+	drops.clear()
+	enemies.clear()
+	player_bullets.clear()
+	enemy_bullets.clear()
+	radial_bullets.clear()
+	explosions.clear()
+	boss.clear()
+	boss_active = false
+	level = 1
+	damage_level = 0
+	rate_level = 0
+	speed_level = 0
+	ability_level = 1
+	ability_time = 0.0
+	ability_cooldown = 0.0
+	game_paused = false
+	show_stats_modal = false
+	awaiting_score_name = false
+	new_personal_record = false
+	player_x = W * 0.5
+	if score_name_field != null:
+		score_name_field.hide()
+		score_name_field.release_focus()
+	show_city_map()
 
 
 func cycle_city(direction: int) -> void:
@@ -544,7 +1366,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 		for city_index in range(CITY_POINTS.size()):
 			if city_selectable(city_index) and event.position.distance_to(CITY_POINTS[city_index]) <= 34.0:
-				start_city_flight(city_index)
+				show_mission_briefing(city_index)
 				get_viewport().set_input_as_handled()
 				break
 
@@ -619,6 +1441,41 @@ func draw_city_map() -> void:
 	text_at("6-SECOND FLIGHT TO SELECTED CITY", 160, 873, 18, Color(0.7, 0.88, 1.0))
 
 
+func draw_mission_briefing() -> void:
+	# A short story briefing before the existing 6-second flight.
+	# Nothing is committed to the campaign route until the player confirms deployment.
+	draw_balkan_relief()
+	draw_rect(Rect2(33.0, 55.0, 654.0, 838.0), Color(0.025, 0.07, 0.14, 0.96))
+	draw_rect(Rect2(33.0, 55.0, 654.0, 6.0), Color(0.33, 0.84, 1.0))
+	text_at("MISSION BRIEFING", 171, 117, 36, Color(0.57, 0.94, 1.0))
+	var city := String(CITY_NAMES[briefing_city_index])
+	var city_title_width := font.get_string_size(city, HORIZONTAL_ALIGNMENT_LEFT, -1, 49).x
+	text_at(city, (W - city_title_width) * 0.5, 191, 49, Color(1.0, 0.92, 0.66))
+	var descriptions := [
+		["ADRIATIC APPROACH", "Hostile sea creatures control the Zadar coast.", "Clear the airspace and protect the evacuation route.", "Destroy the lieutenant guarding the final sector."],
+		["HARBOR BLOCKADE", "Invaders have occupied Rijeka's industrial port.", "Break their formations above the docks.", "Eliminate the guardian to restore port access."],
+		["COASTAL RESISTANCE", "Split's waterfront is under enemy occupation.", "Push through the attacking formations.", "Defeat the guardian and secure the coastline."],
+		["DRAVA DEFENSE", "Enemy forces are approaching Osijek along the Drava.", "Keep the bridges and river corridor clear.", "Defeat the guardian and free the city."],
+		["FINAL OPERATION", "The Zone Guardian awaits above Zagreb.", "Its shields are reinforced and the Adriatic Storm", "can only be survived by finding a gap or using R shield."]
+	]
+	var mission: Array = descriptions[briefing_city_index]
+	text_at(String(mission[0]), 100, 271, 26, Color(0.62, 0.94, 1.0))
+	draw_line(Vector2(100.0, 286.0), Vector2(620.0, 286.0), Color(0.28, 0.70, 0.88, 0.6), 2.0)
+	for line_index in range(3):
+		text_at(String(mission[line_index + 1]), 77, 352 + line_index * 48, 18, Color(0.91, 0.96, 1.0))
+	draw_rect(Rect2(79, 527, 562, 170), Color(0.06, 0.14, 0.25, 0.97))
+	text_at("MISSION OBJECTIVES", 215, 569, 25, Color(1.0, 0.86, 0.49))
+	if briefing_city_index == 4:
+		text_at("- Defeat the final Zone Guardian", 109, 615, 21)
+		text_at("- Recover the mysterious white orb", 109, 654, 21)
+	else:
+		text_at("- Survive 5 levels in this city", 109, 615, 21)
+		text_at("- Defeat the lieutenant and collect its orb", 109, 654, 20)
+	draw_rect(Rect2(109, 751, 502, 65), Color(0.15, 0.46, 0.73, 0.95))
+	text_at("ENTER - DEPLOY", 259, 795, 26, Color.WHITE)
+	text_at("ESC - RETURN TO MAP", 226, 854, 19, Color(0.65, 0.87, 1.0))
+
+
 func draw_city_flight() -> void:
 	draw_balkan_relief()
 	var destination: Vector2 = CITY_POINTS[selected_city]
@@ -640,6 +1497,82 @@ func draw_city_flight() -> void:
 	text_at("FLYING TO " + String(CITY_NAMES[selected_city]), 119, 96, 35, Color(0.90, 0.96, 1.0))
 
 
+func draw_menu_background() -> void:
+	draw_rect(Rect2(0, 0, W, H), Color(0.015, 0.05, 0.11))
+	for star in stars:
+		var offset := fposmod(star.y + menu_anim_time * 10.0 + star.x * 0.02, H)
+		draw_circle(Vector2(star.x, offset), 1.5, Color(0.48, 0.72, 1.0, 0.58))
+	for stripe in range(7):
+		var y := 126.0 + float(stripe) * 118.0 + sin(menu_anim_time * 0.7 + float(stripe)) * 10.0
+		draw_rect(Rect2(0.0, y, W, 38.0), Color(0.08, 0.18, 0.30, 0.17))
+
+
+func draw_main_menu() -> void:
+	draw_menu_background()
+	var title_glow := 0.76 + 0.24 * sin(menu_anim_time * 2.1)
+	draw_rect(Rect2(70, 86, 580, 210), Color(0.03, 0.08, 0.17, 0.92))
+	draw_rect(Rect2(70, 86, 580, 6), Color(0.23, 0.84, 1.0))
+	text_at("ADRIATIC", 168, 164, 48, Color(0.55, 0.93, 1.0, title_glow))
+	text_at("UPRISING", 170, 221, 50, Color(0.95, 0.98, 1.0))
+	text_at("RETRO BALKAN ARCADE CAMPAIGN", 166, 264, 20, Color(0.72, 0.9, 1.0))
+	var demo_ship := Vector2(565.0 + sin(menu_anim_time * 0.7) * 14.0, 165.0 + cos(menu_anim_time * 1.3) * 8.0)
+	draw_player_ship_25d(demo_ship)
+	for item_index in range(MENU_ITEMS.size()):
+		var top := 372.0 + float(item_index) * 82.0
+		var active := item_index == main_menu_selection
+		var disabled := item_index == 0 and not save_available
+		draw_rect(Rect2(182.0, top, 356.0, 58.0), Color(0.16, 0.44, 0.71, 0.95) if active and not disabled else Color(0.07, 0.13, 0.24, 0.94))
+		if active:
+			draw_rect(Rect2(176.0, top - 5.0, 368.0, 68.0), Color(0.27, 0.86, 1.0, 0.18))
+		var label: String = "CONTINUE (NO SAVE)" if disabled else String(MENU_ITEMS[item_index])
+		text_at(label, 215.0, top + 37.0, 26, Color(0.45, 0.52, 0.62) if disabled else (Color.WHITE if active else Color(0.75, 0.88, 1.0)))
+	var progress_text: String = "SAVED: LEVEL %d   |   %d CITIES REACHED" % [int(pending_campaign_save["level"]), pending_campaign_save["city_route"].size()] if save_available else "NEW GAME: START FROM THE BALKAN WAR MAP"
+	text_at(progress_text, 110, 828, 18, Color(0.72, 0.92, 0.78))
+	text_at("UP/DOWN - CHOOSE    ENTER - CONFIRM", 153, 865, 20, Color(0.90, 0.96, 1.0))
+	text_at("M / [ ] / , .  AUDIO CONTROLS", 208, 903, 16, Color(0.70, 0.85, 0.98))
+
+
+func draw_new_game_confirmation() -> void:
+	draw_main_menu()
+	draw_rect(Rect2(80.0, 300.0, 560.0, 280.0), Color(0.035, 0.085, 0.16, 0.98))
+	draw_rect(Rect2(80.0, 300.0, 560.0, 6.0), Color(1.0, 0.68, 0.28))
+	text_at("START A NEW CAMPAIGN?", 132, 365, 28, Color(1.0, 0.88, 0.62))
+	text_at("Your existing campaign save will be replaced.", 103, 411, 18, Color(0.88, 0.94, 1.0))
+	text_at("ENTER - CONFIRM", 206, 477, 24, Color(0.55, 1.0, 0.7))
+	text_at("ESC - CANCEL", 235, 525, 22, Color(0.65, 0.86, 1.0))
+
+
+func draw_options_menu() -> void:
+	draw_menu_background()
+	draw_rect(Rect2(64, 88, 592, 788), Color(0.04, 0.09, 0.18, 0.96))
+	draw_rect(Rect2(64, 88, 592, 6), Color(0.29, 0.86, 1.0))
+	text_at("OPTIONS", 268, 145, 38, Color(0.93, 0.98, 1.0))
+	var entries := [
+		"MUSIC: %s" % ("ON" if music_enabled else "OFF"),
+		"MUSIC VOLUME: %d%%" % int(music_volume * 100.0),
+		"SFX VOLUME: %d%%" % int(sfx_volume * 100.0),
+		"PERFORMANCE HUD: %s" % ("ON" if show_performance_stats else "OFF"),
+		"BACK"
+	]
+	for item_index in range(entries.size()):
+		var y := 238.0 + float(item_index) * 78.0
+		var active := item_index == options_menu_selection
+		draw_rect(Rect2(118.0, y, 482.0, 54.0), Color(0.15, 0.42, 0.69, 0.95) if active else Color(0.07, 0.13, 0.23, 0.95))
+		text_at(entries[item_index], 144.0, y + 34.0, 22, Color.WHITE if active else Color(0.78, 0.9, 1.0))
+	text_at("LEFT/RIGHT CHANGES VALUES  |  ENTER TOGGLE / BACK", 98, 674, 17, Color(0.80, 0.93, 1.0))
+	text_at("ESC - RETURN TO MAIN MENU", 196, 703, 17, Color(0.62, 0.90, 1.0))
+	draw_rect(Rect2(104, 736, 514, 112), Color(0.05, 0.11, 0.21, 0.95))
+	text_at("CONTROLS", 285, 772, 24, Color(1.0, 0.86, 0.47))
+	text_at("A/D MOVE   B or SPACE FIRE   R SHIELD   P PAUSE", 121, 807, 17, Color(0.88, 0.95, 1.0))
+	text_at("TAB SHIP STATUS   F2 DEBUG LEVELS   O GOD MODE", 116, 835, 17, Color(0.76, 0.88, 1.0))
+
+
+func draw_high_scores_screen() -> void:
+	draw_menu_background()
+	draw_leaderboard()
+	text_at("ESC / ENTER - BACK TO MAIN MENU", 180, 855, 18, Color(0.70, 0.92, 1.0))
+
+
 func jump_to_debug_level() -> void:
 	# Start the chosen level immediately, skipping intermission and shop.
 	# Retain current equipment and God Mode so the target can be tested easily.
@@ -654,6 +1587,7 @@ func jump_to_debug_level() -> void:
 	drops.clear()
 	active_multipliers.clear()
 	collected_orb_mask = 0
+	campaign_orbs_found_mask = 0
 	white_orb_collected = false
 	final_dialogue_stage = 0
 	final_dialogue_time = 0.0
@@ -711,10 +1645,13 @@ func start_level() -> void:
 	wave_path_ids.clear()
 	boss_phase = 1
 	boss_shields = 4 if level == MAX_LEVEL else 2
+	boss_shield_hp = 0.0
+	boss_shield_max_hp = 0.0
 	boss_shield_round = 1
 	storm_warning_time = 0.0
 	storm_pulses_remaining = 0
 	storm_pulse_time = 0.0
+	storm_pending = false
 	boss_attack_index = 0
 	boss_warning_time = 0.0
 	boss_warning_x = W / 2.0
@@ -731,12 +1668,13 @@ func start_level() -> void:
 	ability_cooldown = 0.0 # Ready again at the beginning of a mission.
 	level_time = 0.0
 	kills = 0
-	target_kills = waves_for_level() * ENEMIES_PER_WAVE
+	target_kills = waves_for_level() * enemies_per_wave()
 	if level == MAX_LEVEL:
 		# Zone Guardian battle: no ordinary enemy waves before the boss.
 		begin_boss_intro()
 	else:
 		spawn_wave()
+	save_campaign_checkpoint("playing")
 	queue_redraw()
 
 func begin_level_transition() -> void:
@@ -750,13 +1688,17 @@ func begin_level_transition() -> void:
 	queue_redraw()
 
 func spawn_wave() -> void:
-	# Two mirrored groups of five, with red crabs always guarding the front line.
+	# Exactly two waves for every regular mission, preserving the stage total.
+	# Each wave contains mirrored groups plus additional balanced pairs.
 	waves_spawned += 1
 	var path_id := randi_range(0, 3)
 	# Later missions rotate entry patterns, but keep the same smooth motion.
 	wave_path_ids.append(path_id)
+	var formation_size := int(enemies_per_wave() / 2)
 	for side in range(2):
-		for index in range(5):
+		for unit_index in range(formation_size):
+			var index := unit_index % 5
+			var group_index := int(unit_index / 5)
 			var left := side == 0
 			var is_guard := index < 2
 			var kind := 1 if is_guard else (0 if index == 2 or index == 4 else 2)
@@ -782,9 +1724,10 @@ func spawn_wave() -> void:
 					5: # Crown: shield in the middle, rear units spanning the field.
 						formation_x = (210.0 + float(lane) * 65.0) if left else (510.0 - float(lane) * 65.0)
 						row_y = (520.0 + float(lane) * 40.0) if is_guard else (275.0 + float(index - 2) * 48.0)
-			# More than two waves need only a modest shift, not an ever-lower
-			# formation that collides with the player's flight lane.
-			var target_pos := Vector2(formation_x, row_y + float((waves_spawned - 1) % 2) * 20.0)
+			# Slightly offset additional groups so that 15/20-unit formations
+			# do not completely overlap the first ten units.
+			var group_shift := float(group_index) * (27.0 if left else -27.0)
+			var target_pos := Vector2(clampf(formation_x + group_shift, 72.0, W - 72.0), row_y - float(group_index) * 34.0 + float(waves_spawned - 1) * 20.0)
 			var start_pos := Vector2(-85.0 - float(index) * 35.0 if left else W + 85.0 + float(index) * 35.0, 110.0 + float(index) * 38.0)
 			enemies.append({
 				"pos": start_pos,
@@ -792,7 +1735,7 @@ func spawn_wave() -> void:
 				"start": start_pos,
 				"target": target_pos,
 				"age": 0.0,
-				"delay": float(index) * 0.19 + float(side) * 0.07,
+				"delay": float(index) * 0.19 + float(side) * 0.07 + float(group_index) * 0.85,
 				"path": path_id,
 				"side": -1.0 if left else 1.0,
 				"offset": float(index) * 0.26,
@@ -885,25 +1828,40 @@ func launch_boss() -> void:
 	# Each liberated city has a stronger guardian; Zagreb is the final fight.
 	var boss_hp := 1000.0 if level == MAX_LEVEL else 200.0 + float(int((level - 1) / 5)) * 70.0
 	boss = {"pos": Vector2(W / 2.0, 155.0), "prev_pos": Vector2(W / 2.0, 155.0), "hp": boss_hp, "max_hp": boss_hp, "direction": 1.0}
+	boss_shield_max_hp = float(boss_hp) * BOSS_SHIELD_HP_RATIO
+	boss_shield_hp = boss_shield_max_hp
+	boss_shields = 4 if level == MAX_LEVEL else 2
 	boss_fire_clock = 1.4
 	spin_countdown = 0.0
 	spin_rotation = 0.0
 
 
 func _process(delta: float) -> void:
+	update_retro_music()
+	if state in ["main_menu", "menu_confirm_new", "menu_options", "menu_highscores"]:
+		menu_anim_time += delta
+		queue_redraw()
+		return
 	if debug_level_menu or game_paused or show_stats_modal:
 		queue_redraw()
 		return
 	
-	if city_name() == "ZADAR" and state in [
-		"playing",
-		"intermission",
-		"boss_intro",
-		"boss_rewards"
-	]:
-		update_background(delta)
+	if state in ["playing", "intermission", "boss_intro", "boss_rewards"]:
+		if city_name() == "ZADAR":
+			update_background(delta)
+		elif city_name() == "RIJEKA":
+			update_rijeka_background(delta)
+		elif city_name() == "SPLIT":
+			update_split_background(delta)
+		elif city_name() == "OSIJEK":
+			update_osijek_background(delta)
+		elif city_name() == "ZAGREB":
+			update_zagreb_background(delta)
 
 
+	if state == "mission_briefing":
+		queue_redraw()
+		return
 	if state == "city_flight":
 		city_flight_time += delta
 		if city_flight_time >= CITY_FLIGHT_SECONDS:
@@ -1019,6 +1977,12 @@ func add_player_bullet(offset_x: float, angle_degrees: float) -> void:
 	player_bullets.append({"pos": Vector2(player_x + offset_x, PLAYER_Y - 34.0), "velocity": velocity, "color": weapon_projectile_color()})
 
 func fire_weapon() -> void:
+	if damage_level >= 6:
+		play_arcade_sfx("triple_shoot")
+	elif damage_level >= 3:
+		play_arcade_sfx("double_shoot")
+	else:
+		play_arcade_sfx("shoot")
 	# Warblade-inspired wide fan: center flies up, outer shots diverge.
 	if damage_level >= 6:
 		add_player_bullet(-17.0, -22.0)
@@ -1121,7 +2085,16 @@ func update_boss(delta: float) -> void:
 	pos.y = move_toward(pos.y, 395.0 if spin_countdown > 0.0 else 155.0, 230.0 * delta)
 	boss["pos"] = pos
 	boss["direction"] = direction
-	boss_fire_clock -= delta
+	# Let every previously fired red projectile reach the player or leave the
+	# screen naturally. Do not spawn more reds while waiting for Storm.
+	if level == MAX_LEVEL and storm_pending:
+		if enemy_bullets.is_empty():
+			storm_pending = false
+			begin_adriatic_storm()
+		return
+	# Zagreb's regular red attacks must not advance during Adriatic Storm.
+	if level != MAX_LEVEL or (storm_warning_time <= 0.0 and storm_pulses_remaining <= 0):
+		boss_fire_clock -= delta
 	# Zagreb final boss: storm warning is visible before three successive volleys.
 	if level == MAX_LEVEL and (storm_warning_time > 0.0 or storm_pulses_remaining > 0):
 		if storm_warning_time > 0.0:
@@ -1132,6 +2105,9 @@ func update_boss(delta: float) -> void:
 				fire_adriatic_storm_pulse()
 				storm_pulses_remaining -= 1
 				storm_pulse_time = STORM_PULSE_INTERVAL
+				if storm_pulses_remaining == 0:
+					# Brief recovery before the Guardian resumes ordinary red shots.
+					boss_fire_clock = maxf(boss_fire_clock, 1.4)
 		return
 	# 360-degree spin telegraph. The radial barrage is released when the rotation ends.
 	if spin_countdown > 0.0:
@@ -1144,13 +2120,22 @@ func update_boss(delta: float) -> void:
 	var previous_warning := boss_warning_time
 	boss_warning_time = maxf(0.0, boss_warning_time - delta)
 	if previous_warning > 0.0 and boss_warning_time <= 0.0:
-		for lane in range(-1, 2):
+		# Final Guardian: a single telegraphed red projectile; lieutenants retain three.
+		var aimed_lanes := [0] if level == MAX_LEVEL else [-1, 0, 1]
+		for lane in aimed_lanes:
 			enemy_bullets.append(Vector2(boss_warning_x + lane * 22.0, pos.y + 38.0))
 	if boss_fire_clock <= 0.0:
 		if level == MAX_LEVEL and boss_attack_index % 4 == 3:
-			begin_adriatic_storm()
+			# Never erase a red shot in mid-flight just because Storm is next.
+			# All red shots finish before the special attack starts.
+			if enemy_bullets.is_empty():
+				begin_adriatic_storm()
+			else:
+				storm_pending = true
 		elif boss_attack_index % 3 == 0:
-			for lane in range(-2, 3):
+			# Final Guardian fires three red shots, instead of five.
+			var spread_lanes := [-1, 0, 1] if level == MAX_LEVEL else [-2, -1, 0, 1, 2]
+			for lane in spread_lanes:
 				enemy_bullets.append(pos + Vector2(lane * 42.0, 38.0))
 		elif boss_attack_index % 3 == 2:
 			boss_warning_x = player_x
@@ -1171,6 +2156,7 @@ func update_boss(delta: float) -> void:
 		# Distinct second shield round at half health, once only.
 		boss_shield_round = 2
 		boss_shields = 4
+		boss_shield_hp = boss_shield_max_hp
 	if boss_phase == 1 and float(boss["hp"]) <= float(boss["max_hp"]) * 0.475:
 		boss_phase = 2
 
@@ -1178,21 +2164,30 @@ func begin_adriatic_storm() -> void:
 	# The safe lane is two columns away from the player: reachable after warning.
 	var player_lane := clampi(int(round((player_x - 40.0) / 80.0)), 0, 8)
 	storm_safe_lane = clampi(player_lane + (2 if player_lane <= 4 else -2), 0, 8)
+	# Any earlier red shots have already finished before reaching this method.
+	# Clearing here made red bullets suddenly vanish halfway down the screen.
 	# No leftover aimed-warning volley during the Adriatic Storm telegraph.
 	boss_warning_time = 0.0
+	spin_countdown = 0.0
+	# Pause ordinary red-shot cooldown while the Storm is active.
+	boss_fire_clock = maxf(boss_fire_clock, 1.4)
 	storm_warning_time = STORM_WARNING_SECONDS
+	play_arcade_sfx("storm_charge")
 	storm_pulses_remaining = 3
 	storm_pulse_time = 0.0
 
 
 func fire_adriatic_storm_pulse() -> void:
-	# One clear corridor across all three barrages; remaining lanes are dangerous.
-	for lane in range(9):
-		if lane == storm_safe_lane:
+	# Solid curtain of close-spaced bullets, with ONE intentionally open corridor.
+	# The 16px horizontal spacing is smaller than the player's 52px collision diameter.
+	# This prevents the player from squeezing through any other part of the wall.
+	var safe_x := 40.0 + float(storm_safe_lane) * 80.0
+	for column in range(45):
+		var bullet_x := 8.0 + float(column) * STORM_BULLET_SPACING
+		if absf(bullet_x - safe_x) < STORM_SAFE_HALF_WIDTH:
 			continue
-		var origin := Vector2(40.0 + float(lane) * 80.0, 195.0)
 		radial_bullets.append({
-			"pos": origin,
+			"pos": Vector2(bullet_x, 195.0),
 			"velocity": Vector2(0.0, 420.0),
 			"color": Color(0.42, 0.85, 1.0)
 		})
@@ -1262,19 +2257,27 @@ func update_bullets(delta: float) -> void:
 					target_index = j
 		var hit := boss_hit or target_index >= 0
 		if hit:
+			# Shield has its own electric crackle; normal impacts stay quieter.
+			play_arcade_sfx("shield_hit" if boss_hit and boss_shield_hp > 0.0 else "hit")
 			var impact := previous.lerp(shot, first_hit)
 			explosions.append({"pos": impact, "time": 0.16})
 			if boss_hit:
 				if god_mode:
 					# QA one-shot: bypass both shield rounds and defeat any boss instantly.
 					boss_shields = 0
+					boss_shield_hp = 0.0
 					boss_shield_round = 2
 					boss["hp"] = 0.0
-				elif boss_shields > 0:
-					boss_shields -= 1
+				elif boss_shield_hp > 0.0:
+					# Shield HP is 70% of the boss's max HP. Each hit removes
+					# weapon damage from the shield, not an entire ring.
+					boss_shield_hp = maxf(0.0, boss_shield_hp - (2.0 + damage_level))
+					var total_layers := 4 if level == MAX_LEVEL else 2
+					boss_shields = ceili(float(total_layers) * boss_shield_hp / boss_shield_max_hp) if boss_shield_hp > 0.0 else 0
 				else:
 					boss["hp"] = maxf(0.0, float(boss["hp"]) - (2.0 + damage_level))
 				if boss_shields == 0 and float(boss["hp"]) <= 0.0:
+					play_arcade_sfx("boss")
 					score += 2500 * score_multiplier()
 					scrap += 300
 					if level == MAX_LEVEL:
@@ -1286,6 +2289,7 @@ func update_bullets(delta: float) -> void:
 				# QA one-shot keeps normal kills, Scrap, drops and score bookkeeping.
 				enemies[target_index]["hp"] = 0 if god_mode else int(enemies[target_index]["hp"]) - (1 + damage_level)
 				if int(enemies[target_index]["hp"]) <= 0:
+					play_arcade_sfx("destroy")
 					var enemy_pos: Vector2 = enemies[target_index]["pos"]
 					enemies.remove_at(target_index)
 					kills += 1
@@ -1321,6 +2325,7 @@ func take_damage() -> void:
 	if god_mode or invulnerable > 0.0 or ability_time > 0.0:
 		return
 	lives -= 1
+	play_arcade_sfx("hurt")
 	# Weapon power drops exactly one tier on each actual life lost.
 	# Triple -> Double -> Single; shields/invulnerability prevent the loss.
 	if damage_level >= 6:
@@ -1361,6 +2366,7 @@ func collect_life_orb(orb_index: int) -> void:
 	if (collected_orb_mask & bit) != 0:
 		return
 	collected_orb_mask |= bit
+	campaign_orbs_found_mask |= bit
 	if collected_orb_mask == 15:
 		lives += 1
 		collected_orb_mask = 0 # Start a new four-color collection.
@@ -1420,6 +2426,7 @@ func update_pickups(delta: float) -> void:
 		pos.y += float(drops[i].get("fall_speed", 115.0)) * delta
 		drops[i]["pos"] = pos
 		if pos.distance_to(Vector2(player_x, PLAYER_Y)) < 34.0:
+			play_arcade_sfx("pickup")
 			if drops[i].get("kind", "scrap") == "double_shot":
 				if damage_level < 3:
 					damage_level = 3 # Permanent unlock: shop now shows OWNED.
@@ -1456,6 +2463,7 @@ func complete_level() -> void:
 	# Shop only after each group of five missions, never after ordinary stages.
 	if level % 5 == 0:
 		state = "shop"
+		save_campaign_checkpoint("shop")
 	elif level >= MAX_LEVEL:
 		finish_run(true)
 	else:
@@ -1498,7 +2506,10 @@ func qualifies_for_high_scores(points: int) -> bool:
 	return points > 0 and (high_scores.size() < HIGH_SCORE_LIMIT or points > int(high_scores[HIGH_SCORE_LIMIT - 1]["score"]))
 
 func finish_run(won: bool) -> void:
+	if not debug_run:
+		erase_campaign_save()
 	state = "victory" if won else "gameover"
+	victory_show_scores = false
 	new_personal_record = score > 0 and (high_scores.is_empty() or score > int(high_scores[0]["score"]))
 	awaiting_score_name = not debug_run and qualifies_for_high_scores(score)
 	if awaiting_score_name:
@@ -1522,6 +2533,39 @@ func _on_score_name_submitted(player_name: String) -> void:
 	score_name_field.release_focus()
 	queue_redraw()
 
+func draw_campaign_finale() -> void:
+	# Dedicated Croatia ending. Underlying leaderboard is available with H.
+	draw_menu_background()
+	draw_rect(Rect2(54.0, 47.0, 612.0, 849.0), Color(0.035, 0.075, 0.15, 0.96))
+	draw_rect(Rect2(54.0, 47.0, 612.0, 6.0), Color(0.40, 0.96, 0.73))
+	text_at("CROATIA LIBERATED!", 118.0, 119.0, 37, Color(0.53, 1.0, 0.72))
+	text_at("CAMPAIGN COMPLETE  -  25/25", 160.0, 158.0, 21, Color(0.78, 0.91, 1.0))
+	# Five liberated sectors are shown in canonical campaign order.
+	for city_index in range(5):
+		var top := 185.0 + float(city_index) * 57.0
+		draw_rect(Rect2(92.0, top, 536.0, 47.0), Color(0.07, 0.18, 0.23, 0.97))
+		draw_circle(Vector2(116.0, top + 23.0), 8.0, Color(0.44, 1.0, 0.66))
+		text_at(String(CITY_NAMES[city_index]), 143.0, top + 32.0, 23, Color(0.92, 0.97, 1.0))
+		text_at("LIBERATED", 458.0, top + 31.0, 18, Color(0.57, 1.0, 0.77))
+	text_at("RECOVERED GUARDIAN ORBS", 151.0, 524.0, 22, Color(0.96, 0.88, 0.64))
+	for orb_index in range(4):
+		var orb_position := Vector2(218.0 + float(orb_index) * 95.0, 568.0)
+		var found := (campaign_orbs_found_mask & (1 << orb_index)) != 0
+		draw_circle(orb_position, 24.0, ORB_COLORS[orb_index].darkened(0.15) if found else Color(0.16, 0.24, 0.31))
+		draw_circle(orb_position + Vector2(-6.0, -7.0), 7.0, Color(1.0, 1.0, 1.0, 0.73) if found else Color(0.35, 0.43, 0.49))
+	# Separate white trophy orb from the Zone Guardian.
+	var trophy_position := Vector2(360.0, 638.0)
+	draw_circle(trophy_position, 26.0, Color(0.90, 0.98, 1.0) if white_orb_collected else Color(0.16, 0.24, 0.31))
+	draw_circle(trophy_position + Vector2(-7.0, -8.0), 8.0, Color(1.0, 1.0, 1.0, 0.94) if white_orb_collected else Color(0.35, 0.43, 0.49))
+	text_at("WHITE ORB SECURED" if white_orb_collected else "WHITE ORB NOT RECOVERED", 207.0, 684.0, 19, Color(0.81, 0.94, 1.0))
+	text_at("FINAL SCORE: %d" % score, 201.0, 737.0, 29, Color(1.0, 0.87, 0.47))
+	text_at("ENEMIES DEFEATED: %d" % total_kills, 212.0, 770.0, 19, Color(0.82, 0.92, 1.0))
+	draw_rect(Rect2(91.0, 788.0, 538.0, 62.0), Color(0.09, 0.18, 0.29, 0.93))
+	text_at("HQ: The coast is free. The orb remains a mystery.", 110.0, 817.0, 17, Color(0.78, 0.97, 0.88))
+	text_at("Our mission is complete. Return to base.", 153.0, 839.0, 17, Color(0.78, 0.97, 0.88))
+	text_at("H - HIGH SCORES     ENTER - MAIN MENU", 153.0, 882.0, 18, Color(0.64, 0.91, 1.0))
+
+
 func draw_leaderboard() -> void:
 	draw_rect(Rect2(75, 208, 570, 605), Color(0.04, 0.09, 0.20, 0.97))
 	text_at("TOP 10 HIGH SCORES", 175, 258, 30, Color(1.0, 0.85, 0.42))
@@ -1538,6 +2582,9 @@ func draw_leaderboard() -> void:
 	if awaiting_score_name:
 		text_at("NEW HIGH SCORE!" if new_personal_record else "TOP 10 QUALIFIED!", 235, 698, 23, Color(0.50, 1.0, 0.72))
 		text_at("Enter name and press ENTER", 213, 792, 19, Color(0.75, 0.91, 1.0))
+	elif state == "menu_highscores":
+		text_at("LOCAL HALL OF FAME", 238, 738, 22, Color(1.0, 0.87, 0.60))
+		text_at("ENTER / ESC - Back", 248, 781, 21, Color(0.55, 0.89, 1.0))
 	else:
 		text_at("Your score: %d" % score, 254, 738, 22, Color(1.0, 0.87, 0.60))
 		text_at("ENTER - New game", 257, 781, 21, Color(0.55, 0.89, 1.0))
@@ -1570,9 +2617,37 @@ func buy_upgrade(kind: int) -> void:
 		3: damage_level = 3
 		4: damage_level = 6
 		5: ability_level += 1
+	if state == "shop":
+		save_campaign_checkpoint("shop")
 
 func _unhandled_key_input(event: InputEvent) -> void:
 	if not event is InputEventKey or not event.pressed or event.echo:
+		return
+	# Sound controls work from gameplay, shop and map (even while paused).
+	if event.keycode == KEY_M:
+		music_enabled = not music_enabled
+		update_retro_music()
+		queue_redraw()
+		return
+	if event.keycode == KEY_BRACKETLEFT:
+		music_volume = maxf(0.0, music_volume - 0.1)
+		update_sound_volumes()
+		queue_redraw()
+		return
+	if event.keycode == KEY_BRACKETRIGHT:
+		music_volume = minf(1.0, music_volume + 0.1)
+		update_sound_volumes()
+		queue_redraw()
+		return
+	if event.keycode == KEY_COMMA:
+		sfx_volume = maxf(0.0, sfx_volume - 0.1)
+		update_sound_volumes()
+		queue_redraw()
+		return
+	if event.keycode == KEY_PERIOD:
+		sfx_volume = minf(1.0, sfx_volume + 0.1)
+		update_sound_volumes()
+		queue_redraw()
 		return
 	# F3: display actual frame rate and frame duration for diagnosing hitches.
 	if event.keycode == KEY_F3:
@@ -1580,7 +2655,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		queue_redraw()
 		return
 	# F2 is accessible from gameplay, shop, victory, and test intermissions.
-	if event.keycode == KEY_F2:
+	if event.keycode == KEY_F2 and not state in ["main_menu", "menu_confirm_new", "menu_options", "menu_highscores"]:
 		debug_level_menu = not debug_level_menu
 		if debug_level_menu:
 			debug_selected_level = level
@@ -1602,6 +2677,84 @@ func _unhandled_key_input(event: InputEvent) -> void:
 				jump_to_debug_level()
 		queue_redraw()
 		return
+	if state == "menu_confirm_new":
+		if event.keycode == KEY_ESCAPE:
+			state = "main_menu"
+		elif event.keycode == KEY_ENTER or event.keycode == KEY_KP_ENTER:
+			start_new_campaign()
+		queue_redraw()
+		return
+	if state == "main_menu":
+		match event.keycode:
+			KEY_UP, KEY_LEFT:
+				main_menu_selection = posmod(main_menu_selection - 1, MENU_ITEMS.size())
+			KEY_DOWN, KEY_RIGHT:
+				main_menu_selection = posmod(main_menu_selection + 1, MENU_ITEMS.size())
+			KEY_ENTER, KEY_KP_ENTER:
+				match main_menu_selection:
+					0:
+						continue_campaign()
+					1:
+						if save_available:
+							state = "menu_confirm_new"
+						else:
+							start_new_campaign()
+					2:
+						state = "menu_highscores"
+					3:
+						state = "menu_options"
+						options_menu_selection = 0
+					4:
+						get_tree().quit()
+		queue_redraw()
+		return
+	if state == "menu_highscores":
+		if event.keycode == KEY_ESCAPE or event.keycode == KEY_ENTER or event.keycode == KEY_KP_ENTER:
+			state = "main_menu"
+		queue_redraw()
+		return
+	if state == "menu_options":
+		match event.keycode:
+			KEY_ESCAPE:
+				state = "main_menu"
+			KEY_UP:
+				options_menu_selection = posmod(options_menu_selection - 1, 5)
+			KEY_DOWN:
+				options_menu_selection = posmod(options_menu_selection + 1, 5)
+			KEY_LEFT:
+				match options_menu_selection:
+					0:
+						music_enabled = not music_enabled
+					1:
+						music_volume = maxf(0.0, music_volume - 0.1)
+						update_sound_volumes()
+					2:
+						sfx_volume = maxf(0.0, sfx_volume - 0.1)
+						update_sound_volumes()
+					3:
+						show_performance_stats = not show_performance_stats
+			KEY_RIGHT:
+				match options_menu_selection:
+					0:
+						music_enabled = not music_enabled
+					1:
+						music_volume = minf(1.0, music_volume + 0.1)
+						update_sound_volumes()
+					2:
+						sfx_volume = minf(1.0, sfx_volume + 0.1)
+						update_sound_volumes()
+					3:
+						show_performance_stats = not show_performance_stats
+			KEY_ENTER, KEY_KP_ENTER:
+				match options_menu_selection:
+					0:
+						music_enabled = not music_enabled
+					3:
+						show_performance_stats = not show_performance_stats
+					4:
+						state = "main_menu"
+		queue_redraw()
+		return
 	if state == "city_select":
 		match event.keycode:
 			KEY_LEFT, KEY_UP:
@@ -1609,7 +2762,15 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			KEY_RIGHT, KEY_DOWN:
 				cycle_city(1)
 			KEY_ENTER, KEY_KP_ENTER:
-				start_city_flight(selected_city)
+				show_mission_briefing(selected_city)
+		queue_redraw()
+		return
+	if state == "mission_briefing":
+		match event.keycode:
+			KEY_ENTER, KEY_KP_ENTER, KEY_SPACE:
+				start_city_flight(briefing_city_index)
+			KEY_ESCAPE:
+				show_city_map()
 		queue_redraw()
 		return
 	# Test-only invulnerability hotkey: available in any game state.
@@ -1648,27 +2809,19 @@ func _unhandled_key_input(event: InputEvent) -> void:
 	elif state == "gameover" or state == "victory":
 		if awaiting_score_name:
 			return
-		if event.keycode == KEY_ENTER or event.keycode == KEY_KP_ENTER:
-			lives = 3
-			score = 0
-			scrap = 0
-			total_kills = 0
-			single_shot_kills_since_drop = 0
-			active_multipliers.clear()
-			debug_run = false
-			city_route.clear()
-			selected_city = 0
-			collected_orb_mask = 0
-			white_orb_collected = false
-			final_dialogue_stage = 0
-			final_dialogue_time = 0.0
-			drops.clear() # A new run must not inherit old rewards.
-			level = 1
-			damage_level = 0
-			rate_level = 0
-			speed_level = 0
-			ability_level = 1
-			show_city_map()
+		if state == "victory":
+			if event.keycode == KEY_H:
+				victory_show_scores = not victory_show_scores
+			elif event.keycode == KEY_ESCAPE and victory_show_scores:
+				victory_show_scores = false
+			elif event.keycode == KEY_ENTER or event.keycode == KEY_KP_ENTER:
+				if victory_show_scores:
+					victory_show_scores = false
+				else:
+					state = "main_menu"
+		else:
+			if event.keycode == KEY_ENTER or event.keycode == KEY_KP_ENTER:
+				start_new_campaign()
 	queue_redraw()
 
 func text_at(value: String, x: float, y: float, size: int = 22, color: Color = Color.WHITE) -> void:
@@ -1737,18 +2890,53 @@ func draw_final_orb_speech() -> void:
 
 
 func _draw() -> void:
+	if state == "menu_confirm_new":
+		draw_new_game_confirmation()
+		return
+	if state == "main_menu":
+		draw_main_menu()
+		if show_performance_stats:
+			var fps_menu := Engine.get_frames_per_second()
+			var frame_ms_menu := Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0
+			draw_rect(Rect2(474.0, 236.0, 231.0, 65.0), Color(0.025, 0.06, 0.13, 0.94))
+			text_at("FPS %d" % fps_menu, 492.0, 264.0, 23, Color(0.52, 1.0, 0.63) if fps_menu >= 55 else Color(1.0, 0.58, 0.43))
+			text_at("CPU frame %.1f ms [F3]" % frame_ms_menu, 490.0, 288.0, 15, Color(0.84, 0.91, 1.0))
+		return
+	if state == "menu_options":
+		draw_options_menu()
+		if show_performance_stats:
+			var fps_options := Engine.get_frames_per_second()
+			var frame_ms_options := Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0
+			draw_rect(Rect2(474.0, 236.0, 231.0, 65.0), Color(0.025, 0.06, 0.13, 0.94))
+			text_at("FPS %d" % fps_options, 492.0, 264.0, 23, Color(0.52, 1.0, 0.63) if fps_options >= 55 else Color(1.0, 0.58, 0.43))
+			text_at("CPU frame %.1f ms [F3]" % frame_ms_options, 490.0, 288.0, 15, Color(0.84, 0.91, 1.0))
+		return
+	if state == "menu_highscores":
+		draw_high_scores_screen()
+		if show_performance_stats:
+			var fps_scores := Engine.get_frames_per_second()
+			var frame_ms_scores := Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0
+			draw_rect(Rect2(474.0, 236.0, 231.0, 65.0), Color(0.025, 0.06, 0.13, 0.94))
+			text_at("FPS %d" % fps_scores, 492.0, 264.0, 23, Color(0.52, 1.0, 0.63) if fps_scores >= 55 else Color(1.0, 0.58, 0.43))
+			text_at("CPU frame %.1f ms [F3]" % frame_ms_scores, 490.0, 288.0, 15, Color(0.84, 0.91, 1.0))
+		return
 	
-	if city_name() == "ZADAR" and state in [
-		"playing",
-		"intermission",
-		"boss_intro",
-		"boss_rewards"
-	]:
-		draw_zadar_background()
+	var is_playfield := state in ["playing", "intermission", "boss_intro", "boss_rewards"]
+	var has_animated_port := is_playfield and city_name() in ["ZADAR", "RIJEKA", "SPLIT", "OSIJEK", "ZAGREB"]
+	if has_animated_port:
+		if city_name() == "ZADAR":
+			draw_zadar_background()
+		elif city_name() == "RIJEKA":
+			draw_rijeka_background()
+		elif city_name() == "SPLIT":
+			draw_split_background()
+		elif city_name() == "OSIJEK":
+			draw_osijek_background()
+		else:
+			draw_zagreb_background()
 
-
-	# The moving ocean is opaque. Avoid 110 decorative draw calls over it.
-	if not (city_name() == "ZADAR" and state in ["playing", "intermission", "boss_intro", "boss_rewards"]):
+	# Both animated backdrops are opaque; skip ornamental stars behind them.
+	if not has_animated_port:
 		for star in stars:
 			draw_circle(star, 1.5, Color(0.45, 0.65, 0.9, 0.55))
 	text_at("%s LVL %d/%d WAVE %d/%d SCORE %d" % [city_name(), level, MAX_LEVEL, waves_spawned, waves_for_level(), score], 20, 35, 18)
@@ -1821,20 +3009,26 @@ func _draw() -> void:
 		if spin_countdown > 0.0:
 			draw_arc(pos, 106.0, 0.0, TAU, 64, Color(1.0, 0.25, 0.65, 0.9), 5.0)
 			text_at("360 ATTACK!  R SHIELD!", 201, 230, 25, Color(1.0, 0.5, 0.65))
-		if boss_warning_time > 0.0:
+		if level != MAX_LEVEL and boss_warning_time > 0.0:
+			# Keep the regular lieutenants' aimed-shot telegraph; hide it for the final Guardian.
 			draw_rect(Rect2(boss_warning_x - 25.0, 215.0, 50.0, H - 295.0), Color(1.0, 0.16, 0.1, 0.16))
 			draw_line(Vector2(boss_warning_x, 215.0), Vector2(boss_warning_x, H - 80.0), Color(1.0, 0.35, 0.25, 0.7), 2.0)
+		# HP remains the main red bar. Separate shield HP segments sit directly below it.
 		draw_rect(Rect2(150, 85, 420, 12), Color(0.25, 0.25, 0.35))
-		draw_rect(Rect2(150, 85, 420 * float(boss["hp"]) / float(boss["max_hp"]), 12), Color(0.9, 0.25, 0.3))
-		var boss_status := "ZONE GUARDIAN | SHIELD ROUND %d/2: %d" % [boss_shield_round, boss_shields] if level == MAX_LEVEL else "CITY GUARDIAN | SHIELD %d" % boss_shields
-		text_at(boss_status, 155, 118, 18)
-		if level == MAX_LEVEL and storm_warning_time > 0.0:
-			for lane in range(9):
-				if lane == storm_safe_lane:
-					continue
-				var x := 40.0 + float(lane) * 80.0
-				draw_rect(Rect2(x - 22.0, 180.0, 44.0, H - 250.0), Color(1.0, 0.3, 0.22, 0.20))
-			text_at("ADRIATIC STORM! FIND THE OPEN LANE", 85, 264, 22, Color(1.0, 0.75, 0.33))
+		draw_rect(Rect2(150, 85, 420 * clampf(float(boss["hp"]) / float(boss["max_hp"]), 0.0, 1.0), 12), Color(0.9, 0.25, 0.3))
+		var shield_max := 4 if level == MAX_LEVEL else 2
+		var shield_segment_width := 420.0 / float(shield_max)
+		var shield_fraction := clampf(boss_shield_hp / maxf(1.0, boss_shield_max_hp), 0.0, 1.0)
+		draw_rect(Rect2(150, 102, 420, 9), Color(0.09, 0.19, 0.31))
+		for shield_segment in range(shield_max):
+			var segment_left := 150.0 + float(shield_segment) * shield_segment_width
+			var segment_fill := clampf(shield_fraction * float(shield_max) - float(shield_segment), 0.0, 1.0)
+			draw_rect(Rect2(segment_left + 2.0, 103.0, shield_segment_width - 4.0, 7.0), Color(0.12, 0.24, 0.36))
+			if segment_fill > 0.0:
+				draw_rect(Rect2(segment_left + 2.0, 103.0, (shield_segment_width - 4.0) * segment_fill, 7.0), Color(0.27, 0.83, 1.0))
+		var shield_hp_text := "%d/%d" % [ceili(boss_shield_hp), ceili(boss_shield_max_hp)]
+		var boss_status := "ZONE GUARDIAN | SHIELD %d/2: %s HP" % [boss_shield_round, shield_hp_text] if level == MAX_LEVEL else "CITY GUARDIAN | SHIELD: %s HP" % shield_hp_text
+		text_at(boss_status, 155, 135, 18)
 	for drop in drops:
 		var pos: Vector2 = drop["pos"]
 		if drop.get("kind", "scrap") == "multiplier":
@@ -1851,9 +3045,13 @@ func _draw() -> void:
 			draw_circle(pos, 13.0, orb_color)
 			draw_circle(pos + Vector2(-4.0, -5.0), 4.0, Color(1.0, 1.0, 1.0, 0.9))
 		elif drop.get("kind", "scrap") == "double_shot":
-			draw_circle(pos, 22.0, Color(0.08, 0.27, 0.52))
-			draw_arc(pos, 21.0, 0.0, TAU, 32, Color(0.35, 0.78, 1.0), 4.0)
-			text_at("D", pos.x - 9.0, pos.y + 9.0, 28, Color(0.65, 0.94, 1.0))
+			# Smaller cube pickup with two parallel blue bars, matching the Double Shot look.
+			draw_rect(Rect2(pos.x - 14.0, pos.y - 14.0, 28.0, 28.0), Color(0.07, 0.24, 0.48))
+			draw_rect(Rect2(pos.x - 12.0, pos.y - 12.0, 24.0, 24.0), Color(0.10, 0.33, 0.62))
+			draw_rect(Rect2(pos.x - 14.0, pos.y - 14.0, 28.0, 3.0), Color(0.43, 0.83, 1.0))
+			draw_rect(Rect2(pos.x - 14.0, pos.y + 11.0, 28.0, 3.0), Color(0.04, 0.14, 0.28))
+			draw_rect(Rect2(pos.x - 9.0, pos.y - 8.0, 4.0, 16.0), Color(0.72, 0.96, 1.0))
+			draw_rect(Rect2(pos.x + 5.0, pos.y - 8.0, 4.0, 16.0), Color(0.72, 0.96, 1.0))
 		else:
 			draw_circle(pos, 9.0, Color(0.95, 0.82, 0.25))
 			draw_circle(pos, 4.0, Color(0.45, 0.3, 0.08))
@@ -1915,11 +3113,16 @@ func _draw() -> void:
 		text_at("%s SHOT  |  SHIELD Lv.%d/3" % [equipped_weapon_name(), ability_level], 105, 664, 17, Color(0.6, 0.96, 0.76))
 		text_at("ENTER - View results" if level >= MAX_LEVEL else "ENTER - Next mission", 160, 707, 26, Color(0.4, 0.9, 1.0))
 	elif state == "gameover" or state == "victory":
-		draw_leaderboard()
-		if state == "victory":
-			text_at("CROATIA LIBERATED!", 186, 174, 29, Color(0.45, 1.0, 0.7))
+		if state == "victory" and not awaiting_score_name and not victory_show_scores:
+			draw_campaign_finale()
 		else:
-			text_at("GAME OVER", 258, 174, 29, Color(1.0, 0.35, 0.4))
+			draw_leaderboard()
+			if state == "victory":
+				text_at("CROATIA LIBERATED!", 186, 174, 29, Color(0.45, 1.0, 0.7))
+			else:
+				text_at("GAME OVER", 258, 174, 29, Color(1.0, 0.35, 0.4))
+	if state in ["playing", "intermission", "boss_intro", "boss_rewards", "shop"]:
+		text_at("M music %s [%d%%]  [ ] volume   , . SFX [%d%%]" % ["ON" if music_enabled else "OFF", int(music_volume * 100.0), int(sfx_volume * 100.0)], 19, H - 42, 15, Color(0.74, 0.90, 1.0))
 	if show_stats_modal and (state == "playing" or state == "intermission" or state == "boss_intro" or state == "boss_rewards"):
 		draw_ship_status_modal()
 	if game_paused and (state == "playing" or state == "intermission" or state == "boss_intro" or state == "boss_rewards"):
@@ -1930,6 +3133,8 @@ func _draw() -> void:
 	text_at("A/D: move  B/SPACE: fire  R: shield  P: pause  F2: levels", 14, H - 22, 16, Color(0.65, 0.8, 0.95))
 	if state == "city_select":
 		draw_city_map()
+	elif state == "mission_briefing":
+		draw_mission_briefing()
 	elif state == "city_flight":
 		draw_city_flight()
 	if debug_level_menu:
