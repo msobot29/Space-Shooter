@@ -37,6 +37,10 @@ const BOSS_REWARD_SECONDS := 8.0
 const CAMPAIGN_BASE := Vector2(492.0, 616.0)
 const DOUBLE_DROP_CHANCE := 0.12
 const DOUBLE_DROP_PITY_KILLS := 18
+const BINDINGS_FILE := "user://controls.cfg"
+const BIND_ACTIONS := ["MOVE LEFT", "MOVE RIGHT", "FIRE", "SHIELD", "PAUSE", "SHIP STATUS"]
+const BIND_DEFAULT := [KEY_A, KEY_D, KEY_SPACE, KEY_R, KEY_P, KEY_TAB]
+const BIND_RESTRICTED := [KEY_ESCAPE, KEY_ENTER, KEY_KP_ENTER, KEY_LEFT, KEY_RIGHT, KEY_UP, KEY_DOWN, KEY_F2, KEY_F3, KEY_O, KEY_M, KEY_BRACKETLEFT, KEY_BRACKETRIGHT, KEY_COMMA, KEY_PERIOD]
 const MENU_ITEMS := ["CONTINUE", "NEW GAME", "HIGH SCORES", "OPTIONS", "EXIT"]
 const CAMPAIGN_SAVE_FILE := "user://campaign_save.cfg"
 const CAMPAIGN_SAVE_VERSION := 1
@@ -122,6 +126,10 @@ var main_menu_selection := 0
 var pending_campaign_save: Dictionary = {}
 var save_available := false
 var options_menu_selection := 0
+var binding_selection := 0
+var binding_capture := false
+var binding_notice := ""
+var bindings: Array[int] = []
 var menu_anim_time := 0.0
 var city_route: Array[int] = []
 var selected_city := 0
@@ -1067,7 +1075,7 @@ func update_retro_music() -> void:
 	if music_player == null:
 		return
 	var needed := ""
-	if state in ["main_menu", "menu_confirm_new", "menu_options", "menu_highscores"]:
+	if state in ["main_menu", "menu_confirm_new", "menu_options", "menu_highscores", "menu_bindings"]:
 		needed = "menu"
 	elif state in ["playing", "intermission", "boss_intro", "boss_rewards"]:
 		needed = "boss" if boss_active or state in ["boss_intro", "boss_rewards"] else "stage"
@@ -1120,6 +1128,70 @@ func play_arcade_sfx(kind: String) -> void:
 	sfx_next_voice[kind] = (voice_index + 1) % players.size()
 
 
+func binding_name(key: int) -> String:
+	return OS.get_keycode_string(key)
+
+
+func reset_bindings() -> void:
+	bindings.clear()
+	for key in BIND_DEFAULT:
+		bindings.append(int(key))
+
+
+func save_bindings() -> void:
+	var cfg := ConfigFile.new()
+	cfg.set_value("keyboard", "bindings", bindings)
+	var result := cfg.save(BINDINGS_FILE)
+	if result != OK:
+		push_warning("Could not save keyboard settings")
+
+
+func load_bindings() -> void:
+	reset_bindings()
+	var cfg := ConfigFile.new()
+	if cfg.load(BINDINGS_FILE) != OK:
+		return
+	var stored: Variant = cfg.get_value("keyboard", "bindings", [])
+	if not stored is Array or stored.size() != BIND_ACTIONS.size():
+		return
+	var temp: Array[int] = []
+	for item in stored:
+		var k := int(item)
+		if k <= 0 or BIND_RESTRICTED.has(k) or temp.has(k):
+			return
+		temp.append(k)
+	bindings = temp
+
+
+func key_down(action: int) -> bool:
+	return Input.is_physical_key_pressed(bindings[action])
+
+
+func draw_bindings_menu() -> void:
+	draw_menu_background()
+	draw_rect(Rect2(64, 96, 592, 780), Color(0.04, 0.09, 0.18, 0.98))
+	text_at("KEYBOARD CONTROLS", 165, 158, 34, Color(0.64, 0.94, 1.0))
+	text_at("ENTER TO CHANGE THE SELECTED KEY", 150, 199, 18)
+	for i in range(BIND_ACTIONS.size() + 2):
+		var y := 229.0 + float(i) * 65.0
+		draw_rect(Rect2(100, y, 520, 52), Color(0.13, 0.44, 0.69) if i == binding_selection else Color(0.07, 0.14, 0.24))
+		var caption: String = ""
+		if i < BIND_ACTIONS.size():
+			caption = "%s: %s" % [BIND_ACTIONS[i], binding_name(bindings[i])]
+		elif i == BIND_ACTIONS.size():
+			caption = "RESET TO DEFAULTS"
+		else:
+			caption = "BACK"
+		text_at(caption, 126, y + 34, 22)
+	if binding_capture:
+		draw_rect(Rect2(92, 759, 537, 96), Color(0.12, 0.26, 0.40))
+		text_at("PRESS NEW KEY FOR %s" % BIND_ACTIONS[binding_selection], 115, 799, 18)
+		text_at("ESC TO CANCEL", 268, 833, 18)
+	else:
+		text_at(binding_notice if not binding_notice.is_empty() else "UP/DOWN SELECT  ENTER CHANGE  ESC BACK", 114, 803, 17, Color(0.71, 0.96, 0.79))
+		text_at("ARROW KEYS AND GLOBAL HOTKEYS ARE RESERVED", 124, 832, 16)
+
+
 func _ready() -> void:
 	setup_arcade_audio()
 	setup_retro_music()
@@ -1127,6 +1199,7 @@ func _ready() -> void:
 	randomize()
 	font = ThemeDB.fallback_font
 	load_high_scores()
+	load_bindings()
 	read_campaign_save()
 	main_menu_selection = 0 if save_available else 1
 	score_name_field = LineEdit.new()
@@ -1552,10 +1625,11 @@ func draw_options_menu() -> void:
 		"MUSIC VOLUME: %d%%" % int(music_volume * 100.0),
 		"SFX VOLUME: %d%%" % int(sfx_volume * 100.0),
 		"PERFORMANCE HUD: %s" % ("ON" if show_performance_stats else "OFF"),
+		"KEYBOARD CONTROLS",
 		"BACK"
 	]
 	for item_index in range(entries.size()):
-		var y := 238.0 + float(item_index) * 78.0
+		var y := 210.0 + float(item_index) * 72.0
 		var active := item_index == options_menu_selection
 		draw_rect(Rect2(118.0, y, 482.0, 54.0), Color(0.15, 0.42, 0.69, 0.95) if active else Color(0.07, 0.13, 0.23, 0.95))
 		text_at(entries[item_index], 144.0, y + 34.0, 22, Color.WHITE if active else Color(0.78, 0.9, 1.0))
@@ -1563,8 +1637,8 @@ func draw_options_menu() -> void:
 	text_at("ESC - RETURN TO MAIN MENU", 196, 703, 17, Color(0.62, 0.90, 1.0))
 	draw_rect(Rect2(104, 736, 514, 112), Color(0.05, 0.11, 0.21, 0.95))
 	text_at("CONTROLS", 285, 772, 24, Color(1.0, 0.86, 0.47))
-	text_at("A/D MOVE   B or SPACE FIRE   R SHIELD   P PAUSE", 121, 807, 17, Color(0.88, 0.95, 1.0))
-	text_at("TAB SHIP STATUS   F2 DEBUG LEVELS   O GOD MODE", 116, 835, 17, Color(0.76, 0.88, 1.0))
+	text_at("CUSTOMIZE YOUR KEYBOARD IN KEYBOARD CONTROLS", 108, 807, 17, Color(0.88, 0.95, 1.0))
+	text_at("F2 DEBUG  F3 FPS  O GOD MODE", 180, 835, 17, Color(0.76, 0.88, 1.0))
 
 
 func draw_high_scores_screen() -> void:
@@ -1838,7 +1912,7 @@ func launch_boss() -> void:
 
 func _process(delta: float) -> void:
 	update_retro_music()
-	if state in ["main_menu", "menu_confirm_new", "menu_options", "menu_highscores"]:
+	if state in ["main_menu", "menu_confirm_new", "menu_options", "menu_highscores", "menu_bindings"]:
 		menu_anim_time += delta
 		queue_redraw()
 		return
@@ -1947,14 +2021,14 @@ func _process(delta: float) -> void:
 	queue_redraw()
 
 func update_player(delta: float) -> void:
-	var move := Input.get_axis("ui_left", "ui_right")
-	if Input.is_key_pressed(KEY_A):
+	var move := 0.0
+	if key_down(0):
 		move -= 1.0
-	if Input.is_key_pressed(KEY_D):
+	if key_down(1):
 		move += 1.0
 	player_x = clampf(player_x + clampf(move, -1.0, 1.0) * (BASE_SPEED + speed_level * SPEED_STEP) * delta, 28.0, W - 28.0)
 	fire_clock = maxf(0.0, fire_clock - delta)
-	var pressed := Input.is_key_pressed(KEY_B) or Input.is_key_pressed(KEY_SPACE) or Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)
+	var pressed := key_down(2) or Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)
 	# Shooting remains available between levels; bullets are updated even
 	# while the next wave has not started. Boss announcements stay non-combat.
 	# Keep edge-triggered shots: holding the key does not repeat volleys.
@@ -2623,6 +2697,42 @@ func buy_upgrade(kind: int) -> void:
 func _unhandled_key_input(event: InputEvent) -> void:
 	if not event is InputEventKey or not event.pressed or event.echo:
 		return
+	if state == "menu_bindings":
+		if binding_capture:
+			if event.keycode == KEY_ESCAPE:
+				binding_capture = false
+				binding_notice = "CANCELLED"
+			else:
+				var key: int = int(event.physical_keycode if event.physical_keycode != 0 else event.keycode)
+				if key <= 0 or BIND_RESTRICTED.has(key):
+					binding_notice = "KEY RESERVED"
+				elif bindings.has(key) and bindings[binding_selection] != key:
+					binding_notice = "KEY ALREADY USED"
+				else:
+					bindings[binding_selection] = key
+					save_bindings()
+					binding_capture = false
+					binding_notice = "SAVED: %s" % binding_name(key)
+		else:
+			match event.keycode:
+				KEY_UP:
+					binding_selection = posmod(binding_selection - 1, BIND_ACTIONS.size() + 2)
+				KEY_DOWN:
+					binding_selection = posmod(binding_selection + 1, BIND_ACTIONS.size() + 2)
+				KEY_ESCAPE:
+					state = "menu_options"
+				KEY_ENTER, KEY_KP_ENTER:
+					if binding_selection < BIND_ACTIONS.size():
+						binding_capture = true
+						binding_notice = ""
+					elif binding_selection == BIND_ACTIONS.size():
+						reset_bindings()
+						save_bindings()
+						binding_notice = "DEFAULTS RESTORED"
+					else:
+						state = "menu_options"
+		queue_redraw()
+		return
 	# Sound controls work from gameplay, shop and map (even while paused).
 	if event.keycode == KEY_M:
 		music_enabled = not music_enabled
@@ -2655,7 +2765,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		queue_redraw()
 		return
 	# F2 is accessible from gameplay, shop, victory, and test intermissions.
-	if event.keycode == KEY_F2 and not state in ["main_menu", "menu_confirm_new", "menu_options", "menu_highscores"]:
+	if event.keycode == KEY_F2 and not state in ["main_menu", "menu_confirm_new", "menu_options", "menu_highscores", "menu_bindings"]:
 		debug_level_menu = not debug_level_menu
 		if debug_level_menu:
 			debug_selected_level = level
@@ -2718,9 +2828,9 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			KEY_ESCAPE:
 				state = "main_menu"
 			KEY_UP:
-				options_menu_selection = posmod(options_menu_selection - 1, 5)
+				options_menu_selection = posmod(options_menu_selection - 1, 6)
 			KEY_DOWN:
-				options_menu_selection = posmod(options_menu_selection + 1, 5)
+				options_menu_selection = posmod(options_menu_selection + 1, 6)
 			KEY_LEFT:
 				match options_menu_selection:
 					0:
@@ -2752,6 +2862,10 @@ func _unhandled_key_input(event: InputEvent) -> void:
 					3:
 						show_performance_stats = not show_performance_stats
 					4:
+						state = "menu_bindings"
+						binding_selection = 0
+						binding_notice = ""
+					5:
 						state = "main_menu"
 		queue_redraw()
 		return
@@ -2793,17 +2907,17 @@ func _unhandled_key_input(event: InputEvent) -> void:
 					# Each city ends in its own shop; then return to the map.
 					show_city_map()
 	elif state == "playing" or state == "intermission" or state == "boss_intro" or state == "boss_rewards":
-		if event.keycode == KEY_P:
+		if event.physical_keycode == bindings[4] or event.keycode == bindings[4]:
 			game_paused = not game_paused
 			if game_paused:
 				show_stats_modal = false
 		elif game_paused:
 			return
-		elif event.keycode == KEY_TAB:
+		elif event.physical_keycode == bindings[5] or event.keycode == bindings[5]:
 			show_stats_modal = not show_stats_modal
 		elif show_stats_modal:
 			return
-		elif event.keycode == KEY_R and ability_time <= 0.0 and ability_cooldown <= 0.0:
+		elif (event.physical_keycode == bindings[3] or event.keycode == bindings[3]) and ability_time <= 0.0 and ability_cooldown <= 0.0:
 			ability_time = float(ability_level * 2)
 			ability_cooldown = 0.0
 	elif state == "gameover" or state == "victory":
@@ -2857,7 +2971,7 @@ func draw_ship_status_modal() -> void:
 	draw_stat_meter("LEVEL", rate_level, 4, 127, 528, Color(1.0, 0.38, 0.3))
 	text_at("%.2f shots/s    (%.2fs between shots)" % [shots_per_second(), 1.0 / shots_per_second()], 128, 560, 18)
 	text_at("WEAPON: %s  |  SHIELD Lv.%d" % [equipped_weapon_name(), ability_level], 126, 612, 20, Color(0.70, 0.95, 0.8))
-	text_at("TAB - CLOSE / RESUME", 230, 652, 19, Color(0.80, 0.91, 1.0))
+	text_at("%s - CLOSE / RESUME" % binding_name(bindings[5]), 230, 652, 19, Color(0.80, 0.91, 1.0))
 
 func draw_final_orb_speech() -> void:
 	# A readable two-part conversation anchored above the moving player ship.
@@ -2910,6 +3024,9 @@ func _draw() -> void:
 			draw_rect(Rect2(474.0, 236.0, 231.0, 65.0), Color(0.025, 0.06, 0.13, 0.94))
 			text_at("FPS %d" % fps_options, 492.0, 264.0, 23, Color(0.52, 1.0, 0.63) if fps_options >= 55 else Color(1.0, 0.58, 0.43))
 			text_at("CPU frame %.1f ms [F3]" % frame_ms_options, 490.0, 288.0, 15, Color(0.84, 0.91, 1.0))
+		return
+	if state == "menu_bindings":
+		draw_bindings_menu()
 		return
 	if state == "menu_highscores":
 		draw_high_scores_screen()
@@ -2965,7 +3082,7 @@ func _draw() -> void:
 	draw_rect(Rect2(14, 111, 291, 82), Color(0.05, 0.11, 0.2, 0.80))
 	draw_stat_meter("SPEED", speed_level, 4, 25, 135, Color(0.24, 0.7, 1.0))
 	draw_stat_meter("FIRE", rate_level, 4, 25, 162, Color(1.0, 0.38, 0.3))
-	text_at("TAB - SHIP STATUS", 27, 183, 14, Color(0.7, 0.85, 0.98))
+	text_at("%s - SHIP STATUS" % binding_name(bindings[5]), 27, 183, 14, Color(0.7, 0.85, 0.98))
 	if not active_multipliers.is_empty():
 		draw_rect(Rect2(385, 168, 316, 65), Color(0.17, 0.10, 0.26, 0.90))
 		text_at("SCORE x%d" % score_multiplier(), 399, 195, 24, Color(1.0, 0.85, 0.35))
@@ -3129,8 +3246,8 @@ func _draw() -> void:
 		draw_rect(Rect2(0, 0, W, H), Color(0.0, 0.02, 0.06, 0.65))
 		draw_rect(Rect2(124, 362, 472, 212), Color(0.06, 0.12, 0.23, 0.98))
 		text_at("GAME PAUSED", 226, 449, 34, Color(0.9, 0.96, 1.0))
-		text_at("Press P to resume", 228, 508, 23, Color(0.45, 0.9, 1.0))
-	text_at("A/D: move  B/SPACE: fire  R: shield  P: pause  F2: levels", 14, H - 22, 16, Color(0.65, 0.8, 0.95))
+		text_at("Press %s to resume" % binding_name(bindings[4]), 228, 508, 23, Color(0.45, 0.9, 1.0))
+	text_at("MOVE %s/%s  FIRE %s  SHIELD %s  PAUSE %s" % [binding_name(bindings[0]), binding_name(bindings[1]), binding_name(bindings[2]), binding_name(bindings[3]), binding_name(bindings[4])], 14, H - 22, 16, Color(0.65, 0.8, 0.95))
 	if state == "city_select":
 		draw_city_map()
 	elif state == "mission_briefing":
