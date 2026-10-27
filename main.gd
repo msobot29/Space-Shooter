@@ -169,6 +169,7 @@ var enemy_bullets: Array[Vector2] = []
 var radial_bullets: Array[Dictionary] = []
 var drops: Array[Dictionary] = []
 var explosions: Array[Dictionary] = []
+var bonus_popups: Array[Dictionary] = []
 var fire_clock := 0.0
 var fire_held := false
 var enemy_fire_clock := 1.0
@@ -1458,6 +1459,7 @@ func start_new_campaign() -> void:
 	final_dialogue_stage = 0
 	final_dialogue_time = 0.0
 	drops.clear()
+	bonus_popups.clear()
 	enemies.clear()
 	player_bullets.clear()
 	enemy_bullets.clear()
@@ -1766,6 +1768,7 @@ func start_level(resume_boss: bool = false) -> void:
 	radial_bullets.clear()
 	# Keep falling rewards across stages; they continue falling in the new mission.
 	explosions.clear()
+	bonus_popups.clear()
 	boss.clear()
 	boss_active = false
 	boss_pending = level % 5 == 0 # Guardians at 5/10/15/20/25; final shop follows the boss
@@ -2644,23 +2647,21 @@ func update_pickups(delta: float) -> void:
 		if pos.distance_to(Vector2(player_x, PLAYER_Y)) < 34.0:
 			play_arcade_sfx("pickup")
 			if drops[i].get("kind", "scrap") == "double_shot":
-				# Always equip the last collected weapon, including Triple -> Double.
-				# Only a duplicate of the CURRENT weapon upgrades rate or score.
-				if damage_level >= 3 and damage_level < 6:
-					if rate_level >= 4:
-						score += 10000
-					else:
-						rate_level += 1
+				# The last pickup is the active weapon, even when switching tiers.
+				if rate_level >= 4:
+					score += 10000
+					show_weapon_score_bonus()
+				elif damage_level >= 3 and damage_level < 6:
+					rate_level += 1
 				damage_level = 3
 				single_shot_kills_since_drop = 0
 				explosions.append({"pos": Vector2(player_x, PLAYER_Y), "time": 0.32})
 			elif drops[i].get("kind", "scrap") == "triple_shot":
-				# Double -> Triple immediately; another Triple is a fire-rate bonus.
-				if damage_level >= 6:
-					if rate_level >= 4:
-						score += 10000
-					else:
-						rate_level += 1
+				if rate_level >= 4:
+					score += 10000
+					show_weapon_score_bonus()
+				elif damage_level >= 6:
+					rate_level += 1
 				damage_level = 6
 				explosions.append({"pos": Vector2(player_x, PLAYER_Y), "time": 0.32})
 			elif drops[i].get("kind", "scrap") == "life_orb":
@@ -2684,7 +2685,18 @@ func update_pickups(delta: float) -> void:
 		elif pos.y > H:
 			drops.remove_at(i)
 
+func show_weapon_score_bonus() -> void:
+	bonus_popups.append({"pos": Vector2(player_x, PLAYER_Y - 54.0), "time": 1.45})
+	if bonus_popups.size() > 8:
+		bonus_popups.pop_front()
+
+
 func update_effects(delta: float) -> void:
+	for i in range(bonus_popups.size() - 1, -1, -1):
+		bonus_popups[i]["time"] = float(bonus_popups[i]["time"]) - delta
+		bonus_popups[i]["pos"] = Vector2(bonus_popups[i]["pos"]) + Vector2(0.0, -42.0 * delta)
+		if float(bonus_popups[i]["time"]) <= 0.0:
+			bonus_popups.remove_at(i)
 	for i in range(explosions.size() - 1, -1, -1):
 		explosions[i]["time"] = float(explosions[i]["time"]) - delta
 		if float(explosions[i]["time"]) <= 0.0:
@@ -3431,6 +3443,13 @@ func _draw() -> void:
 	for effect in explosions:
 		var pos: Vector2 = effect["pos"]
 		draw_arc(pos, 30.0 * float(effect["time"]) / 0.3 + 8.0, 0, TAU, 20, Color(1.0, 0.68, 0.2), 4.0)
+	for bonus in bonus_popups:
+		var label_pos: Vector2 = bonus["pos"]
+		var opacity: float = clampf(float(bonus["time"]) / 0.65, 0.0, 1.0)
+		var bonus_text := "+10,000"
+		var label_width: float = font.get_string_size(bonus_text, HORIZONTAL_ALIGNMENT_LEFT, -1, 27).x
+		var label_x: float = clampf(label_pos.x - label_width * 0.5 + 37.0, 8.0, W - label_width - 8.0)
+		text_at(bonus_text, label_x, label_pos.y, 27, Color(1.0, 0.88, 0.25, opacity))
 	if state == "boss_intro":
 		# Separate lieutenant announcement instead of an abrupt boss spawn.
 		draw_rect(Rect2(42, 338, 636, 190), Color(0.08, 0.07, 0.17, 0.94))
