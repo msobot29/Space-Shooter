@@ -1381,6 +1381,10 @@ func continue_campaign() -> void:
 		open_pre_boss_shop()
 	elif checkpoint == "pre_boss":
 		start_level(true)
+	elif checkpoint == "shop":
+		# Legacy save from releases where the shop was AFTER the guardian.
+		state = "shop"
+		pre_boss_shop = false
 	elif checkpoint == "city_select":
 		show_city_map()
 	else:
