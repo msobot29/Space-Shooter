@@ -2361,11 +2361,6 @@ func update_boss(delta: float) -> void:
 				# The lieutenant's radial volley begins after the warning.
 		boss_attack_index += 1
 		boss_fire_clock = (1.20 if boss_phase == 1 else 0.98) if level == MAX_LEVEL else (1.5 if boss_phase == 1 else 1.2)
-	if level == MAX_LEVEL and boss_shield_round == 1 and boss_shields == 0 and float(boss["hp"]) <= 500.0:
-		# Distinct second shield round at half health, once only.
-		boss_shield_round = 2
-		boss_shields = 4
-		boss_shield_hp = boss_shield_max_hp
 	if boss_phase == 1 and float(boss["hp"]) <= float(boss["max_hp"]) * 0.475:
 		boss_phase = 2
 
@@ -2472,7 +2467,7 @@ func update_bullets(delta: float) -> void:
 			explosions.append({"pos": impact, "time": 0.16})
 			if boss_hit:
 				if god_mode:
-					# QA one-shot: bypass both shield rounds and defeat any boss instantly.
+					# QA one-shot: bypass the remaining shield and defeat any boss instantly.
 					boss_shields = 0
 					boss_shield_hp = 0.0
 					boss_shield_round = 2
@@ -3406,7 +3401,7 @@ func _draw() -> void:
 			if segment_fill > 0.0:
 				draw_rect(Rect2(segment_left + 2.0, 103.0, (shield_segment_width - 4.0) * segment_fill, 7.0), Color(0.27, 0.83, 1.0))
 		var shield_hp_text := "%d/%d" % [ceili(boss_shield_hp), ceili(boss_shield_max_hp)]
-		var boss_status := "ZONE GUARDIAN | SHIELD %d/2: %s HP" % [boss_shield_round, shield_hp_text] if level == MAX_LEVEL else "CITY GUARDIAN | SHIELD: %s HP" % shield_hp_text
+		var boss_status := "ZONE GUARDIAN | SHIELD: %s HP" % shield_hp_text if level == MAX_LEVEL else "CITY GUARDIAN | SHIELD: %s HP" % shield_hp_text
 		text_at(boss_status, 155, 135, 18)
 	for drop in drops:
 		var pos: Vector2 = drop["pos"]
