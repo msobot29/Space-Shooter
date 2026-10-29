@@ -1568,18 +1568,25 @@ func draw_balkan_relief() -> void:
 
 
 func draw_city_map() -> void:
-	draw_balkan_relief()
+	draw_bosnia_relief() if city_route.size() >= 5 else draw_balkan_relief()
 	draw_rect(Rect2(18, 27, 684, 145), Color(0.025, 0.065, 0.14, 0.94))
 	text_at("ADRIATIC UPRISING", 127, 77, 35, Color(0.95, 0.97, 1.0))
-	text_at("SELECT THE NEXT CITY TO LIBERATE", 115, 118, 22, Color(0.65, 0.95, 1.0))
-	text_at("LIBERATED: %d/5" % city_route.size(), 277, 153, 17, Color(0.9, 0.82, 0.56))
+	text_at("BOSNIA & HERZEGOVINA - LIBERATION" if city_route.size() >= 5 else "SELECT THE NEXT CITY TO LIBERATE", 92, 118, 22, Color(0.65, 0.95, 1.0))
+	text_at("LIBERATED: %d/5" % (city_route.size() - 5 if city_route.size() >= 5 else city_route.size()), 277, 153, 17, Color(0.9, 0.82, 0.56))
 	if not city_route.is_empty():
 		var origin_city: Vector2 = CITY_POINTS[city_route[city_route.size() - 1]]
 		draw_arc(origin_city, 26.0, 0.0, TAU, 28, Color(0.41, 0.94, 1.0), 3.0)
 		text_at("SHIP", origin_city.x + 14.0, origin_city.y + 29.0, 14, Color(0.60, 0.93, 1.0))
-	for city_index in range(5):
-		# Zagreb's marker and name do not exist until four cities are liberated.
+	for city_index in range(CITY_NAMES.size()):
+		# Show ONLY the currently selectable region's cities.
+		if city_route.size() < 5 and city_index >= 5:
+			continue
+		if city_route.size() >= 5 and city_index < 5:
+			continue
+		# Both regional capitals are locked until four local cities are free.
 		if city_index == 4 and city_route.size() < 4:
+			continue
+		if city_index == 9 and city_route.size() < 9:
 			continue
 		var point: Vector2 = CITY_POINTS[city_index]
 		var finished := city_route.has(city_index)
@@ -1587,9 +1594,9 @@ func draw_city_map() -> void:
 		var tint := Color(0.38, 1.0, 0.61) if finished else Color(1.0, 0.83, 0.32)
 		draw_circle(point, 11.0, tint)
 		draw_arc(point, 21.0 if chosen else 15.0, 0.0, TAU, 28, Color(0.44, 0.91, 1.0) if chosen else tint, 3.0)
-		var label_offset := Vector2(-102, -20) if city_index == 1 else Vector2(18, -13)
+		var label_offset := Vector2(-95, -20) if city_index == 1 or city_index == 6 else Vector2(18, -13)
 		text_at(String(CITY_NAMES[city_index]) + (" [FREE]" if finished else ""), point.x + label_offset.x, point.y + label_offset.y, 17, tint)
-	if city_route.size() == 4:
+	if city_route.size() == 4 or city_route.size() == 9:
 		draw_rect(Rect2(64, 777, 592, 66), Color(0.20, 0.08, 0.20, 0.94))
 		text_at("TIME TO FREE THE ZONE", 134, 819, 31, Color(1.0, 0.80, 0.41))
 	else:
@@ -1597,10 +1604,26 @@ func draw_city_map() -> void:
 	text_at("6-SECOND FLIGHT TO SELECTED CITY", 160, 873, 18, Color(0.7, 0.88, 1.0))
 
 
+func draw_bosnia_relief() -> void:
+	# Original stylized Bosnia region map, not a precise geographic outline.
+	draw_rect(Rect2(0, 0, W, H), Color(0.025, 0.09, 0.15))
+	draw_colored_polygon(PackedVector2Array([
+		Vector2(158, 260), Vector2(358, 210), Vector2(553, 291),
+		Vector2(600, 429), Vector2(556, 653), Vector2(401, 754),
+		Vector2(243, 710), Vector2(120, 493)]), Color(0.20, 0.37, 0.30))
+	for ridge in range(9):
+		var y: float = 290.0 + float(ridge) * 54.0
+		draw_line(Vector2(175.0, y), Vector2(553.0, y - 47.0), Color(0.49, 0.67, 0.55, 0.20), 2.0)
+	draw_polyline(PackedVector2Array([
+		Vector2(312, 280), Vector2(355, 380), Vector2(403, 454),
+		Vector2(389, 590), Vector2(292, 721)]), Color(0.30, 0.77, 0.97, 0.75), 7.0, true)
+	text_at("BOSNIA & HERZEGOVINA", 164, 222, 23, Color(0.80, 0.94, 1.0))
+
+
 func draw_mission_briefing() -> void:
 	# A short story briefing before the existing 6-second flight.
 	# Nothing is committed to the campaign route until the player confirms deployment.
-	draw_balkan_relief()
+	draw_bosnia_relief() if briefing_city_index >= 5 else draw_balkan_relief()
 	draw_rect(Rect2(33.0, 55.0, 654.0, 838.0), Color(0.025, 0.07, 0.14, 0.96))
 	draw_rect(Rect2(33.0, 55.0, 654.0, 6.0), Color(0.33, 0.84, 1.0))
 	text_at("MISSION BRIEFING", 171, 117, 36, Color(0.57, 0.94, 1.0))
@@ -1614,6 +1637,14 @@ func draw_mission_briefing() -> void:
 		["DRAVA DEFENSE", "Enemy forces are approaching Osijek along the Drava.", "Keep the bridges and river corridor clear.", "Defeat the guardian and free the city."],
 		["FINAL OPERATION", "The Zone Guardian awaits above Zagreb.", "Its shields are reinforced and the Adriatic Storm", "can only be survived by finding a gap or using R shield."]
 	]
+	if briefing_city_index >= 5:
+		descriptions.append_array([
+			["SUN BRIDGE", "Atlantean Lancers have crossed the river.", "Intercept the first assault over Mostar.", "Defeat the guardian to liberate the city."],
+			["COASTAL GATE", "Coral Colossi block the southern route.", "Break through the armored formations.", "Secure the Neum harbor."],
+			["LOST ORACLE", "The Siren cult gathers above Sarajevo.", "Avoid their energy volleys.", "Disrupt the Atlantean command."],
+			["RIVER GUARD", "Enemy formations surround Banja Luka.", "Protect the evacuation corridor.", "Break the guardian's shield."],
+			["DROWNED KING", "The final regional guardian awaits in Tuzla.", "His army holds the last stronghold.", "Defeat the King and free Bosnia."]
+		])
 	var mission: Array = descriptions[briefing_city_index]
 	text_at(String(mission[0]), 100, 271, 26, Color(0.62, 0.94, 1.0))
 	draw_line(Vector2(100.0, 286.0), Vector2(620.0, 286.0), Color(0.28, 0.70, 0.88, 0.6), 2.0)
@@ -1621,7 +1652,7 @@ func draw_mission_briefing() -> void:
 		text_at(String(mission[line_index + 1]), 77, 352 + line_index * 48, 18, Color(0.91, 0.96, 1.0))
 	draw_rect(Rect2(79, 527, 562, 170), Color(0.06, 0.14, 0.25, 0.97))
 	text_at("MISSION OBJECTIVES", 215, 569, 25, Color(1.0, 0.86, 0.49))
-	if briefing_city_index == 4:
+	if briefing_city_index == 4 or briefing_city_index == 9:
 		text_at("- Defeat the final Zone Guardian", 109, 615, 21)
 		text_at("- Recover the mysterious white orb", 109, 654, 21)
 	else:
@@ -1633,7 +1664,7 @@ func draw_mission_briefing() -> void:
 
 
 func draw_city_flight() -> void:
-	draw_balkan_relief()
+	draw_bosnia_relief() if selected_city >= 5 else draw_balkan_relief()
 	var destination: Vector2 = CITY_POINTS[selected_city]
 	var fraction := clampf(city_flight_time / CITY_FLIGHT_SECONDS, 0.0, 1.0)
 	var eased := fraction * fraction * (3.0 - 2.0 * fraction)
