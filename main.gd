@@ -2725,8 +2725,8 @@ func update_bullets(delta: float) -> void:
 					boss.clear()
 			else:
 				if bool(bullet.get("arc", false)):
+					arc_lightning_effects.append({"from": previous, "to": impact, "time": 0.23})
 					arc_chain_impact(target_index)
-					arc_lightning_effects.append({"from": previous, "to": Vector2(enemies[target_index]["pos"]) if target_index < enemies.size() else impact, "time": 0.23})
 				else:
 					enemies[target_index]["hp"] = 0 if god_mode else int(enemies[target_index]["hp"]) - (1 + damage_level)
 					if int(enemies[target_index]["hp"]) <= 0:
@@ -3094,10 +3094,11 @@ func upgrade_cost(kind: int) -> int:
 		3: return DOUBLE_SHOT_PRICE
 		4: return TRIPLE_SHOT_PRICE - (DOUBLE_SHOT_PRICE if damage_level >= 3 else 0)
 		5: return 900 if ability_level == 1 else 1800
+		6: return ARC_LIGHTNING_PRICE
 	return 99999
 
 func buy_upgrade(kind: int) -> void:
-	var capped := (kind == 1 and speed_level >= 4) or (kind == 2 and rate_level >= 4) or (kind == 3 and damage_level >= 3) or (kind == 4 and damage_level >= 6) or (kind == 5 and ability_level >= 3)
+	var capped := (kind == 1 and speed_level >= 4) or (kind == 2 and rate_level >= 4) or (kind == 3 and damage_level >= 3) or (kind == 4 and damage_level >= 6) or (kind == 5 and ability_level >= 3) or (kind == 6 and arc_lightning_owned)
 	if capped or scrap < upgrade_cost(kind):
 		return
 	scrap -= upgrade_cost(kind)
@@ -3107,6 +3108,7 @@ func buy_upgrade(kind: int) -> void:
 		3: damage_level = 3
 		4: damage_level = 6
 		5: ability_level += 1
+		6: arc_lightning_owned = true
 	if state == "shop":
 		save_campaign_checkpoint("pre_boss_shop" if pre_boss_shop else "shop")
 
@@ -3385,6 +3387,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			KEY_3: buy_upgrade(3)
 			KEY_4: buy_upgrade(4)
 			KEY_5: buy_upgrade(5)
+			KEY_6: buy_upgrade(6)
 
 			KEY_ENTER, KEY_KP_ENTER:
 				if pre_boss_shop:
@@ -3679,6 +3682,12 @@ func _draw() -> void:
 		else:
 			draw_circle(pos, 9.0, Color(0.95, 0.82, 0.25))
 			draw_circle(pos, 4.0, Color(0.45, 0.3, 0.08))
+	for arc_fx in arc_lightning_effects:
+		var a: Vector2 = arc_fx["from"]
+		var b: Vector2 = arc_fx["to"]
+		var alpha: float = clampf(float(arc_fx["time"]) / 0.23, 0.0, 1.0)
+		draw_line(a, b, Color(0.35, 0.52, 1.0, alpha), 7.0, true)
+		draw_line(a, b, Color(0.83, 0.95, 1.0, alpha), 2.0, true)
 	for effect in explosions:
 		var pos: Vector2 = effect["pos"]
 		draw_arc(pos, 30.0 * float(effect["time"]) / 0.3 + 8.0, 0, TAU, 20, Color(1.0, 0.68, 0.2), 4.0)
@@ -3715,7 +3724,7 @@ func _draw() -> void:
 		text_at("ZONE LIBERATED", 195, 249, 33, Color(0.61, 1.0, 0.74))
 		draw_final_orb_speech()
 	if state == "shop":
-		draw_rect(Rect2(52, 190, 616, 555), Color(0.07, 0.12, 0.23, 0.96))
+		draw_rect(Rect2(52, 190, 616, 580), Color(0.07, 0.12, 0.23, 0.96))
 		text_at("PRE-BOSS SHOP - %s" % city_name() if pre_boss_shop else "%s LIBERATED!" % city_name(), 136, 250, 27)
 		text_at("SCRAP: %d" % scrap, 250, 296, 26, Color(0.95, 0.85, 0.3))
 		if speed_level >= 4:
@@ -3738,12 +3747,13 @@ func _draw() -> void:
 			text_at("5 - Shield Upgrade: MAX", 105, 569, 22)
 		else:
 			text_at("5 - Shield Upgrade Lv.%d/3 (%d)" % [ability_level, upgrade_cost(5)], 105, 569, 22)
+		text_at("6 - ARC LIGHTNING: OWNED" if arc_lightning_owned else "6 - ARC LIGHTNING (3200 Scrap)", 105, 606, 20, Color(0.53,0.84,1.0))
 		# In-shop ship stats are live and update immediately after a purchase.
-		text_at("SHIP SPEED  %d px/s  Lv.%d/4" % [int(BASE_SPEED + speed_level * SPEED_STEP), speed_level], 105, 616, 17, Color(0.55, 0.83, 1.0))
-		text_at("FIRE RATE  %.2f shots/s  Lv.%d/4" % [shots_per_second(), rate_level], 105, 640, 17, Color(1.0, 0.65, 0.5))
-		text_at("%s SHOT  |  SHIELD Lv.%d/3" % [equipped_weapon_name(), ability_level], 105, 664, 17, Color(0.6, 0.96, 0.76))
-		text_at("ENTER - FACE THE GUARDIAN" if pre_boss_shop else ("ENTER - View results" if level >= MAX_LEVEL else "ENTER - Next mission"), 137, 707, 24, Color(0.4, 0.9, 1.0))
-		text_at("M / ESC - MAIN MENU (SAVED)", 163, 729, 16, Color(0.74, 0.95, 0.79))
+		text_at("SHIP SPEED  %d px/s  Lv.%d/4" % [int(BASE_SPEED + speed_level * SPEED_STEP), speed_level], 105, 643, 16, Color(0.55, 0.83, 1.0))
+		text_at("FIRE RATE  %.2f shots/s  Lv.%d/4" % [shots_per_second(), rate_level], 105, 663, 16, Color(1.0, 0.65, 0.5))
+		text_at("%s SHOT  |  SHIELD Lv.%d/3" % [equipped_weapon_name(), ability_level], 105, 684, 16, Color(0.6, 0.96, 0.76))
+		text_at("ENTER - FACE THE GUARDIAN" if pre_boss_shop else ("ENTER - View results" if level >= MAX_LEVEL else "ENTER - Next mission"), 137, 725, 20, Color(0.4, 0.9, 1.0))
+		text_at("M / ESC - MAIN MENU (SAVED)", 163, 746, 15, Color(0.74, 0.95, 0.79))
 	elif state == "gameover" or state == "victory":
 		if state == "victory" and not awaiting_score_name and not victory_show_scores:
 			draw_campaign_finale()
