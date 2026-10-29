@@ -2423,52 +2423,31 @@ func launch_enemy_shot(origin: Vector2, velocity: Vector2, tint: Color) -> void:
 	radial_bullets.append({"pos": origin, "velocity": velocity * REGULAR_ENEMY_PROJECTILE_SPEED_FACTOR, "color": tint})
 
 func fire_bosnia_enemy_pattern(origin: Vector2, kind: int) -> void:
-	var aim: Vector2 = (Vector2(player_x, PLAYER_Y) - origin).normalized()
+	# All regular enemy shots travel straight down; never track the player.
 	match kind:
-		3:
-			launch_enemy_shot(origin, aim * 295.0, Color(0.30, 0.98, 0.89))
-		4:
-			for angle in [-0.20, 0.20]:
-				launch_enemy_shot(origin, aim.rotated(angle) * 200.0, Color(1.0, 0.55, 0.32))
-		5:
-			for angle in [-0.34, 0.0, 0.34]:
-				launch_enemy_shot(origin, aim.rotated(angle) * 255.0, Color(0.80, 0.45, 1.0))
+		3: # Lancer: one quick turquoise shot.
+			launch_enemy_shot(origin, Vector2(0.0, 295.0), Color(0.30, 0.98, 0.89))
+		4: # Colossus: two slow parallel coral shots.
+			for offset_x in [-17.0, 17.0]:
+				launch_enemy_shot(origin + Vector2(offset_x, 0.0), Vector2(0.0, 200.0), Color(1.0, 0.55, 0.32))
+		5: # Siren: three parallel violet shots.
+			for offset_x in [-24.0, 0.0, 24.0]:
+				launch_enemy_shot(origin + Vector2(offset_x, 0.0), Vector2(0.0, 255.0), Color(0.80, 0.45, 1.0))
 
 
 func fire_advanced_enemy_pattern(origin: Vector2, kind: int) -> void:
-	# Distinct, readable attacks for the second five-mission block.
-	var aim := (Vector2(player_x, PLAYER_Y) - origin).normalized()
-	var speed := minf(360.0, 270.0 + float(level - 6) * 5.0)
-	match city_mission():
-		1: # Electric eels: a single accurately aimed green bolt.
-			if kind == 2:
-				launch_enemy_shot(origin, aim * speed, Color(0.5, 1.0, 0.35))
-			else:
-				enemy_bullets.append(origin)
-		2: # Double columns: paired crossing blue bolts.
-			if kind == 0:
-				launch_enemy_shot(origin, aim.rotated(-0.19) * speed, Color(0.38, 0.84, 1.0))
-				launch_enemy_shot(origin, aim.rotated(0.19) * speed, Color(0.38, 0.84, 1.0))
-			else:
-				enemy_bullets.append(origin)
-		3: # Crescent: three-way orange fan only from armored guards.
-			if kind == 1:
-				for angle in [-0.27, 0.0, 0.27]:
-					launch_enemy_shot(origin, aim.rotated(angle) * speed, Color(1.0, 0.64, 0.3))
-			else:
-				enemy_bullets.append(origin)
-		4: # Pincer: two narrow targeted lanes, including the miniboss's guards.
-			if kind == 2:
-				for angle in [-0.11, 0.11]:
-					launch_enemy_shot(origin, aim.rotated(angle) * speed, Color(0.65, 1.0, 0.48))
-			else:
-				enemy_bullets.append(origin)
-		5: # Crown: alternating narrow paired fire and aimed pulses.
-			if kind == 0:
-				for angle in [-0.22, 0.22]:
-					launch_enemy_shot(origin, aim.rotated(angle) * speed, Color(0.65, 0.72, 1.0))
-			else:
-				launch_enemy_shot(origin, aim * speed, Color(1.0, 0.56, 0.44))
+	# Croatia's ordinary enemies also shoot vertically, not toward the ship.
+	var speed: float = minf(360.0, 270.0 + float(level - 6) * 5.0)
+	var color: Color = Color(0.65, 0.85, 1.0)
+	match kind:
+		0:
+			color = Color(0.38, 0.84, 1.0)
+		1:
+			color = Color(1.0, 0.64, 0.3)
+		2:
+			color = Color(0.65, 1.0, 0.48)
+	launch_enemy_shot(origin, Vector2(0.0, speed), color)
+
 
 func update_boss(delta: float) -> void:
 	if not boss_active or boss.is_empty():
