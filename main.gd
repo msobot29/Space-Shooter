@@ -1,5 +1,5 @@
 extends Node2D
-## Adriatic Uprising - 25-level Croatia liberation campaign.
+## Adriatic Uprising - Croatia and Bosnia campaign, 50-level foundation.
 ## All sprites are procedural. Godot 4.x / GDScript 2.0.
 
 const W := 720.0
@@ -12,9 +12,19 @@ const SPIN_PROJECTILES := 48
 const SPIN_GAP_PRIMARY := 0.125 # Slightly narrower than the previous 0.145
 const SPIN_GAP_SECONDARY := 0.105 # Slightly narrower than the previous 0.12
 const BULLET_SPEED := 820.0
-const MAX_LEVEL := 25
-const CITY_NAMES := ["ZADAR", "RIJEKA", "SPLIT", "OSIJEK", "ZAGREB"]
-const CITY_POINTS := [Vector2(260, 455), Vector2(238, 357), Vector2(298, 573), Vector2(514, 352), Vector2(376, 309)]
+const MAX_LEVEL := 50
+const CROATIA_FINAL_LEVEL := 25
+const BOSNIA_START_LEVEL := 26
+const BOSNIA_FINAL_LEVEL := 50
+# First five IDs remain identical for backwards-compatible Croatia saves.
+const CITY_NAMES := ["ZADAR", "RIJEKA", "SPLIT", "OSIJEK", "ZAGREB", "MOSTAR", "NEUM", "SARAJEVO", "BANJA LUKA", "TUZLA"]
+const CITY_POINTS := [Vector2(260, 455), Vector2(238, 357), Vector2(298, 573), Vector2(514, 352), Vector2(376, 309),
+	Vector2(406, 631), Vector2(281, 697), Vector2(438, 432), Vector2(318, 326), Vector2(529, 351)]
+const BOSNIA_ENEMY_STATS := {
+	3: {"hp": 8, "score": 180, "scrap": 12, "speed": 230.0},
+	4: {"hp": 24, "score": 350, "scrap": 25, "speed": 95.0},
+	5: {"hp": 12, "score": 260, "scrap": 18, "speed": 145.0}
+}
 const CITY_FLIGHT_SECONDS := 6.0
 const HIGH_SCORE_FILE := "user://highscores.cfg"
 const HIGH_SCORE_LIMIT := 10
@@ -758,7 +768,7 @@ func draw_eel_25d(pos: Vector2) -> void:
 # Presentation-only 2.5D boss artwork. Boss movement, shield charges, hitboxes,
 # projectile patterns, HP and rewards stay in the unchanged gameplay functions.
 func draw_boss_25d(pos: Vector2) -> void:
-	if level == MAX_LEVEL:
+	if level == CROATIA_FINAL_LEVEL:
 		draw_zone_guardian_25d(pos)
 	else:
 		draw_city_lieutenant_25d(pos, city_name())
@@ -850,7 +860,7 @@ func draw_zone_guardian_25d(pos: Vector2) -> void:
 	var glow := Color(0.38, 0.91, 1.0)
 	# Before Adriatic Storm the Guardian now performs a full in-place spin while
 	# the red warning orb flashes exactly three times.
-	var pre_attack_spin := level == MAX_LEVEL and storm_warning_time > 0.0 and storm_pulses_remaining > 0
+	var pre_attack_spin := level == CROATIA_FINAL_LEVEL and storm_warning_time > 0.0 and storm_pulses_remaining > 0
 	var body_rotation := 0.0
 	var flash_on := false
 	if pre_attack_spin:
@@ -908,19 +918,27 @@ func draw_zone_guardian_25d(pos: Vector2) -> void:
 		draw_arc(pos, layer_radius, 0.0, TAU, 64, Color(0.36, 0.88, 1.0, layer_alpha), 3.5)
 
 func city_name() -> String:
-	var slot := clampi(int((level - 1) / 5), 0, 4)
+	var slot := clampi(int((level - 1) / 5), 0, CITY_NAMES.size() - 1)
 	return CITY_NAMES[city_route[slot]] if slot < city_route.size() else CITY_NAMES[slot]
+
+
+func in_bosnia() -> bool:
+	return level >= BOSNIA_START_LEVEL
+
+
+func is_region_boss() -> bool:
+	return level == CROATIA_FINAL_LEVEL or level == BOSNIA_FINAL_LEVEL
 
 func city_mission() -> int:
 	return ((level - 1) % 5) + 1
 
 func waves_for_level() -> int:
-	if level == MAX_LEVEL:
-		return 0 # The final Zone Guardian is a standalone boss fight.
+	if is_region_boss():
+		return 0 # Regional guardians are standalone boss fights.
 	return 2
 
 func enemies_per_wave() -> int:
-	if level == MAX_LEVEL:
+	if is_region_boss():
 		return 0
 	return int(ENEMY_TOTAL_BY_CITY_STAGE[city_mission() - 1] / 2)
 
@@ -1290,10 +1308,10 @@ func read_campaign_save() -> void:
 	var validated_route: Array[int] = []
 	for raw_city in route_value:
 		var city_id := int(raw_city)
-		if city_id < 0 or city_id > 4 or validated_route.has(city_id):
+		if city_id < 0 or city_id >= CITY_NAMES.size() or validated_route.has(city_id):
 			return
 		validated_route.append(city_id)
-	if validated_route.size() > 5:
+	if validated_route.size() > CITY_NAMES.size():
 		return
 	# Level 1 and city_select can be saved before choosing any city.
 	if checkpoint_state != "city_select" and validated_route.is_empty():
@@ -1406,9 +1424,12 @@ func continue_campaign() -> void:
 
 
 func city_selectable(city_index: int) -> bool:
-	if city_index < 0 or city_index >= 5 or city_route.has(city_index):
+	if city_index < 0 or city_index >= CITY_NAMES.size() or city_route.has(city_index):
 		return false
-	return city_index != 4 or city_route.size() == 4
+	if city_route.size() < 5:
+		return city_index < 5 and (city_index != 4 or city_route.size() == 4)
+	# The second region unlocks only after Zagreb's guardian was defeated.
+	return city_index >= 5 and (city_index != 9 or city_route.size() == 9)
 
 
 func show_mission_briefing(city_index: int) -> void:
@@ -1434,7 +1455,7 @@ func start_city_flight(city_index: int) -> void:
 
 func show_city_map() -> void:
 	state = "city_select"
-	for city_index in range(5):
+	for city_index in range(CITY_NAMES.size()):
 		if city_selectable(city_index):
 			selected_city = city_index
 			break
@@ -1488,8 +1509,8 @@ func start_new_campaign() -> void:
 
 
 func cycle_city(direction: int) -> void:
-	for offset in range(1, 6):
-		var next_city := posmod(selected_city + direction * offset, 5)
+	for offset in range(1, CITY_NAMES.size() + 1):
+		var next_city := posmod(selected_city + direction * offset, CITY_NAMES.size())
 		if city_selectable(next_city):
 			selected_city = next_city
 			break
@@ -1782,7 +1803,7 @@ func start_level(resume_boss: bool = false) -> void:
 	waves_spawned = 0
 	wave_path_ids.clear()
 	boss_phase = 1
-	boss_shields = 4 if level == MAX_LEVEL else 2
+	boss_shields = 4 if level == CROATIA_FINAL_LEVEL else 2
 	boss_shield_hp = 0.0
 	boss_shield_max_hp = 0.0
 	boss_shield_round = 1
@@ -1811,7 +1832,7 @@ func start_level(resume_boss: bool = false) -> void:
 		# Resuming after the shop must NOT show a second shop.
 		begin_boss_intro()
 		save_campaign_checkpoint("pre_boss")
-	elif level == MAX_LEVEL:
+	elif level == CROATIA_FINAL_LEVEL:
 		# The final guardian also has a shop BEFORE combat. Give any
 		# remaining rewards time to fall, then wait four clear seconds.
 		begin_pre_boss_shop_wait()
@@ -2043,11 +2064,11 @@ func launch_boss() -> void:
 	boss_active = true
 	enemy_bullets.clear()
 	# Each liberated city has a stronger guardian; Zagreb is the final fight.
-	var boss_hp := 1000.0 if level == MAX_LEVEL else 200.0 + float(int((level - 1) / 5)) * 70.0
+	var boss_hp := 1000.0 if level == CROATIA_FINAL_LEVEL else 200.0 + float(int((level - 1) / 5)) * 70.0
 	boss = {"pos": Vector2(W / 2.0, 155.0), "prev_pos": Vector2(W / 2.0, 155.0), "hp": boss_hp, "max_hp": boss_hp, "direction": 1.0}
 	boss_shield_max_hp = float(boss_hp) * BOSS_SHIELD_HP_RATIO
 	boss_shield_hp = boss_shield_max_hp
-	boss_shields = 4 if level == MAX_LEVEL else 2
+	boss_shields = 4 if level == CROATIA_FINAL_LEVEL else 2
 	boss_fire_clock = 1.4
 	spin_countdown = 0.0
 	spin_rotation = 0.0
@@ -2182,7 +2203,7 @@ func _process(delta: float) -> void:
 		# Pickups do not block level progression.
 		if boss_pending:
 			begin_pre_boss_shop_wait()
-		elif level == MAX_LEVEL:
+		elif level == CROATIA_FINAL_LEVEL:
 			# Final boss has zero regular waves; it must not complete itself.
 			pass
 		else:
@@ -2320,7 +2341,7 @@ func update_boss(delta: float) -> void:
 	var pos: Vector2 = boss["pos"]
 	boss["prev_pos"] = pos
 	var direction: float = boss["direction"]
-	pos.x += direction * ((135.0 if boss_phase == 1 else 195.0) if level == MAX_LEVEL else (100.0 if boss_phase == 1 else 165.0)) * delta
+	pos.x += direction * ((135.0 if boss_phase == 1 else 195.0) if level == CROATIA_FINAL_LEVEL else (100.0 if boss_phase == 1 else 165.0)) * delta
 	if pos.x >= W - 110.0 or pos.x <= 110.0:
 		direction *= -1.0
 	pos.x = clampf(pos.x, 110.0, W - 110.0)
@@ -2330,16 +2351,16 @@ func update_boss(delta: float) -> void:
 	boss["direction"] = direction
 	# Let every previously fired red projectile reach the player or leave the
 	# screen naturally. Do not spawn more reds while waiting for Storm.
-	if level == MAX_LEVEL and storm_pending:
+	if level == CROATIA_FINAL_LEVEL and storm_pending:
 		if enemy_bullets.is_empty():
 			storm_pending = false
 			begin_adriatic_storm()
 		return
 	# Zagreb's regular red attacks must not advance during Adriatic Storm.
-	if level != MAX_LEVEL or (storm_warning_time <= 0.0 and storm_pulses_remaining <= 0):
+	if level != CROATIA_FINAL_LEVEL or (storm_warning_time <= 0.0 and storm_pulses_remaining <= 0):
 		boss_fire_clock -= delta
 	# Zagreb final boss: storm warning is visible before three successive volleys.
-	if level == MAX_LEVEL and (storm_warning_time > 0.0 or storm_pulses_remaining > 0):
+	if level == CROATIA_FINAL_LEVEL and (storm_warning_time > 0.0 or storm_pulses_remaining > 0):
 		if storm_warning_time > 0.0:
 			storm_warning_time = maxf(0.0, storm_warning_time - delta)
 		else:
@@ -2364,11 +2385,11 @@ func update_boss(delta: float) -> void:
 	boss_warning_time = maxf(0.0, boss_warning_time - delta)
 	if previous_warning > 0.0 and boss_warning_time <= 0.0:
 		# Final Guardian: a single telegraphed red projectile; lieutenants retain three.
-		var aimed_lanes := [0] if level == MAX_LEVEL else [-1, 0, 1]
+		var aimed_lanes := [0] if level == CROATIA_FINAL_LEVEL else [-1, 0, 1]
 		for lane in aimed_lanes:
 			enemy_bullets.append(Vector2(boss_warning_x + lane * 22.0, pos.y + 38.0))
 	if boss_fire_clock <= 0.0:
-		if level == MAX_LEVEL and boss_attack_index % 4 == 3:
+		if level == CROATIA_FINAL_LEVEL and boss_attack_index % 4 == 3:
 			# Never erase a red shot in mid-flight just because Storm is next.
 			# All red shots finish before the special attack starts.
 			if enemy_bullets.is_empty():
@@ -2377,14 +2398,14 @@ func update_boss(delta: float) -> void:
 				storm_pending = true
 		elif boss_attack_index % 3 == 0:
 			# Final Guardian fires three red shots, instead of five.
-			var spread_lanes := [-1, 0, 1] if level == MAX_LEVEL else [-2, -1, 0, 1, 2]
+			var spread_lanes := [-1, 0, 1] if level == CROATIA_FINAL_LEVEL else [-2, -1, 0, 1, 2]
 			for lane in spread_lanes:
 				enemy_bullets.append(pos + Vector2(lane * 42.0, 38.0))
 		elif boss_attack_index % 3 == 2:
 			boss_warning_x = player_x
 			boss_warning_time = 0.7
 		else:
-			if level == MAX_LEVEL:
+			if level == CROATIA_FINAL_LEVEL:
 				# Final Guardian does NOT use 360-degree barrages.
 				# Replace the old spin turn with a telegraphed aimed shot.
 				boss_warning_x = player_x
@@ -2394,7 +2415,7 @@ func update_boss(delta: float) -> void:
 				spin_rotation = 0.0
 				# The lieutenant's radial volley begins after the warning.
 		boss_attack_index += 1
-		boss_fire_clock = (1.20 if boss_phase == 1 else 0.98) if level == MAX_LEVEL else (1.5 if boss_phase == 1 else 1.2)
+		boss_fire_clock = (1.20 if boss_phase == 1 else 0.98) if level == CROATIA_FINAL_LEVEL else (1.5 if boss_phase == 1 else 1.2)
 	if boss_phase == 1 and float(boss["hp"]) <= float(boss["max_hp"]) * 0.475:
 		boss_phase = 2
 
@@ -2442,7 +2463,7 @@ func fire_radial_barrage(origin: Vector2) -> void:
 		var secondary_gap := absf(wrapf(angle - second_gap, -PI, PI)) < SPIN_GAP_SECONDARY
 		if near_player_gap or secondary_gap:
 			continue
-		var speed := (390.0 if boss_phase == 1 else 450.0) if level == MAX_LEVEL else (350.0 if boss_phase == 1 else 410.0)
+		var speed := (390.0 if boss_phase == 1 else 450.0) if level == CROATIA_FINAL_LEVEL else (350.0 if boss_phase == 1 else 410.0)
 		var velocity := Vector2(cos(angle), sin(angle)) * speed
 		radial_bullets.append({"pos": origin, "velocity": velocity})
 
@@ -2476,7 +2497,7 @@ func update_bullets(delta: float) -> void:
 		if boss_active and not boss.is_empty():
 			var boss_previous: Vector2 = boss.get("prev_pos", boss["pos"])
 			var boss_current: Vector2 = boss["pos"]
-			var boss_radius := 108.0 if level == MAX_LEVEL else 69.0
+			var boss_radius := 108.0 if level == CROATIA_FINAL_LEVEL else 69.0
 			var hit_t := swept_hit_fraction(previous, shot, boss_previous, boss_current, boss_radius)
 			if hit_t >= 0.0:
 				boss_hit = true
@@ -2510,7 +2531,7 @@ func update_bullets(delta: float) -> void:
 					# Shield HP is 70% of the boss's max HP. Each hit removes
 					# weapon damage from the shield, not an entire ring.
 					boss_shield_hp = maxf(0.0, boss_shield_hp - (2.0 + damage_level))
-					var total_layers := 4 if level == MAX_LEVEL else 2
+					var total_layers := 4 if level == CROATIA_FINAL_LEVEL else 2
 					boss_shields = ceili(float(total_layers) * boss_shield_hp / boss_shield_max_hp) if boss_shield_hp > 0.0 else 0
 				else:
 					boss["hp"] = maxf(0.0, float(boss["hp"]) - (2.0 + damage_level))
@@ -2518,7 +2539,7 @@ func update_bullets(delta: float) -> void:
 					play_arcade_sfx("boss")
 					score += 2500 * score_multiplier()
 					scrap += 300
-					if level == MAX_LEVEL:
+					if level == CROATIA_FINAL_LEVEL:
 						drop_white_orb(Vector2(boss["pos"]))
 					else:
 						drop_life_orb(Vector2(boss["pos"]))
@@ -2697,7 +2718,7 @@ func update_pickups(delta: float) -> void:
 				collect_life_orb(int(drops[i]["orb_index"]))
 			elif drops[i].get("kind", "scrap") == "white_orb":
 				white_orb_collected = true
-				if level == MAX_LEVEL and state == "boss_rewards":
+				if level == CROATIA_FINAL_LEVEL and state == "boss_rewards":
 					final_dialogue_stage = 1
 					final_dialogue_time = FINAL_DIALOGUE_LINE_SECONDS
 					# Allow both lines to be read even if orb is collected very late.
@@ -2734,7 +2755,7 @@ func update_effects(delta: float) -> void:
 func complete_level() -> void:
 	# After each guardian, visibly fly away before showing the next screen.
 	# Ordinary mission timing is unchanged.
-	if level >= MAX_LEVEL:
+	if is_region_boss():
 		begin_departure("shop")
 	elif level % 5 == 0:
 		begin_departure("map")
@@ -3193,6 +3214,10 @@ func _unhandled_key_input(event: InputEvent) -> void:
 					leave_pre_boss_shop()
 				elif level >= MAX_LEVEL:
 					finish_run(true)
+				elif level == CROATIA_FINAL_LEVEL:
+					# Croatia is liberated, but the full campaign continues in Bosnia.
+					level = BOSNIA_START_LEVEL
+					show_city_map()
 				else:
 					show_city_map()
 	elif state == "playing" or state == "intermission" or state == "boss_intro" or state == "boss_rewards" or state == "pre_boss_shop_wait":
@@ -3267,7 +3292,7 @@ func draw_ship_status_modal() -> void:
 func draw_final_orb_speech() -> void:
 	# A readable two-part conversation anchored above the moving player ship.
 	# Bubble stays within the game window when the player is near screen edges.
-	if final_dialogue_stage == 0 or state != "boss_rewards" or level != MAX_LEVEL:
+	if final_dialogue_stage == 0 or state != "boss_rewards" or level != CROATIA_FINAL_LEVEL:
 		return
 	var bubble_width := 460.0
 	var bubble_height := 128.0
@@ -3417,14 +3442,14 @@ func _draw() -> void:
 		if spin_countdown > 0.0:
 			draw_arc(pos, 106.0, 0.0, TAU, 64, Color(1.0, 0.25, 0.65, 0.9), 5.0)
 			text_at("360 ATTACK!  R SHIELD!", 201, 230, 25, Color(1.0, 0.5, 0.65))
-		if level != MAX_LEVEL and boss_warning_time > 0.0:
+		if level != CROATIA_FINAL_LEVEL and boss_warning_time > 0.0:
 			# Keep the regular lieutenants' aimed-shot telegraph; hide it for the final Guardian.
 			draw_rect(Rect2(boss_warning_x - 25.0, 215.0, 50.0, H - 295.0), Color(1.0, 0.16, 0.1, 0.16))
 			draw_line(Vector2(boss_warning_x, 215.0), Vector2(boss_warning_x, H - 80.0), Color(1.0, 0.35, 0.25, 0.7), 2.0)
 		# HP remains the main red bar. Separate shield HP segments sit directly below it.
 		draw_rect(Rect2(150, 85, 420, 12), Color(0.25, 0.25, 0.35))
 		draw_rect(Rect2(150, 85, 420 * clampf(float(boss["hp"]) / float(boss["max_hp"]), 0.0, 1.0), 12), Color(0.9, 0.25, 0.3))
-		var shield_max := 4 if level == MAX_LEVEL else 2
+		var shield_max := 4 if level == CROATIA_FINAL_LEVEL else 2
 		var shield_segment_width := 420.0 / float(shield_max)
 		var shield_fraction := clampf(boss_shield_hp / maxf(1.0, boss_shield_max_hp), 0.0, 1.0)
 		draw_rect(Rect2(150, 102, 420, 9), Color(0.09, 0.19, 0.31))
@@ -3435,7 +3460,7 @@ func _draw() -> void:
 			if segment_fill > 0.0:
 				draw_rect(Rect2(segment_left + 2.0, 103.0, (shield_segment_width - 4.0) * segment_fill, 7.0), Color(0.27, 0.83, 1.0))
 		var shield_hp_text := "%d/%d" % [ceili(boss_shield_hp), ceili(boss_shield_max_hp)]
-		var boss_status := "ZONE GUARDIAN | SHIELD: %s HP" % shield_hp_text if level == MAX_LEVEL else "CITY GUARDIAN | SHIELD: %s HP" % shield_hp_text
+		var boss_status := "ZONE GUARDIAN | SHIELD: %s HP" % shield_hp_text if level == CROATIA_FINAL_LEVEL else "CITY GUARDIAN | SHIELD: %s HP" % shield_hp_text
 		text_at(boss_status, 155, 135, 18)
 	for drop in drops:
 		var pos: Vector2 = drop["pos"]
@@ -3483,7 +3508,7 @@ func _draw() -> void:
 		# Separate lieutenant announcement instead of an abrupt boss spawn.
 		draw_rect(Rect2(42, 338, 636, 190), Color(0.08, 0.07, 0.17, 0.94))
 		draw_rect(Rect2(42, 338, 636, 5), Color(0.8, 0.36, 0.94))
-		if level == MAX_LEVEL:
+		if level == CROATIA_FINAL_LEVEL:
 			text_at("THE GUARDIAN HAS COME", 136, 405, 29, Color(1.0, 0.91, 0.9))
 			text_at("TO DEAL WITH YOU", 198, 448, 29, Color(1.0, 0.74, 0.77))
 			text_at("PERSONALLY", 259, 492, 33, Color(1.0, 0.53, 0.62))
@@ -3499,7 +3524,7 @@ func _draw() -> void:
 		var title_size := 35
 		var title_width := font.get_string_size(level_title, HORIZONTAL_ALIGNMENT_LEFT, -1, title_size).x
 		text_at(level_title, (W - title_width) / 2.0, 442, title_size, Color(0.92, 0.97, 1.0))
-	if state == "boss_rewards" and level == MAX_LEVEL:
+	if state == "boss_rewards" and level == CROATIA_FINAL_LEVEL:
 		# Keep this message visible even before the white orb is collected.
 		draw_rect(Rect2(156.0, 205.0, 408.0, 63.0), Color(0.06, 0.16, 0.23, 0.88))
 		text_at("ZONE LIBERATED", 195, 249, 33, Color(0.61, 1.0, 0.74))
