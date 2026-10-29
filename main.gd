@@ -732,6 +732,36 @@ func draw_crab_25d(pos: Vector2) -> void:
 	draw_circle(pos + Vector2(7.0, -4.0), 2.2, Color(0.23, 0.07, 0.12))
 
 
+func draw_atlantean_lancer(pos: Vector2) -> void:
+	# Turquoise-and-gold trident soldier; original geometric artwork.
+	draw_colored_polygon(PackedVector2Array([pos + Vector2(0,-30), pos + Vector2(-20,0), pos + Vector2(-12,24), pos + Vector2(12,24), pos + Vector2(20,0)]), Color(0.08,0.63,0.64))
+	draw_circle(pos + Vector2(0,-12), 9, Color(0.92,0.71,0.32))
+	draw_line(pos + Vector2(13,-29), pos + Vector2(13,28), Color(1.0,0.83,0.44), 4)
+	for dx in [-8.0, 0.0, 8.0]:
+		draw_line(pos + Vector2(13,-24), pos + Vector2(13+dx,-39), Color(1.0,0.87,0.52), 3)
+
+
+func draw_coral_colossus(pos: Vector2) -> void:
+	# Armored coral colossus with branching red-orange horns.
+	draw_rect(Rect2(pos.x-33,pos.y-26,66,58), Color(0.55,0.18,0.15))
+	draw_rect(Rect2(pos.x-24,pos.y-19,48,42), Color(0.94,0.43,0.23))
+	for dx in [-24.0,24.0]:
+		draw_line(pos + Vector2(dx,-17), pos + Vector2(dx*1.4,-39), Color(1.0,0.61,0.34), 7)
+	draw_circle(pos + Vector2(-10,-7), 5, Color(0.08,0.23,0.31))
+	draw_circle(pos + Vector2(10,-7), 5, Color(0.08,0.23,0.31))
+	draw_arc(pos, 33, 0, TAU, 32, Color(1.0,0.75,0.44,0.67), 3)
+
+
+func draw_abyssal_siren(pos: Vector2) -> void:
+	# Violet oracle with floating tail and energy halo.
+	var sway: float = sin(level_time*3.5 + pos.x*0.01)*7.0
+	draw_arc(pos+Vector2(0,-13), 29, 0, TAU, 32, Color(0.70,0.43,1.0,0.8), 3)
+	draw_colored_polygon(PackedVector2Array([pos+Vector2(0,-31), pos+Vector2(-18,-5), pos+Vector2(-12,17), pos+Vector2(sway,35), pos+Vector2(15,11), pos+Vector2(18,-5)]),Color(0.34,0.16,0.60))
+	draw_circle(pos + Vector2(0,-15), 12, Color(0.70,0.49,0.95))
+	for eye_x in [-5.0,5.0]:
+		draw_circle(pos + Vector2(eye_x,-16), 2.4, Color(0.71,0.96,1.0))
+
+
 func draw_eel_25d(pos: Vector2) -> void:
 	var wiggle := sin(level_time * 7.5 + pos.x * 0.015) * 6.0
 	var tail := pos + Vector2(-22.0, 18.0 + wiggle)
@@ -1900,6 +1930,8 @@ func spawn_wave() -> void:
 			var left := side == 0
 			var is_guard := index < 2
 			var kind := 1 if is_guard else (0 if index == 2 or index == 4 else 2)
+			if in_bosnia():
+				kind = 4 if is_guard else (3 if city_mission() <= 2 or index == 2 else 5)
 			var lane := index if is_guard else (index - 2) % 2
 			var formation_x := (155.0 + float(lane) * 120.0) if left else (565.0 - float(lane) * 120.0)
 			var row_y := (505.0 + float(index) * 45.0) if is_guard else (250.0 + float(index - 2) * 67.0)
@@ -1937,7 +1969,7 @@ func spawn_wave() -> void:
 				"path": path_id,
 				"side": -1.0 if left else 1.0,
 				"offset": float(index) * 0.26,
-				"hp": 3 if is_guard and level <= 5 else (5 + mini(int((level - 1) / 5), 4) if is_guard else 2 + mini(int((level - 1) / 5), 4)),
+				"hp": int(BOSNIA_ENEMY_STATS[kind]["hp"]) if in_bosnia() else (3 if is_guard and level <= 5 else (5 + mini(int((level - 1) / 5), 4) if is_guard else 2 + mini(int((level - 1) / 5), 4))),
 				"kind": kind
 			})
 
@@ -1988,7 +2020,11 @@ func move_enemy(enemy: Dictionary, delta: float) -> void:
 			3:
 				position.x += side * sway * 38.0
 				position.y += vertical * 13.0
-		if int(enemy["kind"]) == 2:
+		if int(enemy["kind"]) == 3:
+			position.x += sin(t * 2.9) * 34.0
+		elif int(enemy["kind"]) == 5:
+			position.y += sin(t * 2.2) * 22.0
+		elif int(enemy["kind"]) == 2:
 			position.x += sin(t * 3.5) * 13.0
 		elif int(enemy["kind"]) == 1:
 			position.y += sin(t * 0.9) * 7.0
@@ -2095,7 +2131,7 @@ func launch_boss() -> void:
 	boss_active = true
 	enemy_bullets.clear()
 	# Each liberated city has a stronger guardian; Zagreb is the final fight.
-	var boss_hp := 1000.0 if level == CROATIA_FINAL_LEVEL else 200.0 + float(int((level - 1) / 5)) * 70.0
+	var boss_hp := 1000.0 if level == CROATIA_FINAL_LEVEL else (1500.0 if level == BOSNIA_FINAL_LEVEL else 200.0 + float(int((level - 1) / 5)) * 70.0)
 	boss = {"pos": Vector2(W / 2.0, 155.0), "prev_pos": Vector2(W / 2.0, 155.0), "hp": boss_hp, "max_hp": boss_hp, "direction": 1.0}
 	boss_shield_max_hp = float(boss_hp) * BOSS_SHIELD_HP_RATIO
 	boss_shield_hp = boss_shield_max_hp
@@ -2320,7 +2356,9 @@ func update_enemies(delta: float) -> void:
 			var attacker: Dictionary = candidates.pick_random()
 			var source: Vector2 = attacker["pos"] + Vector2(0, 25)
 			var kind: int = int(attacker["kind"])
-			if level <= 5:
+			if in_bosnia():
+				fire_bosnia_enemy_pattern(source, kind)
+			elif level <= 5:
 				enemy_bullets.append(source)
 				if kind == 0:
 					enemy_bullets.append(source + Vector2(22, 0))
@@ -2330,6 +2368,19 @@ func update_enemies(delta: float) -> void:
 
 func launch_enemy_shot(origin: Vector2, velocity: Vector2, tint: Color) -> void:
 	radial_bullets.append({"pos": origin, "velocity": velocity * REGULAR_ENEMY_PROJECTILE_SPEED_FACTOR, "color": tint})
+
+func fire_bosnia_enemy_pattern(origin: Vector2, kind: int) -> void:
+	var aim: Vector2 = (Vector2(player_x, PLAYER_Y) - origin).normalized()
+	match kind:
+		3:
+			launch_enemy_shot(origin, aim * 295.0, Color(0.30, 0.98, 0.89))
+		4:
+			for angle in [-0.20, 0.20]:
+				launch_enemy_shot(origin, aim.rotated(angle) * 200.0, Color(1.0, 0.55, 0.32))
+		5:
+			for angle in [-0.34, 0.0, 0.34]:
+				launch_enemy_shot(origin, aim.rotated(angle) * 255.0, Color(0.80, 0.45, 1.0))
+
 
 func fire_advanced_enemy_pattern(origin: Vector2, kind: int) -> void:
 	# Distinct, readable attacks for the second five-mission block.
@@ -2540,7 +2591,7 @@ func update_bullets(delta: float) -> void:
 				var enemy: Dictionary = enemies[j]
 				var target_previous: Vector2 = enemy.get("prev_pos", enemy["pos"])
 				var target_current: Vector2 = enemy["pos"]
-				var hit_radius := 33.0 if int(enemy["kind"]) == 1 else 29.0
+				var hit_radius := 39.0 if int(enemy["kind"]) == 4 else (33.0 if int(enemy["kind"]) == 1 else 29.0)
 				var hit_t := swept_hit_fraction(previous, shot, target_previous, target_current, hit_radius)
 				if hit_t >= 0.0 and hit_t < first_hit:
 					first_hit = hit_t
@@ -2581,14 +2632,15 @@ func update_bullets(delta: float) -> void:
 				if int(enemies[target_index]["hp"]) <= 0:
 					play_arcade_sfx("destroy")
 					var enemy_pos: Vector2 = enemies[target_index]["pos"]
+					var defeated_kind: int = int(enemies[target_index]["kind"])
 					enemies.remove_at(target_index)
 					kills += 1
 					total_kills += 1
 					try_drop_double_shot(enemy_pos)
-					score += 100 * score_multiplier()
+					score += (int(BOSNIA_ENEMY_STATS[defeated_kind]["score"]) if defeated_kind >= 3 else 100) * score_multiplier()
 					if total_kills % 30 == 0:
 						drop_score_multiplier(enemy_pos)
-					scrap += 12
+					scrap += int(BOSNIA_ENEMY_STATS[defeated_kind]["scrap"]) if defeated_kind >= 3 else 12
 					explosions.append({"pos": enemy_pos, "time": 0.3})
 					if randf() < 0.85:
 						drop_scrap(enemy_pos, 1)
@@ -3467,6 +3519,12 @@ func _draw() -> void:
 				draw_crab_25d(pos)
 			2:
 				draw_eel_25d(pos)
+			3:
+				draw_atlantean_lancer(pos)
+			4:
+				draw_coral_colossus(pos)
+			5:
+				draw_abyssal_siren(pos)
 	if boss_active and not boss.is_empty():
 		var pos: Vector2 = boss["pos"]
 		draw_boss_25d(pos)
