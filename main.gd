@@ -60,7 +60,7 @@ const BINDINGS_FILE := "user://controls.cfg" # Legacy save path, supported for m
 const CONTROL_SAVE_FOLDER := "AdriaticUprising"
 const BIND_ACTIONS := ["MOVE LEFT", "MOVE RIGHT", "FIRE", "SHIELD", "PAUSE", "SHIP STATUS"]
 const BIND_DEFAULT := [KEY_A, KEY_D, KEY_SPACE, KEY_R, KEY_P, KEY_TAB]
-const BIND_RESTRICTED := [KEY_ESCAPE, KEY_ENTER, KEY_KP_ENTER, KEY_F2, KEY_F3, KEY_O, KEY_M, KEY_BRACKETLEFT, KEY_BRACKETRIGHT, KEY_COMMA, KEY_PERIOD]
+const BIND_RESTRICTED := [KEY_ESCAPE, KEY_ENTER, KEY_KP_ENTER, KEY_F2, KEY_F3, KEY_F4, KEY_O, KEY_M, KEY_BRACKETLEFT, KEY_BRACKETRIGHT, KEY_COMMA, KEY_PERIOD]
 const MENU_ITEMS := ["CONTINUE", "NEW GAME", "HIGH SCORES", "OPTIONS", "EXIT"]
 const CAMPAIGN_SAVE_FILE := "user://campaign_save.cfg"
 const CAMPAIGN_SAVE_VERSION := 1
@@ -170,6 +170,8 @@ var pause_menu_selection := 0
 var pause_confirm_yes := false
 var god_mode := false # Local QA toggle (O key), blocks actual life and weapon loss
 var debug_level_menu := false
+var debug_weapon_menu := false
+var debug_weapon_selection := 0
 var show_performance_stats := false # F3 toggles an FPS/process-time diagnostic overlay
 var debug_selected_level := 1
 var debug_run := false # Debug skips never qualify for persistent High Scores.
@@ -1182,7 +1184,7 @@ func update_retro_music() -> void:
 		current_music = needed
 		music_player.stream = music_streams[needed]
 		music_player.play()
-	music_player.stream_paused = game_paused or show_stats_modal or debug_level_menu
+	music_player.stream_paused = game_paused or show_stats_modal or debug_level_menu or debug_weapon_menu
 	music_player.volume_db = -80.0 if music_volume <= 0.0 else linear_to_db(music_volume)
 
 
@@ -1457,6 +1459,7 @@ func continue_campaign() -> void:
 	game_paused = false
 	show_stats_modal = false
 	debug_level_menu = false
+	debug_weapon_menu = false
 	god_mode = false
 	awaiting_score_name = false
 	drops.clear()
@@ -1582,7 +1585,7 @@ func cycle_city(direction: int) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if state != "city_select" or debug_level_menu:
+	if state != "city_select" or debug_level_menu or debug_weapon_menu:
 		return
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 		for city_index in range(CITY_POINTS.size()):
@@ -1854,6 +1857,7 @@ func jump_to_debug_level() -> void:
 	# Retain current equipment and God Mode so the target can be tested easily.
 	debug_run = true
 	debug_level_menu = false
+	debug_weapon_menu = false
 	# Debug run uses canonical city order regardless of campaign route.
 	city_route.clear()
 	for city_index in range(CITY_NAMES.size()):
@@ -1895,6 +1899,33 @@ func draw_debug_level_menu() -> void:
 	text_at("SELECTED: %s - LEVEL %d" % [selected_city, debug_selected_level], 172, 661, 23, Color(1.0, 0.9, 0.48))
 	text_at("LEFT/RIGHT: CITY     UP/DOWN: LEVEL", 130, 702, 18, Color(0.8, 0.91, 1.0))
 	text_at("ENTER: START     ESC / F2: CLOSE", 145, 730, 18, Color(0.65, 0.97, 0.8))
+
+
+func apply_debug_weapon(choice: int) -> void:
+	# Test-only loadout; never auto-save or charge Scrap.
+	# Arc Lightning is an add-on, so it can accompany ordinary shots.
+	debug_run = true
+	damage_level = 0 if choice == 0 or choice == 3 else (3 if choice == 1 else 6)
+	arc_lightning_owned = choice == 3 or choice == 4
+	arc_lightning_cooldown = 0.0
+	arc_lightning_effects.clear()
+	player_bullets.clear()
+	fire_clock = 0.0
+	debug_weapon_menu = false
+	queue_redraw()
+
+
+func draw_debug_weapon_menu() -> void:
+	draw_rect(Rect2(0, 0, W, H), Color(0.0, 0.02, 0.07, 0.86))
+	draw_rect(Rect2(95, 210, 530, 545), Color(0.06, 0.12, 0.24, 0.98))
+	text_at("DEBUG WEAPON SELECT [F4]", 138, 273, 27, Color(0.45, 0.95, 1.0))
+	var names := ["SINGLE SHOT", "DOUBLE SHOT", "TRIPLE SHOT", "ARC LIGHTNING + SINGLE", "ARC LIGHTNING + TRIPLE"]
+	for i in range(names.size()):
+		var y := 318.0 + float(i) * 70.0
+		draw_rect(Rect2(130, y, 460, 56), Color(0.15, 0.44, 0.68) if i == debug_weapon_selection else Color(0.1, 0.2, 0.34))
+		text_at("%d - %s" % [i + 1, names[i]], 148, y + 36, 21, Color.WHITE)
+	text_at("UP / DOWN + ENTER  OR  KEYS 1-5", 151, 695, 18, Color(0.77, 0.92, 1.0))
+	text_at("ESC / F4 CLOSE  |  FREE QA LOADOUT", 151, 729, 17, Color(0.62, 0.96, 0.77))
 
 
 func start_level(resume_boss: bool = false) -> void:
@@ -2211,7 +2242,7 @@ func _process(delta: float) -> void:
 		menu_anim_time += delta
 		queue_redraw()
 		return
-	if debug_level_menu or game_paused or show_stats_modal:
+	if debug_level_menu or debug_weapon_menu or game_paused or show_stats_modal:
 		queue_redraw()
 		return
 	
@@ -3232,6 +3263,28 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		update_sound_volumes()
 		queue_redraw()
 		return
+	# F4 weapon selection is independent of F2 level select.
+	if event.keycode == KEY_F4 and not state in ["main_menu", "menu_confirm_new", "menu_options", "menu_highscores", "menu_bindings"]:
+		debug_weapon_menu = not debug_weapon_menu
+		if debug_weapon_menu:
+			debug_level_menu = false
+			debug_weapon_selection = 4 if arc_lightning_owned and damage_level >= 6 else (3 if arc_lightning_owned else (2 if damage_level >= 6 else (1 if damage_level >= 3 else 0)))
+		queue_redraw()
+		return
+	if debug_weapon_menu:
+		match event.keycode:
+			KEY_ESCAPE:
+				debug_weapon_menu = false
+			KEY_UP:
+				debug_weapon_selection = posmod(debug_weapon_selection - 1, 5)
+			KEY_DOWN:
+				debug_weapon_selection = posmod(debug_weapon_selection + 1, 5)
+			KEY_ENTER, KEY_KP_ENTER:
+				apply_debug_weapon(debug_weapon_selection)
+			KEY_1, KEY_2, KEY_3, KEY_4, KEY_5:
+				apply_debug_weapon(event.keycode - KEY_1)
+		queue_redraw()
+		return
 	# F3: display actual frame rate and frame duration for diagnosing hitches.
 	if event.keycode == KEY_F3:
 		show_performance_stats = not show_performance_stats
@@ -3820,6 +3873,8 @@ func _draw() -> void:
 		draw_city_flight()
 	if debug_level_menu:
 		draw_debug_level_menu()
+	if debug_weapon_menu:
+		draw_debug_weapon_menu()
 	if show_performance_stats:
 		var fps := Engine.get_frames_per_second()
 		var frame_ms := Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0
