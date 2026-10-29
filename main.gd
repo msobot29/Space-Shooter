@@ -800,8 +800,25 @@ func draw_eel_25d(pos: Vector2) -> void:
 func draw_boss_25d(pos: Vector2) -> void:
 	if level == CROATIA_FINAL_LEVEL:
 		draw_zone_guardian_25d(pos)
+	elif in_bosnia():
+		draw_atlantean_guardian(pos)
 	else:
 		draw_city_lieutenant_25d(pos, city_name())
+
+
+func draw_atlantean_guardian(pos: Vector2) -> void:
+	var final_boss: bool = level == BOSNIA_FINAL_LEVEL
+	var boss_scale: float = 1.45 if final_boss else 1.0
+	draw_set_transform(pos, 0.0, Vector2.ONE * boss_scale)
+	draw_circle(Vector2(0, 10), 60, Color(0.08, 0.29, 0.37, 0.82))
+	draw_colored_polygon(PackedVector2Array([Vector2(0,-58), Vector2(-51,-8), Vector2(-37,54), Vector2(37,54), Vector2(51,-8)]), Color(0.14,0.48,0.57))
+	draw_circle(Vector2(0,-18), 24, Color(0.67,0.79,0.67))
+	for horn in [-1.0, 0.0, 1.0]:
+		var x: float = horn * 23.0
+		draw_colored_polygon(PackedVector2Array([Vector2(x-10,-43), Vector2(x,-85 if final_boss else -69), Vector2(x+10,-43)]),Color(0.97,0.77,0.31))
+	for eye_x in [-11.0, 11.0]:
+		draw_circle(Vector2(eye_x,-22), 5, Color(0.51,1.0,0.90))
+	draw_set_transform(Vector2.ZERO)
 
 
 func rotate_polygon_points(points: Array[Vector2], center: Vector2, angle: float) -> PackedVector2Array:
@@ -1598,7 +1615,10 @@ func draw_balkan_relief() -> void:
 
 
 func draw_city_map() -> void:
-	draw_bosnia_relief() if city_route.size() >= 5 else draw_balkan_relief()
+	if city_route.size() >= 5:
+		draw_bosnia_relief()
+	else:
+		draw_balkan_relief()
 	draw_rect(Rect2(18, 27, 684, 145), Color(0.025, 0.065, 0.14, 0.94))
 	text_at("ADRIATIC UPRISING", 127, 77, 35, Color(0.95, 0.97, 1.0))
 	text_at("BOSNIA & HERZEGOVINA - LIBERATION" if city_route.size() >= 5 else "SELECT THE NEXT CITY TO LIBERATE", 92, 118, 22, Color(0.65, 0.95, 1.0))
@@ -1653,7 +1673,10 @@ func draw_bosnia_relief() -> void:
 func draw_mission_briefing() -> void:
 	# A short story briefing before the existing 6-second flight.
 	# Nothing is committed to the campaign route until the player confirms deployment.
-	draw_bosnia_relief() if briefing_city_index >= 5 else draw_balkan_relief()
+	if briefing_city_index >= 5:
+		draw_bosnia_relief()
+	else:
+		draw_balkan_relief()
 	draw_rect(Rect2(33.0, 55.0, 654.0, 838.0), Color(0.025, 0.07, 0.14, 0.96))
 	draw_rect(Rect2(33.0, 55.0, 654.0, 6.0), Color(0.33, 0.84, 1.0))
 	text_at("MISSION BRIEFING", 171, 117, 36, Color(0.57, 0.94, 1.0))
@@ -1694,7 +1717,10 @@ func draw_mission_briefing() -> void:
 
 
 func draw_city_flight() -> void:
-	draw_bosnia_relief() if selected_city >= 5 else draw_balkan_relief()
+	if selected_city >= 5:
+		draw_bosnia_relief()
+	else:
+		draw_balkan_relief()
 	var destination: Vector2 = CITY_POINTS[selected_city]
 	var fraction := clampf(city_flight_time / CITY_FLIGHT_SECONDS, 0.0, 1.0)
 	var eased := fraction * fraction * (3.0 - 2.0 * fraction)
@@ -1798,7 +1824,7 @@ func jump_to_debug_level() -> void:
 	debug_level_menu = false
 	# Debug run uses canonical city order regardless of campaign route.
 	city_route.clear()
-	for city_index in range(5):
+	for city_index in range(CITY_NAMES.size()):
 		city_route.append(city_index)
 	level = clampi(debug_selected_level, 1, MAX_LEVEL)
 	lives = maxi(lives, 3)
@@ -1822,8 +1848,10 @@ func draw_debug_level_menu() -> void:
 	draw_rect(Rect2(0.0, 0.0, W, H), Color(0.0, 0.02, 0.07, 0.86))
 	draw_rect(Rect2(42.0, 205.0, 636.0, 550.0), Color(0.06, 0.12, 0.24, 0.98))
 	text_at("DEBUG LEVEL SELECT [F2]", 139, 260, 30, Color(0.45, 0.95, 1.0))
-	for city_index in range(5):
-		var start_x := 83.0 + float(city_index) * 122.0
+	var page: int = 5 if debug_selected_level > CROATIA_FINAL_LEVEL else 0
+	for local_index in range(5):
+		var city_index: int = local_index + page
+		var start_x: float = 83.0 + float(local_index) * 122.0
 		text_at(String(CITY_NAMES[city_index]), start_x, 315, 16, Color(0.96, 0.80, 0.45))
 		for city_stage in range(5):
 			var stage_number := city_index * 5 + city_stage + 1
@@ -1831,7 +1859,7 @@ func draw_debug_level_menu() -> void:
 			var active := stage_number == debug_selected_level
 			draw_rect(Rect2(start_x - 10.0, top, 105.0, 45.0), Color(0.14, 0.48, 0.72) if active else Color(0.10, 0.20, 0.35))
 			text_at("LVL %02d" % stage_number, start_x + 5.0, top + 30.0, 20, Color.WHITE if active else Color(0.74, 0.85, 0.95))
-	var selected_city := String(CITY_NAMES[clampi(int((debug_selected_level - 1) / 5), 0, 4)])
+	var selected_city := String(CITY_NAMES[clampi(int((debug_selected_level - 1) / 5), 0, CITY_NAMES.size() - 1)])
 	text_at("SELECTED: %s - LEVEL %d" % [selected_city, debug_selected_level], 172, 661, 23, Color(1.0, 0.9, 0.48))
 	text_at("LEFT/RIGHT: CITY     UP/DOWN: LEVEL", 130, 702, 18, Color(0.8, 0.91, 1.0))
 	text_at("ENTER: START     ESC / F2: CLOSE", 145, 730, 18, Color(0.65, 0.97, 0.8))
@@ -1893,8 +1921,8 @@ func start_level(resume_boss: bool = false) -> void:
 		# Resuming after the shop must NOT show a second shop.
 		begin_boss_intro()
 		save_campaign_checkpoint("pre_boss")
-	elif level == CROATIA_FINAL_LEVEL:
-		# The final guardian also has a shop BEFORE combat. Give any
+	elif is_region_boss():
+		# Regional guardians also have shops BEFORE combat. Give any
 		# remaining rewards time to fall, then wait four clear seconds.
 		begin_pre_boss_shop_wait()
 		save_campaign_checkpoint("playing")
