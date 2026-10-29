@@ -1654,6 +1654,20 @@ func draw_city_map() -> void:
 	text_at("6-SECOND FLIGHT TO SELECTED CITY", 160, 873, 18, Color(0.7, 0.88, 1.0))
 
 
+func draw_bosnia_stage_background() -> void:
+	# New forest/river environment for the Bosnia region, independent of Croatia.
+	draw_rect(Rect2(0, 0, W, H), Color(0.025, 0.10, 0.15))
+	for i in range(12):
+		var y: float = fposmod(float(i)*105.0 + bg_scroll_far, 1260.0) - 150.0
+		draw_rect(Rect2(0, y, W, 17), Color(0.11,0.31,0.35,0.28))
+	for i in range(7):
+		var y: float = fposmod(float(i)*175.0 + bg_scroll_mid, 1225.0) - 185.0
+		var points := PackedVector2Array([Vector2(0,y+60),Vector2(160,y-8),Vector2(330,y+40),Vector2(510,y-15),Vector2(720,y+65)])
+		draw_polyline(points, Color(0.19,0.38,0.31,0.51), 18, true)
+	var river_x: float = 355.0 + sin(level_time*0.23)*48.0
+	draw_line(Vector2(river_x,0), Vector2(river_x+65,H),Color(0.18,0.53,0.63,0.23),85,true)
+
+
 func draw_bosnia_relief() -> void:
 	# Original stylized Bosnia region map, not a precise geographic outline.
 	draw_rect(Rect2(0, 0, W, H), Color(0.025, 0.09, 0.15))
@@ -1707,7 +1721,7 @@ func draw_mission_briefing() -> void:
 	text_at("MISSION OBJECTIVES", 215, 569, 25, Color(1.0, 0.86, 0.49))
 	if briefing_city_index == 4 or briefing_city_index == 9:
 		text_at("- Defeat the final Zone Guardian", 109, 615, 21)
-		text_at("- Recover the mysterious white orb", 109, 654, 21)
+		text_at("- Secure the regional trophy" if briefing_city_index == 9 else "- Recover the mysterious white orb", 109, 654, 21)
 	else:
 		text_at("- Survive 5 levels in this city", 109, 615, 21)
 		text_at("- Defeat the lieutenant and collect its orb", 109, 654, 20)
@@ -2009,7 +2023,9 @@ func move_enemy(enemy: Dictionary, delta: float) -> void:
 	var flight_time := age - float(enemy["delay"])
 	if flight_time <= 0.0:
 		return
-	var entrance_time := 2.8
+	var entrance_time: float = 2.8
+	if in_bosnia() and int(enemy["kind"]) >= 3:
+		entrance_time = maxf(1.9, Vector2(enemy["start"]).distance_to(Vector2(enemy["target"])) / float(BOSNIA_ENEMY_STATS[int(enemy["kind"])]["speed"]))
 	var fraction := clampf(flight_time / entrance_time, 0.0, 1.0)
 	var eased := fraction * fraction * (3.0 - 2.0 * fraction)
 	var source: Vector2 = enemy["start"]
@@ -2180,7 +2196,9 @@ func _process(delta: float) -> void:
 		return
 	
 	if state in ["playing", "intermission", "boss_intro", "boss_rewards", "shop_arrival", "pre_boss_shop_wait"]:
-		if city_name() == "ZADAR":
+		if in_bosnia():
+			update_background(delta)
+		elif city_name() == "ZADAR":
 			update_background(delta)
 		elif city_name() == "RIJEKA":
 			update_rijeka_background(delta)
@@ -2711,7 +2729,7 @@ func drop_scrap(pos: Vector2, amount: int) -> void:
 
 func drop_life_orb(pos: Vector2) -> void:
 	# Four guardian lieutenants grant four uniquely colored parts of one life.
-	var orb_index := int(level / 5) - 1
+	var orb_index := (int(level / 5) - 1) % 5
 	if orb_index < 0 or orb_index >= 4:
 		return
 	drops.append({
@@ -3466,9 +3484,11 @@ func _draw() -> void:
 		return
 	
 	var is_playfield := state in ["playing", "intermission", "boss_intro", "boss_rewards", "shop_arrival", "pre_boss_shop_wait"]
-	var has_animated_port := is_playfield and city_name() in ["ZADAR", "RIJEKA", "SPLIT", "OSIJEK", "ZAGREB"]
+	var has_animated_port := is_playfield and (in_bosnia() or city_name() in ["ZADAR", "RIJEKA", "SPLIT", "OSIJEK", "ZAGREB"])
 	if has_animated_port:
-		if city_name() == "ZADAR":
+		if in_bosnia():
+			draw_bosnia_stage_background()
+		elif city_name() == "ZADAR":
 			draw_zadar_background()
 		elif city_name() == "RIJEKA":
 			draw_rijeka_background()
@@ -3577,7 +3597,7 @@ func _draw() -> void:
 			if segment_fill > 0.0:
 				draw_rect(Rect2(segment_left + 2.0, 103.0, (shield_segment_width - 4.0) * segment_fill, 7.0), Color(0.27, 0.83, 1.0))
 		var shield_hp_text := "%d/%d" % [ceili(boss_shield_hp), ceili(boss_shield_max_hp)]
-		var boss_status := "ZONE GUARDIAN | SHIELD: %s HP" % shield_hp_text if level == CROATIA_FINAL_LEVEL else "CITY GUARDIAN | SHIELD: %s HP" % shield_hp_text
+		var boss_status := "ZONE GUARDIAN | SHIELD: %s HP" % shield_hp_text if level == CROATIA_FINAL_LEVEL else ("DROWNED KING | SHIELD: %s HP" % shield_hp_text if level == BOSNIA_FINAL_LEVEL else "CITY GUARDIAN | SHIELD: %s HP" % shield_hp_text)
 		text_at(boss_status, 155, 135, 18)
 	for drop in drops:
 		var pos: Vector2 = drop["pos"]
