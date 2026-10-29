@@ -3649,7 +3649,23 @@ func _draw() -> void:
 		var shot_pos: Vector2 = bullet["pos"]
 		var shot_velocity: Vector2 = bullet["velocity"]
 		var direction := shot_velocity.normalized()
-		draw_line(shot_pos - direction * 11.0, shot_pos + direction * 11.0, bullet.get("color", Color(1.0, 0.92, 0.25)), 6.0, true)
+		if bool(bullet.get("arc", false)):
+			# A large jagged electric bolt, visibly different from regular laser lines.
+			var side := Vector2(-direction.y, direction.x)
+			var phase := level_time * 34.0 + shot_pos.y * 0.035
+			var bolt := PackedVector2Array()
+			for segment in range(9):
+				var t := float(segment) / 8.0
+				var jitter := sin(phase + float(segment) * 2.71) * 9.0
+				if segment == 0 or segment == 8:
+					jitter = 0.0
+				bolt.append(shot_pos + direction * ((t - 0.5) * 74.0) + side * jitter)
+			draw_polyline(bolt, Color(0.14, 0.37, 1.0, 0.48), 17.0, true)
+			draw_polyline(bolt, Color(0.40, 0.85, 1.0, 0.92), 7.0, true)
+			draw_polyline(bolt, Color(0.96, 1.0, 1.0), 2.5, true)
+			draw_circle(shot_pos, 9.0, Color(0.28, 0.72, 1.0, 0.35))
+		else:
+			draw_line(shot_pos - direction * 11.0, shot_pos + direction * 11.0, bullet.get("color", Color(1.0, 0.92, 0.25)), 6.0, true)
 	for shot in enemy_bullets:
 		draw_circle(shot, 7.0, Color(1.0, 0.3, 0.18))
 	for bullet in radial_bullets:
@@ -3739,8 +3755,19 @@ func _draw() -> void:
 		var a: Vector2 = arc_fx["from"]
 		var b: Vector2 = arc_fx["to"]
 		var alpha: float = clampf(float(arc_fx["time"]) / 0.23, 0.0, 1.0)
-		draw_line(a, b, Color(0.35, 0.52, 1.0, alpha), 7.0, true)
-		draw_line(a, b, Color(0.83, 0.95, 1.0, alpha), 2.0, true)
+		# Jagged chain lightning instead of a straight laser between enemies.
+		var delta_arc := b - a
+		var side_arc := Vector2(-delta_arc.y, delta_arc.x).normalized()
+		var chain := PackedVector2Array()
+		for segment in range(9):
+			var t := float(segment) / 8.0
+			var jitter := sin(level_time * 53.0 + float(segment) * 3.9 + a.x) * 12.0
+			if segment == 0 or segment == 8:
+				jitter = 0.0
+			chain.append(a.lerp(b, t) + side_arc * jitter)
+		draw_polyline(chain, Color(0.19, 0.40, 1.0, alpha * 0.60), 15.0, true)
+		draw_polyline(chain, Color(0.45, 0.83, 1.0, alpha), 6.0, true)
+		draw_polyline(chain, Color(0.95, 1.0, 1.0, alpha), 2.0, true)
 	for effect in explosions:
 		var pos: Vector2 = effect["pos"]
 		draw_arc(pos, 30.0 * float(effect["time"]) / 0.3 + 8.0, 0, TAU, 20, Color(1.0, 0.68, 0.2), 4.0)
