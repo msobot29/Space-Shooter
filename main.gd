@@ -2980,14 +2980,14 @@ func draw_campaign_finale() -> void:
 	draw_menu_background()
 	draw_rect(Rect2(54.0, 47.0, 612.0, 849.0), Color(0.035, 0.075, 0.15, 0.96))
 	draw_rect(Rect2(54.0, 47.0, 612.0, 6.0), Color(0.40, 0.96, 0.73))
-	text_at("CROATIA LIBERATED!", 118.0, 119.0, 37, Color(0.53, 1.0, 0.72))
-	text_at("CAMPAIGN COMPLETE  -  25/25", 160.0, 158.0, 21, Color(0.78, 0.91, 1.0))
+	text_at("BOSNIA LIBERATED!" if in_bosnia() else "CROATIA LIBERATED!", 118.0, 119.0, 37, Color(0.53, 1.0, 0.72))
+	text_at("CAMPAIGN COMPLETE  -  50/50" if in_bosnia() else "CAMPAIGN COMPLETE  -  25/25", 160.0, 158.0, 21, Color(0.78, 0.91, 1.0))
 	# Five liberated sectors are shown in canonical campaign order.
 	for city_index in range(5):
 		var top := 185.0 + float(city_index) * 57.0
 		draw_rect(Rect2(92.0, top, 536.0, 47.0), Color(0.07, 0.18, 0.23, 0.97))
 		draw_circle(Vector2(116.0, top + 23.0), 8.0, Color(0.44, 1.0, 0.66))
-		text_at(String(CITY_NAMES[city_index]), 143.0, top + 32.0, 23, Color(0.92, 0.97, 1.0))
+		text_at(String(CITY_NAMES[city_index + 5] if in_bosnia() else CITY_NAMES[city_index]), 143.0, top + 32.0, 23, Color(0.92, 0.97, 1.0))
 		text_at("LIBERATED", 458.0, top + 31.0, 18, Color(0.57, 1.0, 0.77))
 	text_at("RECOVERED GUARDIAN ORBS", 151.0, 524.0, 22, Color(0.96, 0.88, 0.64))
 	for orb_index in range(4):
@@ -3004,7 +3004,7 @@ func draw_campaign_finale() -> void:
 	text_at("ENEMIES DEFEATED: %d" % total_kills, 212.0, 770.0, 19, Color(0.82, 0.92, 1.0))
 	draw_rect(Rect2(91.0, 788.0, 538.0, 62.0), Color(0.09, 0.18, 0.29, 0.93))
 	text_at("HQ: The coast is free. The orb remains a mystery.", 110.0, 817.0, 17, Color(0.78, 0.97, 0.88))
-	text_at("Our mission is complete. Return to base.", 153.0, 839.0, 17, Color(0.78, 0.97, 0.88))
+	text_at("Both regions are free. Return to base." if in_bosnia() else "Our mission is complete. Return to base.", 153.0, 839.0, 17, Color(0.78, 0.97, 0.88))
 	text_at("H - HIGH SCORES     ENTER - MAIN MENU", 153.0, 882.0, 18, Color(0.64, 0.91, 1.0))
 
 
@@ -3702,7 +3702,7 @@ func _draw() -> void:
 		else:
 			draw_leaderboard()
 			if state == "victory":
-				text_at("CROATIA LIBERATED!", 186, 174, 29, Color(0.45, 1.0, 0.7))
+				text_at("BOSNIA LIBERATED!" if in_bosnia() else "CROATIA LIBERATED!", 186, 174, 29, Color(0.45, 1.0, 0.7))
 			else:
 				text_at("GAME OVER", 258, 174, 29, Color(1.0, 0.35, 0.4))
 	if state == "shop_arrival":
