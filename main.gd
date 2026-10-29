@@ -136,6 +136,9 @@ var score := 0
 var scrap := 0
 var level := 1
 var damage_level := 0 # 0 = single, 3 = double, 6 = triple; purchased instantly
+var arc_lightning_owned := false
+var arc_lightning_cooldown := 0.0
+var arc_lightning_effects: Array[Dictionary] = []
 var rate_level := 0
 var speed_level := 0
 var ability_level := 1 # 1/2/3 = 2/4/6 seconds
@@ -1380,6 +1383,7 @@ func read_campaign_save() -> void:
 		"rate_level": int(config.get_value("campaign", "rate_level", 0)),
 		"speed_level": int(config.get_value("campaign", "speed_level", 0)),
 		"ability_level": int(config.get_value("campaign", "ability_level", 1)),
+		"arc_lightning_owned": bool(config.get_value("campaign", "arc_lightning_owned", false)),
 		"collected_orb_mask": int(config.get_value("campaign", "collected_orb_mask", 0)),
 		"campaign_orbs_found_mask": int(config.get_value("campaign", "campaign_orbs_found_mask", 0)),
 		"white_orb_collected": bool(config.get_value("campaign", "white_orb_collected", false)),
@@ -1405,6 +1409,7 @@ func save_campaign_checkpoint(checkpoint_state: String) -> void:
 	config.set_value("campaign", "rate_level", rate_level)
 	config.set_value("campaign", "speed_level", speed_level)
 	config.set_value("campaign", "ability_level", ability_level)
+	config.set_value("campaign", "arc_lightning_owned", arc_lightning_owned)
 	config.set_value("campaign", "collected_orb_mask", collected_orb_mask)
 	config.set_value("campaign", "campaign_orbs_found_mask", campaign_orbs_found_mask)
 	config.set_value("campaign", "white_orb_collected", white_orb_collected)
@@ -1438,6 +1443,9 @@ func continue_campaign() -> void:
 	rate_level = clampi(int(data["rate_level"]), 0, 4)
 	speed_level = clampi(int(data["speed_level"]), 0, 4)
 	ability_level = clampi(int(data["ability_level"]), 1, 3)
+	arc_lightning_owned = bool(data.get("arc_lightning_owned", false))
+	arc_lightning_cooldown = 0.0
+	arc_lightning_effects.clear()
 	collected_orb_mask = int(data["collected_orb_mask"])
 	campaign_orbs_found_mask = int(data.get("campaign_orbs_found_mask", 0))
 	white_orb_collected = bool(data["white_orb_collected"])
@@ -1549,6 +1557,9 @@ func start_new_campaign() -> void:
 	rate_level = 0
 	speed_level = 0
 	ability_level = 1
+	arc_lightning_owned = false
+	arc_lightning_cooldown = 0.0
+	arc_lightning_effects.clear()
 	ability_time = 0.0
 	ability_cooldown = 0.0
 	game_paused = false
@@ -1902,6 +1913,8 @@ func start_level(resume_boss: bool = false) -> void:
 	# Keep falling rewards across stages; they continue falling in the new mission.
 	explosions.clear()
 	bonus_popups.clear()
+	arc_lightning_effects.clear()
+	arc_lightning_cooldown = 0.0
 	boss.clear()
 	boss_active = false
 	boss_pending = level % 5 == 0 # Guardians at 5/10/15/20/25; final shop follows the boss
@@ -2297,6 +2310,7 @@ func _process(delta: float) -> void:
 		queue_redraw()
 		return
 	level_time += delta
+	arc_lightning_cooldown = maxf(0.0, arc_lightning_cooldown - delta)
 	invulnerable = maxf(0.0, invulnerable - delta)
 	if ability_time > 0.0:
 		ability_time = maxf(0.0, ability_time - delta)
@@ -2361,6 +2375,9 @@ func add_player_bullet(offset_x: float, angle_degrees: float) -> void:
 	player_bullets.append({"pos": Vector2(player_x + offset_x, PLAYER_Y - 34.0), "velocity": velocity, "color": weapon_projectile_color()})
 
 func fire_weapon() -> void:
+	if arc_lightning_owned and arc_lightning_cooldown <= 0.0:
+		player_bullets.append({"pos": Vector2(player_x, PLAYER_Y - 34.0), "velocity": Vector2(0.0, -BULLET_SPEED * 0.85), "color": Color(0.60, 0.90, 1.0), "arc": true})
+		arc_lightning_cooldown = ARC_LIGHTNING_COOLDOWN
 	if damage_level >= 6:
 		play_arcade_sfx("triple_shoot")
 	elif damage_level >= 3:
@@ -2599,6 +2616,54 @@ func swept_hit_fraction(from_pos: Vector2, to_pos: Vector2, target_before: Vecto
 	var t: float = (-b - sqrt(discriminant)) / (2.0 * a)
 	return t if t >= 0.0 and t <= 1.0 else -1.0
 
+func award_enemy_kill(index: int) -> void:
+	if index < 0 or index >= enemies.size():
+		return
+	play_arcade_sfx("destroy")
+	var enemy_pos: Vector2 = enemies[index]["pos"]
+	var defeated_kind: int = int(enemies[index]["kind"])
+	enemies.remove_at(index)
+	kills += 1
+	total_kills += 1
+	try_drop_double_shot(enemy_pos)
+	score += (int(BOSNIA_ENEMY_STATS[defeated_kind]["score"]) if defeated_kind >= 3 else 100) * score_multiplier()
+	if total_kills % 30 == 0:
+		drop_score_multiplier(enemy_pos)
+	scrap += int(BOSNIA_ENEMY_STATS[defeated_kind]["scrap"]) if defeated_kind >= 3 else 12
+	explosions.append({"pos": enemy_pos, "time": 0.3})
+	if randf() < 0.85:
+		drop_scrap(enemy_pos, 1)
+
+
+func arc_chain_impact(first_index: int) -> void:
+	# Instant first hit (8), up to two jumps (6, 4.5); each link <=130px.
+	var origin: Vector2 = Vector2.ZERO
+	var already_hit: Array[Vector2] = []
+	for link in range(3):
+		var target_index: int = first_index if link == 0 else -1
+		if link > 0:
+			var closest: float = ARC_CHAIN_RANGE
+			for j in range(enemies.size()):
+				var candidate: Vector2 = enemies[j]["pos"]
+				if already_hit.has(candidate):
+					continue
+				var distance: float = origin.distance_to(candidate)
+				if distance <= closest:
+					closest = distance
+					target_index = j
+		if target_index < 0 or target_index >= enemies.size():
+			break
+		var target_pos: Vector2 = enemies[target_index]["pos"]
+		if link > 0:
+			arc_lightning_effects.append({"from": origin, "to": target_pos, "time": 0.23})
+		already_hit.append(target_pos)
+		origin = target_pos
+		var damage: float = 8.0 * pow(0.75, link)
+		enemies[target_index]["hp"] = 0.0 if god_mode else float(enemies[target_index]["hp"]) - damage
+		if float(enemies[target_index]["hp"]) <= 0.0:
+			award_enemy_kill(target_index)
+
+
 func update_bullets(delta: float) -> void:
 	for i in range(player_bullets.size() - 1, -1, -1):
 		var bullet: Dictionary = player_bullets[i]
@@ -2644,11 +2709,11 @@ func update_bullets(delta: float) -> void:
 				elif boss_shield_hp > 0.0:
 					# Shield HP is 70% of the boss's max HP. Each hit removes
 					# weapon damage from the shield, not an entire ring.
-					boss_shield_hp = maxf(0.0, boss_shield_hp - (2.0 + damage_level))
+					boss_shield_hp = maxf(0.0, boss_shield_hp - (8.0 if bool(bullet.get("arc", false)) else 2.0 + damage_level))
 					var total_layers := 4 if level == CROATIA_FINAL_LEVEL else 2
 					boss_shields = ceili(float(total_layers) * boss_shield_hp / boss_shield_max_hp) if boss_shield_hp > 0.0 else 0
 				else:
-					boss["hp"] = maxf(0.0, float(boss["hp"]) - (2.0 + damage_level))
+					boss["hp"] = maxf(0.0, float(boss["hp"]) - (8.0 if bool(bullet.get("arc", false)) else 2.0 + damage_level))
 				if boss_shields == 0 and float(boss["hp"]) <= 0.0:
 					play_arcade_sfx("boss")
 					score += 2500 * score_multiplier()
@@ -2659,23 +2724,13 @@ func update_bullets(delta: float) -> void:
 						drop_life_orb(Vector2(boss["pos"]))
 					boss.clear()
 			else:
-				# QA one-shot keeps normal kills, Scrap, drops and score bookkeeping.
-				enemies[target_index]["hp"] = 0 if god_mode else int(enemies[target_index]["hp"]) - (1 + damage_level)
-				if int(enemies[target_index]["hp"]) <= 0:
-					play_arcade_sfx("destroy")
-					var enemy_pos: Vector2 = enemies[target_index]["pos"]
-					var defeated_kind: int = int(enemies[target_index]["kind"])
-					enemies.remove_at(target_index)
-					kills += 1
-					total_kills += 1
-					try_drop_double_shot(enemy_pos)
-					score += (int(BOSNIA_ENEMY_STATS[defeated_kind]["score"]) if defeated_kind >= 3 else 100) * score_multiplier()
-					if total_kills % 30 == 0:
-						drop_score_multiplier(enemy_pos)
-					scrap += int(BOSNIA_ENEMY_STATS[defeated_kind]["scrap"]) if defeated_kind >= 3 else 12
-					explosions.append({"pos": enemy_pos, "time": 0.3})
-					if randf() < 0.85:
-						drop_scrap(enemy_pos, 1)
+				if bool(bullet.get("arc", false)):
+					arc_chain_impact(target_index)
+					arc_lightning_effects.append({"from": previous, "to": Vector2(enemies[target_index]["pos"]) if target_index < enemies.size() else impact, "time": 0.23})
+				else:
+					enemies[target_index]["hp"] = 0 if god_mode else int(enemies[target_index]["hp"]) - (1 + damage_level)
+					if int(enemies[target_index]["hp"]) <= 0:
+						award_enemy_kill(target_index)
 		if hit or shot.y < -20.0 or shot.x < -25.0 or shot.x > W + 25.0:
 			player_bullets.remove_at(i)
 	for i in range(radial_bullets.size() - 1, -1, -1):
@@ -2857,6 +2912,10 @@ func show_weapon_score_bonus() -> void:
 
 
 func update_effects(delta: float) -> void:
+	for i in range(arc_lightning_effects.size() - 1, -1, -1):
+		arc_lightning_effects[i]["time"] = float(arc_lightning_effects[i]["time"]) - delta
+		if float(arc_lightning_effects[i]["time"]) <= 0.0:
+			arc_lightning_effects.remove_at(i)
 	for i in range(bonus_popups.size() - 1, -1, -1):
 		bonus_popups[i]["time"] = float(bonus_popups[i]["time"]) - delta
 		bonus_popups[i]["pos"] = Vector2(bonus_popups[i]["pos"]) + Vector2(0.0, -42.0 * delta)
@@ -3017,6 +3076,9 @@ func draw_leaderboard() -> void:
 		text_at("Your score: %d" % score, 254, 738, 22, Color(1.0, 0.87, 0.60))
 		text_at("ENTER - Main Menu", 245, 781, 21, Color(0.55, 0.89, 1.0))
 
+const ARC_LIGHTNING_PRICE := 3200
+const ARC_LIGHTNING_COOLDOWN := 2.5
+const ARC_CHAIN_RANGE := 130.0
 const DOUBLE_SHOT_PRICE := 540
 const TRIPLE_SHOT_PRICE := 1580
 
