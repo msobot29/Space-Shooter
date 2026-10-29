@@ -234,6 +234,13 @@ func update_background(delta: float) -> void:
 	bg_scroll_near = fposmod(bg_scroll_near + BG_SPEED_NEAR * delta, 16.0 * 85.0)
 
 
+func update_bosnia_background(delta: float) -> void:
+	# Keep each scroll period identical to its visual tile repetition.
+	# Mismatched wrap distances caused sudden background jumps in Bosnia.
+	bg_scroll_far = fposmod(bg_scroll_far + BG_SPEED_FAR * delta, 12.0 * 105.0)
+	bg_scroll_mid = fposmod(bg_scroll_mid + BG_SPEED_MID * delta, 7.0 * 175.0)
+
+
 func draw_zadar_background() -> void:
 	# Deep Adriatic sea
 	draw_rect(Rect2(0.0, 0.0, W, H), Color(0.025, 0.14, 0.24))
@@ -2197,7 +2204,7 @@ func _process(delta: float) -> void:
 	
 	if state in ["playing", "intermission", "boss_intro", "boss_rewards", "shop_arrival", "pre_boss_shop_wait"]:
 		if in_bosnia():
-			update_background(delta)
+			update_bosnia_background(delta)
 		elif city_name() == "ZADAR":
 			update_background(delta)
 		elif city_name() == "RIJEKA":
