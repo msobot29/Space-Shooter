@@ -3853,7 +3853,7 @@ func _draw() -> void:
 			draw_colored_polygon(PackedVector2Array([pos + Vector2(0,-11), pos + Vector2(-10,8), pos + Vector2(-3,5), pos + Vector2(0,9), pos + Vector2(3,5), pos + Vector2(10,8)]), Color(0.70, 0.94, 1.0))
 			draw_circle(pos, 2.7, Color(0.12, 0.27, 0.48))
 		elif drop.get("kind", "scrap") == "extra_speed" or drop.get("kind", "scrap") == "extra_bullet":
-			var is_speed := drop.get("kind") == "extra_speed"
+			var is_speed: bool = String(drop.get("kind", "")) == "extra_speed"
 			draw_rect(Rect2(pos.x - 14.0, pos.y - 14.0, 28.0, 28.0), Color(0.06, 0.22, 0.41) if is_speed else Color(0.35, 0.16, 0.08))
 			draw_rect(Rect2(pos.x - 11.0, pos.y - 11.0, 22.0, 22.0), Color(0.20, 0.57, 0.95) if is_speed else Color(0.95, 0.55, 0.17))
 			text_at("S" if is_speed else "B", pos.x - 7.0, pos.y + 7.0, 20, Color.WHITE)
