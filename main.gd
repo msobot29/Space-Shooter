@@ -137,6 +137,8 @@ var scrap := 0
 var level := 1
 var damage_level := 0 # 0 = single, 3 = double, 6 = triple; purchased instantly
 var arc_lightning_owned := false
+var plasma_cannon_active := false
+var plasma_shot_sequence := 0
 var arc_lightning_cooldown := 0.0
 var arc_lightning_effects: Array[Dictionary] = []
 var rate_level := 0
@@ -1446,6 +1448,7 @@ func continue_campaign() -> void:
 	speed_level = clampi(int(data["speed_level"]), 0, 4)
 	ability_level = clampi(int(data["ability_level"]), 1, 3)
 	arc_lightning_owned = bool(data.get("arc_lightning_owned", false))
+	plasma_cannon_active = false
 	arc_lightning_cooldown = 0.0
 	arc_lightning_effects.clear()
 	collected_orb_mask = int(data["collected_orb_mask"])
@@ -1561,6 +1564,7 @@ func start_new_campaign() -> void:
 	speed_level = 0
 	ability_level = 1
 	arc_lightning_owned = false
+	plasma_cannon_active = false
 	arc_lightning_cooldown = 0.0
 	arc_lightning_effects.clear()
 	ability_time = 0.0
@@ -1905,8 +1909,9 @@ func apply_debug_weapon(choice: int) -> void:
 	# Test-only loadout; never auto-save or charge Scrap.
 	# Arc Lightning is a standalone primary weapon, not an add-on.
 	debug_run = true
-	damage_level = 0 if choice == 0 or choice == 3 else (3 if choice == 1 else 6)
+	damage_level = 0 if choice == 0 or choice >= 3 else (3 if choice == 1 else 6)
 	arc_lightning_owned = choice == 3
+	plasma_cannon_active = choice == 4
 	arc_lightning_cooldown = 0.0
 	arc_lightning_effects.clear()
 	player_bullets.clear()
@@ -1919,12 +1924,12 @@ func draw_debug_weapon_menu() -> void:
 	draw_rect(Rect2(0, 0, W, H), Color(0.0, 0.02, 0.07, 0.86))
 	draw_rect(Rect2(95, 210, 530, 545), Color(0.06, 0.12, 0.24, 0.98))
 	text_at("DEBUG WEAPON SELECT [F4]", 138, 273, 27, Color(0.45, 0.95, 1.0))
-	var names := ["SINGLE SHOT", "DOUBLE SHOT", "TRIPLE SHOT", "ARC LIGHTNING"]
+	var names := ["SINGLE SHOT", "DOUBLE SHOT", "TRIPLE SHOT", "ARC LIGHTNING", "PLASMA CANNON"]
 	for i in range(names.size()):
 		var y := 318.0 + float(i) * 70.0
 		draw_rect(Rect2(130, y, 460, 56), Color(0.15, 0.44, 0.68) if i == debug_weapon_selection else Color(0.1, 0.2, 0.34))
 		text_at("%d - %s" % [i + 1, names[i]], 148, y + 36, 21, Color.WHITE)
-	text_at("UP / DOWN + ENTER  OR  KEYS 1-4", 151, 695, 18, Color(0.77, 0.92, 1.0))
+	text_at("UP / DOWN + ENTER  OR  KEYS 1-5", 151, 695, 18, Color(0.77, 0.92, 1.0))
 	text_at("ESC / F4 CLOSE  |  FREE QA LOADOUT", 151, 729, 17, Color(0.62, 0.96, 0.77))
 
 
@@ -2389,7 +2394,7 @@ func update_player(delta: float) -> void:
 	# Keep edge-triggered shots: holding the key does not repeat volleys.
 	if (state == "playing" or state == "intermission" or state == "boss_rewards") and pressed and not fire_held and fire_clock <= 0.0:
 		fire_weapon()
-		fire_clock = maxf(0.12, 0.34 - rate_level * 0.05)
+		fire_clock = maxf(0.12, 0.34 - rate_level * 0.05) / (0.6 if plasma_cannon_active else 1.0)
 	fire_held = pressed
 
 func weapon_projectile_color() -> Color:
@@ -2448,6 +2453,11 @@ func draw_arc_zap(start: Vector2, finish: Vector2, opacity: float, seed: float) 
 
 
 func fire_weapon() -> void:
+	if plasma_cannon_active:
+		plasma_shot_sequence += 1
+		player_bullets.append({"pos": Vector2(player_x, PLAYER_Y - 34.0), "velocity": Vector2(0.0, -BULLET_SPEED * 0.78), "plasma": true, "plasma_id": plasma_shot_sequence, "pierces": 0})
+		play_arcade_sfx("shoot")
+		return
 	# Arc Lightning replaces Single/Double/Triple while equipped.
 	if arc_lightning_owned:
 		if arc_lightning_cooldown <= 0.0:
@@ -2472,6 +2482,8 @@ func fire_weapon() -> void:
 		add_player_bullet(0.0, 0.0)
 
 func weapon_label() -> String:
+	if plasma_cannon_active:
+		return "PLASMA CANNON"
 	if arc_lightning_owned:
 		return "ARC LIGHTNING"
 	if damage_level >= 6:
@@ -2764,6 +2776,8 @@ func update_bullets(delta: float) -> void:
 			# intercept shots aimed at enemies behind them.
 			for j in range(enemies.size()):
 				var enemy: Dictionary = enemies[j]
+				if bool(bullet.get("plasma", false)) and int(enemy.get("last_plasma_hit", -1)) == int(bullet.get("plasma_id", -2)):
+					continue
 				var target_previous: Vector2 = enemy.get("prev_pos", enemy["pos"])
 				var target_current: Vector2 = enemy["pos"]
 				var hit_radius := 39.0 if int(enemy["kind"]) == 4 else (33.0 if int(enemy["kind"]) == 1 else 29.0)
@@ -2790,11 +2804,11 @@ func update_bullets(delta: float) -> void:
 				elif boss_shield_hp > 0.0:
 					# Shield HP is 70% of the boss's max HP. Each hit removes
 					# weapon damage from the shield, not an entire ring.
-					boss_shield_hp = maxf(0.0, boss_shield_hp - (8.0 if bool(bullet.get("arc", false)) else 2.0 + damage_level))
+					boss_shield_hp = maxf(0.0, boss_shield_hp - (12.0 if bool(bullet.get("plasma", false)) else (8.0 if bool(bullet.get("arc", false)) else 2.0 + damage_level)))
 					var total_layers := 4 if level == CROATIA_FINAL_LEVEL else 2
 					boss_shields = ceili(float(total_layers) * boss_shield_hp / boss_shield_max_hp) if boss_shield_hp > 0.0 else 0
 				else:
-					boss["hp"] = maxf(0.0, float(boss["hp"]) - (8.0 if bool(bullet.get("arc", false)) else 2.0 + damage_level))
+					boss["hp"] = maxf(0.0, float(boss["hp"]) - (12.0 if bool(bullet.get("plasma", false)) else (8.0 if bool(bullet.get("arc", false)) else 2.0 + damage_level)))
 				if boss_shields == 0 and float(boss["hp"]) <= 0.0:
 					play_arcade_sfx("boss")
 					score += 2500 * score_multiplier()
@@ -2809,11 +2823,17 @@ func update_bullets(delta: float) -> void:
 					arc_lightning_effects.append({"from": previous, "to": impact, "time": 0.23})
 					add_arc_flash(impact)
 					arc_chain_impact(target_index)
+				elif bool(bullet.get("plasma", false)):
+					enemies[target_index]["last_plasma_hit"] = int(bullet["plasma_id"])
+					enemies[target_index]["hp"] = 0 if god_mode else float(enemies[target_index]["hp"]) - 12.0
+					if float(enemies[target_index]["hp"]) <= 0.0:
+						award_enemy_kill(target_index)
+					bullet["pierces"] = int(bullet["pierces"]) + 1
 				else:
 					enemies[target_index]["hp"] = 0 if god_mode else int(enemies[target_index]["hp"]) - (1 + damage_level)
 					if int(enemies[target_index]["hp"]) <= 0:
 						award_enemy_kill(target_index)
-		if hit or shot.y < -20.0 or shot.x < -25.0 or shot.x > W + 25.0:
+		if (hit and (not bool(bullet.get("plasma", false)) or boss_hit or int(bullet.get("pierces", 0)) >= 3)) or shot.y < -20.0 or shot.x < -25.0 or shot.x > W + 25.0:
 			player_bullets.remove_at(i)
 	for i in range(radial_bullets.size() - 1, -1, -1):
 		var bullet: Dictionary = radial_bullets[i]
@@ -2956,6 +2976,9 @@ func update_pickups(delta: float) -> void:
 				elif damage_level >= 3 and damage_level < 6:
 					rate_level += 1
 				damage_level = 3
+				arc_lightning_owned = false
+				plasma_cannon_active = false
+				arc_lightning_effects.clear()
 				single_shot_kills_since_drop = 0
 				explosions.append({"pos": Vector2(player_x, PLAYER_Y), "time": 0.32})
 			elif drops[i].get("kind", "scrap") == "triple_shot":
@@ -2965,6 +2988,9 @@ func update_pickups(delta: float) -> void:
 				elif damage_level >= 6:
 					rate_level += 1
 				damage_level = 6
+				arc_lightning_owned = false
+				plasma_cannon_active = false
+				arc_lightning_effects.clear()
 				explosions.append({"pos": Vector2(player_x, PLAYER_Y), "time": 0.32})
 			elif drops[i].get("kind", "scrap") == "life_orb":
 				collect_life_orb(int(drops[i]["orb_index"]))
@@ -3187,10 +3213,18 @@ func buy_upgrade(kind: int) -> void:
 	match kind:
 		1: speed_level += 1
 		2: rate_level += 1
-		3: damage_level = 3
-		4: damage_level = 6
+		3:
+			damage_level = 3
+			arc_lightning_owned = false
+			plasma_cannon_active = false
+		4:
+			damage_level = 6
+			arc_lightning_owned = false
+			plasma_cannon_active = false
 		5: ability_level += 1
-		6: arc_lightning_owned = true
+		6:
+			arc_lightning_owned = true
+			plasma_cannon_active = false
 	if state == "shop":
 		save_campaign_checkpoint("pre_boss_shop" if pre_boss_shop else "shop")
 
@@ -3319,7 +3353,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		debug_weapon_menu = not debug_weapon_menu
 		if debug_weapon_menu:
 			debug_level_menu = false
-			debug_weapon_selection = 3 if arc_lightning_owned else (2 if damage_level >= 6 else (1 if damage_level >= 3 else 0))
+			debug_weapon_selection = 4 if plasma_cannon_active else (3 if arc_lightning_owned else (2 if damage_level >= 6 else (1 if damage_level >= 3 else 0)))
 		queue_redraw()
 		return
 	if debug_weapon_menu:
@@ -3327,12 +3361,12 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			KEY_ESCAPE:
 				debug_weapon_menu = false
 			KEY_UP:
-				debug_weapon_selection = posmod(debug_weapon_selection - 1, 4)
+				debug_weapon_selection = posmod(debug_weapon_selection - 1, 5)
 			KEY_DOWN:
-				debug_weapon_selection = posmod(debug_weapon_selection + 1, 4)
+				debug_weapon_selection = posmod(debug_weapon_selection + 1, 5)
 			KEY_ENTER, KEY_KP_ENTER:
 				apply_debug_weapon(debug_weapon_selection)
-			KEY_1, KEY_2, KEY_3, KEY_4:
+			KEY_1, KEY_2, KEY_3, KEY_4, KEY_5:
 				apply_debug_weapon(event.keycode - KEY_1)
 		queue_redraw()
 		return
@@ -3549,6 +3583,8 @@ func draw_stat_meter(name: String, current: int, maximum: int, x: float, y: floa
 		draw_rect(Rect2(x + 119, y - 13, 110.0 * float(current) / float(maximum), 11), bar_color)
 
 func equipped_weapon_name() -> String:
+	if plasma_cannon_active:
+		return "PLASMA CANNON"
 	if arc_lightning_owned:
 		return "ARC LIGHTNING"
 	if damage_level >= 6:
@@ -3702,7 +3738,13 @@ func _draw() -> void:
 		var shot_pos: Vector2 = bullet["pos"]
 		var shot_velocity: Vector2 = bullet["velocity"]
 		var direction := shot_velocity.normalized()
-		if bool(bullet.get("arc", false)):
+		if bool(bullet.get("plasma", false)):
+			# Large bright green oval plasma bolt with a hot center and trailing glow.
+			draw_line(shot_pos - direction * 23.0, shot_pos, Color(0.14, 0.95, 0.62, 0.40), 19.0, true)
+			draw_circle(shot_pos, 15.0, Color(0.12, 0.65, 0.55, 0.48))
+			draw_circle(shot_pos, 10.0, Color(0.24, 1.0, 0.67))
+			draw_circle(shot_pos, 5.0, Color(0.91, 1.0, 0.82))
+		elif bool(bullet.get("arc", false)):
 			var tail: Vector2 = shot_pos - direction * 47.0
 			var head: Vector2 = shot_pos + direction * 47.0
 			draw_arc_zap(tail, head, 1.0, shot_pos.y)
