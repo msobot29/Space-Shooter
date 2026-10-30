@@ -49,6 +49,9 @@ const ENEMIES_PER_WAVE := 10
 const ENEMY_TOTAL_BY_CITY_STAGE := [20, 20, 30, 30, 40]
 const BOSS_REWARD_SECONDS := 8.0
 const SHOP_ARRIVAL_SECONDS := 6.0
+const HQ_FLIGHT_SECONDS := 5.0
+const HQ_DIALOGUE_SECONDS := 6.5
+const PLASMA_CANNON_PRICE := 2500
 const PRE_BOSS_SHOP_DELAY_SECONDS := 4.0
 const CAMPAIGN_BASE := Vector2(492.0, 616.0)
 const DOUBLE_DROP_CHANCE := 0.12
@@ -166,6 +169,8 @@ var boss_intro_time := 0.0
 var level_transition_time := 0.0
 var show_stats_modal := false
 var shop_arrival_elapsed := 0.0
+var hq_elapsed := 0.0
+var hq_dialogue_index := 0
 var departure_destination := "shop" # shop after final boss; map after miniboss
 var game_paused := false
 var pause_screen := "menu" # menu, options, bindings, confirm
@@ -2160,6 +2165,50 @@ func begin_boss_reward_time() -> void:
 	queue_redraw()
 
 
+const HQ_SPEAKERS := ["CAPTAIN", "CAPTAIN", "CAPTAIN", "HQ OFFICER", "HQ OFFICER", "CAPTAIN", "CAPTAIN", "HQ OFFICER", "CAPTAIN", "ONE WEEK LATER", "REPAIR CREW", "REPAIR CREW"]
+const HQ_LINES := [
+	"Gentlemen, we have liberated Croatia.",
+	"After we defeated the Zone Guardian, the remaining enemies",
+	"we spotted on land retreated into the sea. We also recovered a strange white orb that emits energy.",
+	"While you were fighting in Croatia, we detected",
+	"new types of enemies appearing across Bosnia and Herzegovina.",
+	"We'll deal with them too. But our ship was damaged",
+	"in the battle with the Guardian. We need time for repairs.",
+	"As far as we know, they haven't found our position. We should be safe.",
+	"Excellent.",
+	"ONE WEEK LATER",
+	"Captain, the ship is fully repaired and in excellent condition.",
+	"The scientists have made progress with that orb you recovered and installed several new upgrades."
+]
+
+
+func advance_hq_dialogue() -> void:
+	hq_elapsed = 0.0
+	hq_dialogue_index += 1
+	if hq_dialogue_index >= HQ_LINES.size():
+		# Bosnia's first shop offers the technology researched from the white orb.
+		state = "shop"
+		pre_boss_shop = false
+		level = BOSNIA_START_LEVEL
+		save_campaign_checkpoint("shop")
+	queue_redraw()
+
+
+func begin_hq_sequence() -> void:
+	departure_destination = "hq"
+	shop_arrival_elapsed = 0.0
+	state = "shop_arrival"
+	game_paused = false
+	player_bullets.clear()
+	enemy_bullets.clear()
+	radial_bullets.clear()
+	fire_held = true
+	# Persist the newly unlocked region; Continue cannot replay the ending.
+	level = BOSNIA_START_LEVEL
+	save_campaign_checkpoint("shop")
+	queue_redraw()
+
+
 func begin_departure(destination: String) -> void:
 	# The transition starts only when all rewards have been collected or
 	# fallen offscreen. Save the destination BEFORE the ship flies away.
@@ -2180,7 +2229,12 @@ func begin_departure(destination: String) -> void:
 
 
 func finish_shop_arrival() -> void:
-	if departure_destination == "map":
+	if departure_destination == "hq":
+		state = "hq_dialogue"
+		hq_dialogue_index = 0
+		hq_elapsed = 0.0
+		queue_redraw()
+	elif departure_destination == "map":
 		show_city_map()
 	else:
 		pre_boss_shop = false
@@ -2277,6 +2331,10 @@ func _process(delta: float) -> void:
 			update_zagreb_background(delta)
 
 
+	if state == "hq_dialogue":
+		if event.keycode in [KEY_ENTER, KEY_KP_ENTER, KEY_SPACE]:
+			advance_hq_dialogue()
+		return
 	if state == "mission_briefing":
 		queue_redraw()
 		return
@@ -2304,10 +2362,17 @@ func _process(delta: float) -> void:
 			pre_boss_shop_wait_time = PRE_BOSS_SHOP_DELAY_SECONDS
 		queue_redraw()
 		return
+	if state == "hq_dialogue":
+		hq_elapsed += delta
+		if hq_elapsed >= HQ_DIALOGUE_SECONDS:
+			advance_hq_dialogue()
+		queue_redraw()
+		return
 	if state == "shop_arrival":
-		shop_arrival_elapsed = minf(SHOP_ARRIVAL_SECONDS, shop_arrival_elapsed + delta)
+		var flight_duration: float = HQ_FLIGHT_SECONDS if departure_destination == "hq" else SHOP_ARRIVAL_SECONDS
+		shop_arrival_elapsed = minf(flight_duration, shop_arrival_elapsed + delta)
 		update_effects(delta)
-		if shop_arrival_elapsed >= SHOP_ARRIVAL_SECONDS:
+		if shop_arrival_elapsed >= flight_duration:
 			finish_shop_arrival()
 		queue_redraw()
 		return
@@ -3092,7 +3157,9 @@ func update_effects(delta: float) -> void:
 func complete_level() -> void:
 	# After each guardian, visibly fly away before showing the next screen.
 	# Ordinary mission timing is unchanged.
-	if is_region_boss():
+	if level == CROATIA_FINAL_LEVEL:
+		begin_hq_sequence()
+	elif is_region_boss():
 		begin_departure("shop")
 	elif level % 5 == 0:
 		begin_departure("map")
@@ -3258,11 +3325,12 @@ func upgrade_cost(kind: int) -> int:
 		4: return TRIPLE_SHOT_PRICE - (DOUBLE_SHOT_PRICE if damage_level >= 3 else 0)
 		5: return 900 if ability_level == 1 else 1800
 		6: return ARC_LIGHTNING_PRICE
+		7: return PLASMA_CANNON_PRICE
 	return 99999
 
 func buy_upgrade(kind: int) -> void:
-	var capped := (kind == 1 and speed_level >= 4) or (kind == 2 and rate_level >= 4) or (kind == 3 and damage_level >= 3) or (kind == 4 and damage_level >= 6) or (kind == 5 and ability_level >= 3) or (kind == 6 and arc_lightning_owned)
-	if (kind == 6 and level <= CROATIA_FINAL_LEVEL) or capped or scrap < upgrade_cost(kind):
+	var capped := (kind == 1 and speed_level >= 4) or (kind == 2 and rate_level >= 4) or (kind == 3 and damage_level >= 3) or (kind == 4 and damage_level >= 6) or (kind == 5 and ability_level >= 3) or (kind == 6 and arc_lightning_owned) or (kind == 7 and plasma_cannon_active)
+	if (kind >= 6 and level <= CROATIA_FINAL_LEVEL) or capped or scrap < upgrade_cost(kind):
 		return
 	scrap -= upgrade_cost(kind)
 	match kind:
@@ -3280,6 +3348,9 @@ func buy_upgrade(kind: int) -> void:
 		6:
 			arc_lightning_owned = true
 			plasma_cannon_active = false
+		7:
+			plasma_cannon_active = true
+			arc_lightning_owned = false
 	if state == "shop":
 		save_campaign_checkpoint("pre_boss_shop" if pre_boss_shop else "shop")
 
@@ -3581,6 +3652,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			KEY_4: buy_upgrade(4)
 			KEY_5: buy_upgrade(5)
 			KEY_6: buy_upgrade(6)
+			KEY_7: buy_upgrade(7)
 
 			KEY_ENTER, KEY_KP_ENTER:
 				if pre_boss_shop:
@@ -3934,7 +4006,7 @@ func _draw() -> void:
 		text_at("ZONE LIBERATED", 195, 249, 33, Color(0.61, 1.0, 0.74))
 		draw_final_orb_speech()
 	if state == "shop":
-		draw_rect(Rect2(52, 190, 616, 580), Color(0.07, 0.12, 0.23, 0.96))
+		draw_rect(Rect2(52, 165, 616, 620), Color(0.07, 0.12, 0.23, 0.96))
 		text_at("PRE-BOSS SHOP - %s" % city_name() if pre_boss_shop else "%s LIBERATED!" % city_name(), 136, 250, 27)
 		text_at("SCRAP: %d" % scrap, 250, 296, 26, Color(0.95, 0.85, 0.3))
 		if speed_level >= 4:
@@ -3957,13 +4029,15 @@ func _draw() -> void:
 			text_at("5 - Shield Upgrade: MAX", 105, 569, 22)
 		else:
 			text_at("5 - Shield Upgrade Lv.%d/3 (%d)" % [ability_level, upgrade_cost(5)], 105, 569, 22)
-		text_at("6 - ARC LIGHTNING: LOCKED (LVL 26)" if level <= CROATIA_FINAL_LEVEL else ("6 - ARC LIGHTNING: OWNED" if arc_lightning_owned else "6 - ARC LIGHTNING (3200 Scrap)"), 105, 606, 20, Color(0.53,0.84,1.0))
+		if level >= BOSNIA_START_LEVEL:
+			text_at("6 - ARC LIGHTNING: OWNED" if arc_lightning_owned else "6 - ARC LIGHTNING (3200 Scrap)", 105, 601, 19, Color(0.53,0.84,1.0))
+			text_at("7 - PLASMA CANNON: OWNED" if plasma_cannon_active else "7 - PLASMA CANNON (2500 Scrap)", 105, 628, 19, Color(0.48,1.0,0.69))
 		# In-shop ship stats are live and update immediately after a purchase.
-		text_at("SHIP SPEED  %d px/s  Lv.%d/4" % [int(BASE_SPEED + speed_level * SPEED_STEP), speed_level], 105, 643, 16, Color(0.55, 0.83, 1.0))
-		text_at("FIRE RATE  %.2f shots/s  Lv.%d/4" % [shots_per_second(), rate_level], 105, 663, 16, Color(1.0, 0.65, 0.5))
-		text_at("%s  |  SHIELD Lv.%d/3" % [equipped_weapon_name(), ability_level], 105, 684, 16, Color(0.6, 0.96, 0.76))
-		text_at("ENTER - FACE THE GUARDIAN" if pre_boss_shop else ("ENTER - View results" if level >= MAX_LEVEL else "ENTER - Next mission"), 137, 725, 20, Color(0.4, 0.9, 1.0))
-		text_at("M / ESC - MAIN MENU (SAVED)", 163, 746, 15, Color(0.74, 0.95, 0.79))
+		text_at("SHIP SPEED  %d px/s  Lv.%d/4" % [int(BASE_SPEED + speed_level * SPEED_STEP), speed_level], 105, 662, 16, Color(0.55, 0.83, 1.0))
+		text_at("FIRE RATE  %.2f shots/s  Lv.%d/4" % [shots_per_second(), rate_level], 105, 682, 16, Color(1.0, 0.65, 0.5))
+		text_at("%s  |  SHIELD Lv.%d/3" % [equipped_weapon_name(), ability_level], 105, 703, 16, Color(0.6, 0.96, 0.76))
+		text_at("ENTER - FACE THE GUARDIAN" if pre_boss_shop else ("ENTER - View results" if level >= MAX_LEVEL else "ENTER - Next mission"), 137, 743, 18, Color(0.4, 0.9, 1.0))
+		text_at("M / ESC - MAIN MENU (SAVED)", 163, 766, 15, Color(0.74, 0.95, 0.79))
 	elif state == "gameover" or state == "victory":
 		if state == "victory" and not awaiting_score_name and not victory_show_scores:
 			draw_campaign_finale()
@@ -3973,10 +4047,35 @@ func _draw() -> void:
 				text_at("BOSNIA LIBERATED!" if in_bosnia() else "CROATIA LIBERATED!", 186, 174, 29, Color(0.45, 1.0, 0.7))
 			else:
 				text_at("GAME OVER", 258, 174, 29, Color(1.0, 0.35, 0.4))
+	if state == "hq_dialogue":
+		draw_rect(Rect2(35, 90, 650, 775), Color(0.025, 0.07, 0.13, 0.97))
+		draw_rect(Rect2(35, 90, 650, 5), Color(0.27, 0.82, 1.0))
+		text_at("HEADQUARTERS - DEBRIEFING", 115, 163, 28, Color(0.67, 0.92, 1.0))
+		var speaker: String = String(HQ_SPEAKERS[hq_dialogue_index])
+		var line: String = String(HQ_LINES[hq_dialogue_index])
+		if speaker == "ONE WEEK LATER":
+			text_at("ONE WEEK LATER", 185, 444, 38, Color(0.93, 0.87, 0.59))
+		else:
+			text_at(speaker + ":", 85, 286, 28, Color(1.0, 0.82, 0.48) if speaker == "CAPTAIN" else Color(0.48, 0.88, 1.0))
+			var words: PackedStringArray = line.split(" ")
+			var current: String = ""
+			var y: float = 346.0
+			for word in words:
+				var candidate: String = current + (" " if not current.is_empty() else "") + word
+				if font.get_string_size(candidate, HORIZONTAL_ALIGNMENT_LEFT, -1, 21).x > 530.0 and not current.is_empty():
+					text_at(current, 86, y, 21)
+					y += 39.0
+					current = word
+				else:
+					current = candidate
+			if not current.is_empty():
+				text_at(current, 86, y, 21)
+		text_at("ENTER - CONTINUE", 254, 807, 20, Color(0.56, 0.98, 0.79))
 	if state == "shop_arrival":
 		# Fluid six-second departure. Begin EXACTLY at the player's current
 		# position: no snap to center and no full-screen cut at t=0.
-		var flight_t: float = clampf(shop_arrival_elapsed / SHOP_ARRIVAL_SECONDS, 0.0, 1.0)
+		var duration: float = HQ_FLIGHT_SECONDS if departure_destination == "hq" else SHOP_ARRIVAL_SECONDS
+		var flight_t: float = clampf(shop_arrival_elapsed / duration, 0.0, 1.0)
 		var boost_t: float = clampf(shop_arrival_elapsed / 3.35, 0.0, 1.0)
 		# Smooth throttle rise and strong late acceleration, continuous velocity.
 		var boost: float = smoothstep(0.0, 0.70, boost_t)
