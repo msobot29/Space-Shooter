@@ -2331,10 +2331,6 @@ func _process(delta: float) -> void:
 			update_zagreb_background(delta)
 
 
-	if state == "hq_dialogue":
-		if event.keycode in [KEY_ENTER, KEY_KP_ENTER, KEY_SPACE]:
-			advance_hq_dialogue()
-		return
 	if state == "mission_briefing":
 		queue_redraw()
 		return
@@ -3613,6 +3609,11 @@ func _unhandled_key_input(event: InputEvent) -> void:
 							pause_screen = "menu"
 						else:
 							state = "main_menu"
+		queue_redraw()
+		return
+	if state == "hq_dialogue":
+		if event.keycode in [KEY_ENTER, KEY_KP_ENTER, KEY_SPACE]:
+			advance_hq_dialogue()
 		queue_redraw()
 		return
 	if state == "city_select":
