@@ -1665,10 +1665,12 @@ func draw_city_map() -> void:
 	text_at("ADRIATIC UPRISING", 127, 77, 35, Color(0.95, 0.97, 1.0))
 	text_at("BOSNIA & HERZEGOVINA - LIBERATION" if city_route.size() >= 5 else "SELECT THE NEXT CITY TO LIBERATE", 92, 118, 22, Color(0.65, 0.95, 1.0))
 	text_at("LIBERATED: %d/5" % (city_route.size() - 5 if city_route.size() >= 5 else city_route.size()), 277, 153, 17, Color(0.9, 0.82, 0.56))
-	if not city_route.is_empty():
+	# Do not plot Zagreb's Croatia-map coordinates on the Bosnia map:
+	# the two reliefs have different local coordinate systems.
+	if not city_route.is_empty() and (city_route.size() < 5 or city_route[city_route.size() - 1] >= 5):
 		var origin_city: Vector2 = CITY_POINTS[city_route[city_route.size() - 1]]
-		draw_arc(origin_city, 26.0, 0.0, TAU, 28, Color(0.41, 0.94, 1.0), 3.0)
-		text_at("SHIP", origin_city.x + 14.0, origin_city.y + 29.0, 14, Color(0.60, 0.93, 1.0))
+		draw_arc(origin_city, 19.0, 0.0, TAU, 28, Color(0.41, 0.94, 1.0), 2.0)
+		text_at("LAST POSITION", origin_city.x + 22.0, origin_city.y + 29.0, 13, Color(0.60, 0.93, 1.0))
 	for city_index in range(CITY_NAMES.size()):
 		# Show ONLY the currently selectable region's cities.
 		if city_route.size() < 5 and city_index >= 5:
@@ -3822,7 +3824,7 @@ func draw_hq_flight_map() -> void:
 	# HQ is a fictional concealed base marker, not a real-world location.
 	draw_balkan_relief()
 	var zagreb: Vector2 = CITY_POINTS[4]
-	var hq: Vector2 = Vector2(138.0, 712.0)
+	var hq: Vector2 = CAMPAIGN_BASE # Existing inland Croatian airbase, on the mainland.
 	var progress: float = clampf(shop_arrival_elapsed / HQ_FLIGHT_SECONDS, 0.0, 1.0)
 	# Ease into a faster flight, then decelerate before arrival.
 	var eased: float = smoothstep(0.0, 1.0, progress)
@@ -3836,10 +3838,10 @@ func draw_hq_flight_map() -> void:
 		var city: Vector2 = CITY_POINTS[i]
 		draw_circle(city, 8.0, Color(0.32, 0.92, 0.54))
 		draw_arc(city, 14.0, 0.0, TAU, 24, Color(0.55, 1.0, 0.72), 2.0, true)
-	text_at("ZAGREB", zagreb.x + 16.0, zagreb.y - 13.0, 17, Color(0.75, 1.0, 0.83))
-	draw_circle(hq, 12.0, Color(0.12, 0.37, 0.52))
-	draw_arc(hq, 19.0, 0.0, TAU, 30, Color(0.45, 0.91, 1.0), 3.0, true)
-	text_at("HQ", hq.x + 24.0, hq.y + 6.0, 21, Color(0.68, 0.96, 1.0))
+	text_at("ZAGREB", zagreb.x - 82.0, zagreb.y - 25.0, 17, Color(0.75, 1.0, 0.83))
+	draw_rect(Rect2(hq.x - 9.0, hq.y - 9.0, 18.0, 18.0), Color(0.15, 0.52, 0.68))
+	draw_rect(Rect2(hq.x - 5.0, hq.y - 5.0, 10.0, 10.0), Color(0.79, 0.96, 1.0))
+	text_at("INLAND HQ", hq.x + 17.0, hq.y + 5.0, 17, Color(0.68, 0.96, 1.0))
 	draw_line(zagreb, hq, Color(0.13, 0.38, 0.51, 0.8), 3.0, true)
 	draw_line(zagreb, ship_pos, Color(0.47, 0.94, 1.0, 0.95), 5.0, true)
 	# Place the same blue ship used in the campaign map, oriented along the route.
