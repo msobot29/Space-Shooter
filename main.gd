@@ -2405,6 +2405,48 @@ func add_player_bullet(offset_x: float, angle_degrees: float) -> void:
 	var velocity := Vector2(sin(radians), -cos(radians)) * BULLET_SPEED
 	player_bullets.append({"pos": Vector2(player_x + offset_x, PLAYER_Y - 34.0), "velocity": velocity, "color": weapon_projectile_color()})
 
+func add_arc_flash(at: Vector2) -> void:
+	# Cosmetic-only hit pulse; physics and damage are unchanged.
+	arc_lightning_effects.append({"from": at + Vector2(0.0, 17.0), "to": at, "time": 0.23, "impact": true})
+
+
+func draw_arc_burst(at: Vector2, opacity: float) -> void:
+	draw_circle(at, 23.0, Color(0.12, 0.49, 1.0, opacity * 0.18))
+	draw_circle(at, 10.0, Color(0.50, 0.88, 1.0, opacity * 0.45))
+	draw_circle(at, 4.0, Color(1.0, 1.0, 1.0, opacity))
+	for ray in range(6):
+		var angle: float = float(ray) * TAU / 6.0 + level_time * 5.0
+		var ray_dir := Vector2(cos(angle), sin(angle))
+		draw_line(at + ray_dir * 10.0, at + ray_dir * (20.0 + 4.0 * sin(level_time * 25.0 + float(ray))), Color(0.60, 0.90, 1.0, opacity * 0.8), 2.0, true)
+
+
+func draw_arc_zap(start: Vector2, finish: Vector2, opacity: float, seed: float) -> void:
+	var delta_zap := finish - start
+	if delta_zap.length_squared() < 1.0:
+		draw_arc_burst(finish, opacity)
+		return
+	var lateral := Vector2(-delta_zap.y, delta_zap.x).normalized()
+	var points := PackedVector2Array()
+	var flicker: float = floor(level_time * 32.0)
+	for step in range(13):
+		var t: float = float(step) / 12.0
+		var wander: float = sin(float(step) * 8.73 + seed * 0.17 + flicker * 2.17) * 11.0
+		if step == 0 or step == 12:
+			wander = 0.0
+		points.append(start.lerp(finish, t) + lateral * wander)
+	draw_polyline(points, Color(0.08, 0.30, 1.0, opacity * 0.28), 23.0, true)
+	draw_polyline(points, Color(0.16, 0.60, 1.0, opacity * 0.68), 11.0, true)
+	draw_polyline(points, Color(0.54, 0.94, 1.0, opacity), 5.0, true)
+	draw_polyline(points, Color(1.0, 1.0, 1.0, opacity), 2.0, true)
+	# Two flickering secondary branches create an electric silhouette, not a laser.
+	for branch in range(2):
+		var progress: float = 0.33 + float(branch) * 0.34
+		var pivot: Vector2 = start.lerp(finish, progress)
+		var sign_dir: float = -1.0 if branch == 0 else 1.0
+		var tip: Vector2 = pivot + lateral * sign_dir * (23.0 + 7.0 * sin(flicker + float(branch))) + delta_zap.normalized() * 10.0
+		draw_line(pivot, tip, Color(0.54, 0.89, 1.0, opacity * 0.7), 2.0, true)
+
+
 func fire_weapon() -> void:
 	if arc_lightning_owned and arc_lightning_cooldown <= 0.0:
 		player_bullets.append({"pos": Vector2(player_x, PLAYER_Y - 34.0), "velocity": Vector2(0.0, -BULLET_SPEED * 0.85), "color": Color(0.60, 0.90, 1.0), "arc": true})
@@ -2731,6 +2773,9 @@ func update_bullets(delta: float) -> void:
 			var impact := previous.lerp(shot, first_hit)
 			explosions.append({"pos": impact, "time": 0.16})
 			if boss_hit:
+				if bool(bullet.get("arc", false)):
+					arc_lightning_effects.append({"from": previous, "to": impact, "time": 0.23})
+					add_arc_flash(impact)
 				if god_mode:
 					# QA one-shot: bypass the remaining shield and defeat any boss instantly.
 					boss_shields = 0
@@ -2757,6 +2802,7 @@ func update_bullets(delta: float) -> void:
 			else:
 				if bool(bullet.get("arc", false)):
 					arc_lightning_effects.append({"from": previous, "to": impact, "time": 0.23})
+					add_arc_flash(impact)
 					arc_chain_impact(target_index)
 				else:
 					enemies[target_index]["hp"] = 0 if god_mode else int(enemies[target_index]["hp"]) - (1 + damage_level)
@@ -3650,20 +3696,12 @@ func _draw() -> void:
 		var shot_velocity: Vector2 = bullet["velocity"]
 		var direction := shot_velocity.normalized()
 		if bool(bullet.get("arc", false)):
-			# A large jagged electric bolt, visibly different from regular laser lines.
-			var side := Vector2(-direction.y, direction.x)
-			var phase := level_time * 34.0 + shot_pos.y * 0.035
-			var bolt := PackedVector2Array()
-			for segment in range(9):
-				var t := float(segment) / 8.0
-				var jitter := sin(phase + float(segment) * 2.71) * 9.0
-				if segment == 0 or segment == 8:
-					jitter = 0.0
-				bolt.append(shot_pos + direction * ((t - 0.5) * 74.0) + side * jitter)
-			draw_polyline(bolt, Color(0.14, 0.37, 1.0, 0.48), 17.0, true)
-			draw_polyline(bolt, Color(0.40, 0.85, 1.0, 0.92), 7.0, true)
-			draw_polyline(bolt, Color(0.96, 1.0, 1.0), 2.5, true)
-			draw_circle(shot_pos, 9.0, Color(0.28, 0.72, 1.0, 0.35))
+			var tail: Vector2 = shot_pos - direction * 47.0
+			var head: Vector2 = shot_pos + direction * 47.0
+			draw_arc_zap(tail, head, 1.0, shot_pos.y)
+			draw_circle(head, 7.0, Color(0.42, 0.89, 1.0, 0.55))
+			draw_circle(head, 3.0, Color.WHITE)
+
 		else:
 			draw_line(shot_pos - direction * 11.0, shot_pos + direction * 11.0, bullet.get("color", Color(1.0, 0.92, 0.25)), 6.0, true)
 	for shot in enemy_bullets:
@@ -3752,22 +3790,14 @@ func _draw() -> void:
 			draw_circle(pos, 9.0, Color(0.95, 0.82, 0.25))
 			draw_circle(pos, 4.0, Color(0.45, 0.3, 0.08))
 	for arc_fx in arc_lightning_effects:
-		var a: Vector2 = arc_fx["from"]
-		var b: Vector2 = arc_fx["to"]
+		var from_pos: Vector2 = arc_fx["from"]
+		var to_pos: Vector2 = arc_fx["to"]
 		var alpha: float = clampf(float(arc_fx["time"]) / 0.23, 0.0, 1.0)
-		# Jagged chain lightning instead of a straight laser between enemies.
-		var delta_arc := b - a
-		var side_arc := Vector2(-delta_arc.y, delta_arc.x).normalized()
-		var chain := PackedVector2Array()
-		for segment in range(9):
-			var t := float(segment) / 8.0
-			var jitter := sin(level_time * 53.0 + float(segment) * 3.9 + a.x) * 12.0
-			if segment == 0 or segment == 8:
-				jitter = 0.0
-			chain.append(a.lerp(b, t) + side_arc * jitter)
-		draw_polyline(chain, Color(0.19, 0.40, 1.0, alpha * 0.60), 15.0, true)
-		draw_polyline(chain, Color(0.45, 0.83, 1.0, alpha), 6.0, true)
-		draw_polyline(chain, Color(0.95, 1.0, 1.0, alpha), 2.0, true)
+		if bool(arc_fx.get("impact", false)):
+			draw_arc_burst(to_pos, alpha)
+		else:
+			draw_arc_zap(from_pos, to_pos, alpha, from_pos.x + from_pos.y)
+			draw_arc_burst(to_pos, alpha * 0.85)
 	for effect in explosions:
 		var pos: Vector2 = effect["pos"]
 		draw_arc(pos, 30.0 * float(effect["time"]) / 0.3 + 8.0, 0, TAU, 20, Color(1.0, 0.68, 0.2), 4.0)
