@@ -143,6 +143,7 @@ var arc_lightning_cooldown := 0.0
 var arc_lightning_effects: Array[Dictionary] = []
 var rate_level := 0
 var speed_level := 0
+var extra_bullet_level := 0 # Warblade-style maximum bullets on screen
 var ability_level := 1 # 1/2/3 = 2/4/6 seconds
 var ability_time := 0.0
 var ability_cooldown := 0.0
@@ -1386,6 +1387,7 @@ func read_campaign_save() -> void:
 		"damage_level": int(config.get_value("campaign", "damage_level", 0)),
 		"rate_level": int(config.get_value("campaign", "rate_level", 0)),
 		"speed_level": int(config.get_value("campaign", "speed_level", 0)),
+		"extra_bullet_level": int(config.get_value("campaign", "extra_bullet_level", 0)),
 		"ability_level": int(config.get_value("campaign", "ability_level", 1)),
 		"arc_lightning_owned": bool(config.get_value("campaign", "arc_lightning_owned", false)),
 		"collected_orb_mask": int(config.get_value("campaign", "collected_orb_mask", 0)),
@@ -1412,6 +1414,7 @@ func save_campaign_checkpoint(checkpoint_state: String) -> void:
 	config.set_value("campaign", "damage_level", damage_level)
 	config.set_value("campaign", "rate_level", rate_level)
 	config.set_value("campaign", "speed_level", speed_level)
+	config.set_value("campaign", "extra_bullet_level", extra_bullet_level)
 	config.set_value("campaign", "ability_level", ability_level)
 	config.set_value("campaign", "arc_lightning_owned", arc_lightning_owned)
 	config.set_value("campaign", "collected_orb_mask", collected_orb_mask)
@@ -1446,6 +1449,7 @@ func continue_campaign() -> void:
 	damage_level = clampi(int(data["damage_level"]), 0, 6)
 	rate_level = clampi(int(data["rate_level"]), 0, 4)
 	speed_level = clampi(int(data["speed_level"]), 0, 4)
+	extra_bullet_level = clampi(int(data.get("extra_bullet_level", 0)), 0, 8)
 	ability_level = clampi(int(data["ability_level"]), 1, 3)
 	arc_lightning_owned = bool(data.get("arc_lightning_owned", false))
 	plasma_cannon_active = false
@@ -1562,6 +1566,7 @@ func start_new_campaign() -> void:
 	damage_level = 0
 	rate_level = 0
 	speed_level = 0
+	extra_bullet_level = 0
 	ability_level = 1
 	arc_lightning_owned = false
 	plasma_cannon_active = false
@@ -2392,7 +2397,7 @@ func update_player(delta: float) -> void:
 	# Shooting remains available between levels; bullets are updated even
 	# while the next wave has not started. Boss announcements stay non-combat.
 	# Keep edge-triggered shots: holding the key does not repeat volleys.
-	if (state == "playing" or state == "intermission" or state == "boss_rewards") and pressed and not fire_held and fire_clock <= 0.0:
+	if (state == "playing" or state == "intermission" or state == "boss_rewards") and pressed and not fire_held and fire_clock <= 0.0 and player_bullets.size() < 5 + extra_bullet_level:
 		fire_weapon()
 		fire_clock = maxf(0.12, 0.34 - rate_level * 0.05) / (0.6 if plasma_cannon_active else 1.0)
 	fire_held = pressed
@@ -2455,7 +2460,7 @@ func draw_arc_zap(start: Vector2, finish: Vector2, opacity: float, seed: float) 
 func fire_weapon() -> void:
 	if plasma_cannon_active:
 		plasma_shot_sequence += 1
-		player_bullets.append({"pos": Vector2(player_x, PLAYER_Y - 34.0), "velocity": Vector2(0.0, -BULLET_SPEED * 0.78), "plasma": true, "plasma_id": plasma_shot_sequence, "pierces": 0})
+		player_bullets.append({"pos": Vector2(player_x, PLAYER_Y - 34.0), "velocity": Vector2(0.0, -BULLET_SPEED * 1.65), "plasma": true, "plasma_id": plasma_shot_sequence, "pierces": 0})
 		play_arcade_sfx("shoot")
 		return
 	# Arc Lightning replaces Single/Double/Triple while equipped.
@@ -2828,12 +2833,12 @@ func update_bullets(delta: float) -> void:
 					enemies[target_index]["hp"] = 0 if god_mode else float(enemies[target_index]["hp"]) - 12.0
 					if float(enemies[target_index]["hp"]) <= 0.0:
 						award_enemy_kill(target_index)
-					bullet["pierces"] = int(bullet["pierces"]) + 1
+					pass # Plasma stops on first impact
 				else:
 					enemies[target_index]["hp"] = 0 if god_mode else int(enemies[target_index]["hp"]) - (1 + damage_level)
 					if int(enemies[target_index]["hp"]) <= 0:
 						award_enemy_kill(target_index)
-		if (hit and (not bool(bullet.get("plasma", false)) or boss_hit or int(bullet.get("pierces", 0)) >= 3)) or shot.y < -20.0 or shot.x < -25.0 or shot.x > W + 25.0:
+		if hit or shot.y < -20.0 or shot.x < -25.0 or shot.x > W + 25.0:
 			player_bullets.remove_at(i)
 	for i in range(radial_bullets.size() - 1, -1, -1):
 		var bullet: Dictionary = radial_bullets[i]
@@ -2907,7 +2912,7 @@ func collect_life_orb(orb_index: int) -> void:
 func pending_weapon_pickups() -> int:
 	var count := 0
 	for pickup in drops:
-		if pickup.get("kind", "scrap") in ["double_shot", "triple_shot"]:
+		if pickup.get("kind", "scrap") in ["single_shot", "double_shot", "triple_shot"]:
 			count += 1
 	return count
 
@@ -2916,16 +2921,25 @@ func try_drop_double_shot(pos: Vector2) -> void:
 	# Weapon drops continue even when Double and Triple are already unlocked.
 	if pending_weapon_pickups() >= MAX_WEAPON_PICKUPS_ON_SCREEN:
 		return
+	# Independent bonuses: small rare falling S/B cubes.
+	var bonus_roll := randf()
+	if bonus_roll < 0.015:
+		drops.append({"pos": pos, "kind": "extra_speed", "fall_speed": 115.0})
+	elif bonus_roll < 0.035:
+		drops.append({"pos": pos, "kind": "extra_bullet", "fall_speed": 115.0})
 	var kind := ""
-	if damage_level < 3:
+	var weapon_roll := randf()
+	if weapon_roll < 0.045:
+		kind = "single_shot"
+	elif damage_level < 3:
 		single_shot_kills_since_drop += 1
-		if randf() < DOUBLE_DROP_CHANCE or single_shot_kills_since_drop >= DOUBLE_DROP_PITY_KILLS:
+		if kind == "" and (randf() < DOUBLE_DROP_CHANCE or single_shot_kills_since_drop >= DOUBLE_DROP_PITY_KILLS):
 			kind = "double_shot"
 	else:
 		var chance := randf()
-		if chance < TRIPLE_DROP_CHANCE:
+		if kind == "" and chance < TRIPLE_DROP_CHANCE:
 			kind = "triple_shot"
-		elif chance < TRIPLE_DROP_CHANCE + EXTRA_DOUBLE_DROP_CHANCE:
+		elif kind == "" and chance < TRIPLE_DROP_CHANCE + EXTRA_DOUBLE_DROP_CHANCE:
 			kind = "double_shot"
 	if kind.is_empty():
 		return
@@ -2968,7 +2982,17 @@ func update_pickups(delta: float) -> void:
 		drops[i]["pos"] = pos
 		if pos.distance_to(Vector2(player_x, PLAYER_Y)) < 34.0:
 			play_arcade_sfx("pickup")
-			if drops[i].get("kind", "scrap") == "double_shot":
+			if drops[i].get("kind", "scrap") == "extra_speed":
+				speed_level = mini(4, speed_level + 1)
+			elif drops[i].get("kind", "scrap") == "extra_bullet":
+				extra_bullet_level = mini(8, extra_bullet_level + 1)
+			elif drops[i].get("kind", "scrap") == "single_shot":
+				damage_level = 0
+				arc_lightning_owned = false
+				plasma_cannon_active = false
+				arc_lightning_effects.clear()
+				explosions.append({"pos": Vector2(player_x, PLAYER_Y), "time": 0.32})
+			elif drops[i].get("kind", "scrap") == "double_shot":
 				# The last pickup is the active weapon, even when switching tiers.
 				if rate_level >= 4:
 					score += 10000
@@ -3609,6 +3633,7 @@ func draw_ship_status_modal() -> void:
 	draw_stat_meter("LEVEL", rate_level, 4, 127, 528, Color(1.0, 0.38, 0.3))
 	text_at("%.2f shots/s    (%.2fs between shots)" % [shots_per_second(), 1.0 / shots_per_second()], 128, 560, 18)
 	text_at("WEAPON: %s  |  SHIELD Lv.%d" % [equipped_weapon_name(), ability_level], 126, 612, 20, Color(0.70, 0.95, 0.8))
+	text_at("EXTRA BULLET: %d/8   MAX ON SCREEN: %d" % [extra_bullet_level, 5 + extra_bullet_level], 126, 586, 16, Color(1.0, 0.78, 0.48))
 	text_at("%s - CLOSE / RESUME" % binding_name(bindings[5]), 230, 652, 19, Color(0.80, 0.91, 1.0))
 
 func draw_final_orb_speech() -> void:
@@ -3821,6 +3846,17 @@ func _draw() -> void:
 			draw_circle(pos, 19.0, orb_color.darkened(0.45))
 			draw_circle(pos, 13.0, orb_color)
 			draw_circle(pos + Vector2(-4.0, -5.0), 4.0, Color(1.0, 1.0, 1.0, 0.9))
+		elif drop.get("kind", "scrap") == "single_shot":
+			# Square navy pickup with a miniature silhouette of the player's ship.
+			draw_rect(Rect2(pos.x - 16.0, pos.y - 16.0, 32.0, 32.0), Color(0.07, 0.19, 0.32))
+			draw_rect(Rect2(pos.x - 13.0, pos.y - 13.0, 26.0, 26.0), Color(0.17, 0.45, 0.66))
+			draw_colored_polygon(PackedVector2Array([pos + Vector2(0,-11), pos + Vector2(-10,8), pos + Vector2(-3,5), pos + Vector2(0,9), pos + Vector2(3,5), pos + Vector2(10,8)]), Color(0.70, 0.94, 1.0))
+			draw_circle(pos, 2.7, Color(0.12, 0.27, 0.48))
+		elif drop.get("kind", "scrap") == "extra_speed" or drop.get("kind", "scrap") == "extra_bullet":
+			var is_speed := drop.get("kind") == "extra_speed"
+			draw_rect(Rect2(pos.x - 14.0, pos.y - 14.0, 28.0, 28.0), Color(0.06, 0.22, 0.41) if is_speed else Color(0.35, 0.16, 0.08))
+			draw_rect(Rect2(pos.x - 11.0, pos.y - 11.0, 22.0, 22.0), Color(0.20, 0.57, 0.95) if is_speed else Color(0.95, 0.55, 0.17))
+			text_at("S" if is_speed else "B", pos.x - 7.0, pos.y + 7.0, 20, Color.WHITE)
 		elif drop.get("kind", "scrap") == "double_shot":
 			# Smaller cube pickup with two parallel blue bars, matching the Double Shot look.
 			draw_rect(Rect2(pos.x - 14.0, pos.y - 14.0, 28.0, 28.0), Color(0.07, 0.24, 0.48))
