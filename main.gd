@@ -1903,10 +1903,10 @@ func draw_debug_level_menu() -> void:
 
 func apply_debug_weapon(choice: int) -> void:
 	# Test-only loadout; never auto-save or charge Scrap.
-	# Arc Lightning is an add-on, so it can accompany ordinary shots.
+	# Arc Lightning is a standalone primary weapon, not an add-on.
 	debug_run = true
 	damage_level = 0 if choice == 0 or choice == 3 else (3 if choice == 1 else 6)
-	arc_lightning_owned = choice == 3 or choice == 4
+	arc_lightning_owned = choice == 3
 	arc_lightning_cooldown = 0.0
 	arc_lightning_effects.clear()
 	player_bullets.clear()
@@ -1919,12 +1919,12 @@ func draw_debug_weapon_menu() -> void:
 	draw_rect(Rect2(0, 0, W, H), Color(0.0, 0.02, 0.07, 0.86))
 	draw_rect(Rect2(95, 210, 530, 545), Color(0.06, 0.12, 0.24, 0.98))
 	text_at("DEBUG WEAPON SELECT [F4]", 138, 273, 27, Color(0.45, 0.95, 1.0))
-	var names := ["SINGLE SHOT", "DOUBLE SHOT", "TRIPLE SHOT", "ARC LIGHTNING + SINGLE", "ARC LIGHTNING + TRIPLE"]
+	var names := ["SINGLE SHOT", "DOUBLE SHOT", "TRIPLE SHOT", "ARC LIGHTNING"]
 	for i in range(names.size()):
 		var y := 318.0 + float(i) * 70.0
 		draw_rect(Rect2(130, y, 460, 56), Color(0.15, 0.44, 0.68) if i == debug_weapon_selection else Color(0.1, 0.2, 0.34))
 		text_at("%d - %s" % [i + 1, names[i]], 148, y + 36, 21, Color.WHITE)
-	text_at("UP / DOWN + ENTER  OR  KEYS 1-5", 151, 695, 18, Color(0.77, 0.92, 1.0))
+	text_at("UP / DOWN + ENTER  OR  KEYS 1-4", 151, 695, 18, Color(0.77, 0.92, 1.0))
 	text_at("ESC / F4 CLOSE  |  FREE QA LOADOUT", 151, 729, 17, Color(0.62, 0.96, 0.77))
 
 
@@ -2448,16 +2448,19 @@ func draw_arc_zap(start: Vector2, finish: Vector2, opacity: float, seed: float) 
 
 
 func fire_weapon() -> void:
-	if arc_lightning_owned and arc_lightning_cooldown <= 0.0:
-		player_bullets.append({"pos": Vector2(player_x, PLAYER_Y - 34.0), "velocity": Vector2(0.0, -BULLET_SPEED * 0.85), "color": Color(0.60, 0.90, 1.0), "arc": true})
-		arc_lightning_cooldown = ARC_LIGHTNING_COOLDOWN
+	# Arc Lightning replaces Single/Double/Triple while equipped.
+	if arc_lightning_owned:
+		if arc_lightning_cooldown <= 0.0:
+			player_bullets.append({"pos": Vector2(player_x, PLAYER_Y - 34.0), "velocity": Vector2(0.0, -BULLET_SPEED * 0.85), "color": Color(0.60, 0.90, 1.0), "arc": true})
+			arc_lightning_cooldown = ARC_LIGHTNING_COOLDOWN
+			play_arcade_sfx("shoot")
+		return
 	if damage_level >= 6:
 		play_arcade_sfx("triple_shoot")
 	elif damage_level >= 3:
 		play_arcade_sfx("double_shoot")
 	else:
 		play_arcade_sfx("shoot")
-	# Warblade-inspired wide fan: center flies up, outer shots diverge.
 	if damage_level >= 6:
 		add_player_bullet(-17.0, -22.0)
 		add_player_bullet(0.0, 0.0)
@@ -2469,6 +2472,8 @@ func fire_weapon() -> void:
 		add_player_bullet(0.0, 0.0)
 
 func weapon_label() -> String:
+	if arc_lightning_owned:
+		return "ARC LIGHTNING"
 	if damage_level >= 6:
 		return "TRIPLE SHOT MAX"
 	if damage_level >= 3:
@@ -3154,7 +3159,7 @@ func draw_leaderboard() -> void:
 		text_at("ENTER - Main Menu", 245, 781, 21, Color(0.55, 0.89, 1.0))
 
 const ARC_LIGHTNING_PRICE := 3200
-const ARC_LIGHTNING_COOLDOWN := 2.5
+const ARC_LIGHTNING_COOLDOWN := 0.55 # Standalone primary weapon, no normal shots between electric bolts
 const ARC_CHAIN_RANGE := 130.0
 const DOUBLE_SHOT_PRICE := 540
 const TRIPLE_SHOT_PRICE := 1580
@@ -3314,7 +3319,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		debug_weapon_menu = not debug_weapon_menu
 		if debug_weapon_menu:
 			debug_level_menu = false
-			debug_weapon_selection = 4 if arc_lightning_owned and damage_level >= 6 else (3 if arc_lightning_owned else (2 if damage_level >= 6 else (1 if damage_level >= 3 else 0)))
+			debug_weapon_selection = 3 if arc_lightning_owned else (2 if damage_level >= 6 else (1 if damage_level >= 3 else 0))
 		queue_redraw()
 		return
 	if debug_weapon_menu:
@@ -3322,12 +3327,12 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			KEY_ESCAPE:
 				debug_weapon_menu = false
 			KEY_UP:
-				debug_weapon_selection = posmod(debug_weapon_selection - 1, 5)
+				debug_weapon_selection = posmod(debug_weapon_selection - 1, 4)
 			KEY_DOWN:
-				debug_weapon_selection = posmod(debug_weapon_selection + 1, 5)
+				debug_weapon_selection = posmod(debug_weapon_selection + 1, 4)
 			KEY_ENTER, KEY_KP_ENTER:
 				apply_debug_weapon(debug_weapon_selection)
-			KEY_1, KEY_2, KEY_3, KEY_4, KEY_5:
+			KEY_1, KEY_2, KEY_3, KEY_4:
 				apply_debug_weapon(event.keycode - KEY_1)
 		queue_redraw()
 		return
@@ -3544,6 +3549,8 @@ func draw_stat_meter(name: String, current: int, maximum: int, x: float, y: floa
 		draw_rect(Rect2(x + 119, y - 13, 110.0 * float(current) / float(maximum), 11), bar_color)
 
 func equipped_weapon_name() -> String:
+	if arc_lightning_owned:
+		return "ARC LIGHTNING"
 	if damage_level >= 6:
 		return "TRIPLE"
 	if damage_level >= 3:
@@ -3861,7 +3868,7 @@ func _draw() -> void:
 		# In-shop ship stats are live and update immediately after a purchase.
 		text_at("SHIP SPEED  %d px/s  Lv.%d/4" % [int(BASE_SPEED + speed_level * SPEED_STEP), speed_level], 105, 643, 16, Color(0.55, 0.83, 1.0))
 		text_at("FIRE RATE  %.2f shots/s  Lv.%d/4" % [shots_per_second(), rate_level], 105, 663, 16, Color(1.0, 0.65, 0.5))
-		text_at("%s SHOT  |  SHIELD Lv.%d/3" % [equipped_weapon_name(), ability_level], 105, 684, 16, Color(0.6, 0.96, 0.76))
+		text_at("%s  |  SHIELD Lv.%d/3" % [equipped_weapon_name(), ability_level], 105, 684, 16, Color(0.6, 0.96, 0.76))
 		text_at("ENTER - FACE THE GUARDIAN" if pre_boss_shop else ("ENTER - View results" if level >= MAX_LEVEL else "ENTER - Next mission"), 137, 725, 20, Color(0.4, 0.9, 1.0))
 		text_at("M / ESC - MAIN MENU (SAVED)", 163, 746, 15, Color(0.74, 0.95, 0.79))
 	elif state == "gameover" or state == "victory":
