@@ -50,7 +50,8 @@ const ENEMY_TOTAL_BY_CITY_STAGE := [20, 20, 30, 30, 40]
 const BOSS_REWARD_SECONDS := 8.0
 const SHOP_ARRIVAL_SECONDS := 6.0
 const HQ_FLIGHT_SECONDS := 5.0
-const HQ_DIALOGUE_SECONDS := 6.5
+const HQ_READING_WPM := 165.0
+const HQ_SENTENCE_PAUSE := 0.5
 const PLASMA_CANNON_PRICE := 2500
 const PRE_BOSS_SHOP_DELAY_SECONDS := 4.0
 const CAMPAIGN_BASE := Vector2(492.0, 616.0)
@@ -2193,21 +2194,25 @@ func begin_boss_reward_time() -> void:
 	queue_redraw()
 
 
-const HQ_SPEAKERS := ["CAPTAIN", "CAPTAIN", "CAPTAIN", "HQ OFFICER", "HQ OFFICER", "CAPTAIN", "CAPTAIN", "HQ OFFICER", "CAPTAIN", "ONE WEEK LATER", "REPAIR CREW", "REPAIR CREW"]
+const HQ_SPEAKERS := ["CAPTAIN", "HQ OFFICER", "CAPTAIN", "HQ OFFICER", "CAPTAIN", "ONE WEEK LATER", "REPAIR CREW"]
 const HQ_LINES := [
-	"Gentlemen, we have liberated Croatia.",
-	"After we defeated the Zone Guardian, the remaining enemies",
-	"we spotted on land retreated into the sea. We also recovered a strange white orb that emits energy.",
-	"While you were fighting in Croatia, we detected",
-	"new types of enemies appearing across Bosnia and Herzegovina.",
-	"We'll deal with them too. But our ship was damaged",
-	"in the battle with the Guardian. We need time for repairs.",
-	"As far as we know, they haven't found our position. We should be safe.",
+	"Gentlemen, we have liberated Croatia. After we defeated the Zone Guardian, every enemy we spotted on land retreated into the sea. We also recovered a strange white orb that seems to emit some kind of energy.",
+	"While you were fighting in Croatia, we detected new types of enemies appearing across Bosnia and Herzegovina.",
+	"We'll deal with them too. But our ship was damaged during the battle with the Zone Guardian, and we'll need some time to make the necessary repairs.",
+	"As far as we know, they haven't discovered our location. We should be safe.",
 	"Excellent.",
 	"ONE WEEK LATER",
-	"Captain, the ship is fully repaired and in excellent condition.",
-	"The scientists have made progress with that orb you recovered and installed several new upgrades."
+	"Captain, the ship has been fully repaired and is in excellent condition. I also hear that our scientists have made progress with the orb you recovered and installed several new upgrades."
 ]
+
+
+func hq_line_duration() -> float:
+	if HQ_SPEAKERS[hq_dialogue_index] == "ONE WEEK LATER":
+		return 3.2
+	var line: String = String(HQ_LINES[hq_dialogue_index])
+	var word_count: int = line.split(" ", false).size()
+	var sentence_count: int = line.count(".") + line.count("!") + line.count("?")
+	return clampf(float(word_count) * 60.0 / HQ_READING_WPM + float(sentence_count) * HQ_SENTENCE_PAUSE + 1.2, 3.0, 20.0)
 
 
 func advance_hq_dialogue() -> void:
@@ -2390,7 +2395,7 @@ func _process(delta: float) -> void:
 		return
 	if state == "hq_dialogue":
 		hq_elapsed += delta
-		if hq_elapsed >= HQ_DIALOGUE_SECONDS:
+		if hq_elapsed >= hq_line_duration():
 			advance_hq_dialogue()
 		queue_redraw()
 		return
@@ -4108,13 +4113,14 @@ func _draw() -> void:
 					current = candidate
 			if not current.is_empty():
 				text_at(current, 86, y, 21)
-		text_at("ENTER - CONTINUE", 254, 807, 20, Color(0.56, 0.98, 0.79))
+		text_at("ENTER / SPACE - NEXT    AUTO ADVANCE", 143, 807, 18, Color(0.56, 0.98, 0.79))
+		text_at("%d / %d" % [hq_dialogue_index + 1, HQ_LINES.size()], 315, 752, 16, Color(0.66, 0.8, 0.95))
 	if state == "shop_arrival":
 		# Fluid six-second departure. Begin EXACTLY at the player's current
 		# position: no snap to center and no full-screen cut at t=0.
 		var duration: float = HQ_FLIGHT_SECONDS if departure_destination == "hq" else SHOP_ARRIVAL_SECONDS
 		var flight_t: float = clampf(shop_arrival_elapsed / duration, 0.0, 1.0)
-		var boost_t: float = clampf(shop_arrival_elapsed / 3.35, 0.0, 1.0)
+		var boost_t: float = clampf(shop_arrival_elapsed / (duration * 0.75), 0.0, 1.0)
 		# Smooth throttle rise and strong late acceleration, continuous velocity.
 		var boost: float = smoothstep(0.0, 0.70, boost_t)
 		var distance: float = 1200.0 * boost_t * boost_t * boost_t
