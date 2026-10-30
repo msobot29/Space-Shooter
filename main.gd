@@ -1366,7 +1366,7 @@ func read_campaign_save() -> void:
 	if int(config.get_value("campaign", "version", -1)) != CAMPAIGN_SAVE_VERSION:
 		return
 	var checkpoint_state := String(config.get_value("campaign", "checkpoint", ""))
-	if not checkpoint_state in ["city_select", "playing", "shop", "pre_boss_shop", "pre_boss"]:
+	if not checkpoint_state in ["city_select", "playing", "shop", "pre_boss_shop", "pre_boss", "hq_flight", "hq_dialogue"]:
 		return
 	var saved_level := int(config.get_value("campaign", "level", 0))
 	var saved_lives := int(config.get_value("campaign", "lives", 0))
@@ -1489,6 +1489,12 @@ func continue_campaign() -> void:
 		open_pre_boss_shop()
 	elif checkpoint == "pre_boss":
 		start_level(true)
+	elif checkpoint == "hq_flight":
+		begin_hq_sequence()
+	elif checkpoint == "hq_dialogue":
+		state = "hq_dialogue"
+		hq_dialogue_index = 0
+		hq_elapsed = 0.0
 	elif checkpoint == "shop":
 		# Legacy save from releases where the shop was AFTER the guardian.
 		state = "shop"
@@ -2219,10 +2225,12 @@ func advance_hq_dialogue() -> void:
 	hq_elapsed = 0.0
 	hq_dialogue_index += 1
 	if hq_dialogue_index >= HQ_LINES.size():
-		# Bosnia's first shop offers the technology researched from the white orb.
-		state = "shop"
-		pre_boss_shop = false
+		# Unlock Bosnia only AFTER the HQ debriefing, never during the flight.
+		if city_route.size() == 4 and not city_route.has(4):
+			city_route.append(4)
 		level = BOSNIA_START_LEVEL
+		pre_boss_shop = false
+		state = "shop"
 		save_campaign_checkpoint("shop")
 	queue_redraw()
 
@@ -2236,9 +2244,9 @@ func begin_hq_sequence() -> void:
 	enemy_bullets.clear()
 	radial_bullets.clear()
 	fire_held = true
-	# Persist the newly unlocked region; Continue cannot replay the ending.
-	level = BOSNIA_START_LEVEL
-	save_campaign_checkpoint("shop")
+	# Keep Croatia's level and backdrop throughout the HQ flight.
+	# Continue resumes the flight instead of jumping straight into level 26.
+	save_campaign_checkpoint("hq_flight")
 	queue_redraw()
 
 
@@ -2266,6 +2274,7 @@ func finish_shop_arrival() -> void:
 		state = "hq_dialogue"
 		hq_dialogue_index = 0
 		hq_elapsed = 0.0
+		save_campaign_checkpoint("hq_dialogue")
 		queue_redraw()
 	elif departure_destination == "map":
 		show_city_map()
