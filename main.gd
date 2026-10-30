@@ -1911,6 +1911,8 @@ func draw_debug_level_menu() -> void:
 
 
 func apply_debug_weapon(choice: int) -> void:
+	if level <= CROATIA_FINAL_LEVEL and choice >= 3:
+		return # Advanced weapons unlock in Bosnia (level 26).
 	# Test-only loadout; never auto-save or charge Scrap.
 	# Arc Lightning is a standalone primary weapon, not an add-on.
 	debug_run = true
@@ -1933,12 +1935,16 @@ func draw_debug_weapon_menu() -> void:
 	for i in range(names.size()):
 		var y := 318.0 + float(i) * 70.0
 		draw_rect(Rect2(130, y, 460, 56), Color(0.15, 0.44, 0.68) if i == debug_weapon_selection else Color(0.1, 0.2, 0.34))
-		text_at("%d - %s" % [i + 1, names[i]], 148, y + 36, 21, Color.WHITE)
+		var locked: bool = level <= CROATIA_FINAL_LEVEL and i >= 3
+		text_at("%d - %s%s" % [i + 1, names[i], " [LVL 26]" if locked else ""], 148, y + 36, 21, Color(0.48, 0.55, 0.62) if locked else Color.WHITE)
 	text_at("UP / DOWN + ENTER  OR  KEYS 1-5", 151, 695, 18, Color(0.77, 0.92, 1.0))
 	text_at("ESC / F4 CLOSE  |  FREE QA LOADOUT", 151, 729, 17, Color(0.62, 0.96, 0.77))
 
 
 func start_level(resume_boss: bool = false) -> void:
+	if level <= CROATIA_FINAL_LEVEL:
+		arc_lightning_owned = false
+		plasma_cannon_active = false
 	state = "playing"
 	show_stats_modal = false
 	game_paused = false
@@ -3256,7 +3262,7 @@ func upgrade_cost(kind: int) -> int:
 
 func buy_upgrade(kind: int) -> void:
 	var capped := (kind == 1 and speed_level >= 4) or (kind == 2 and rate_level >= 4) or (kind == 3 and damage_level >= 3) or (kind == 4 and damage_level >= 6) or (kind == 5 and ability_level >= 3) or (kind == 6 and arc_lightning_owned)
-	if capped or scrap < upgrade_cost(kind):
+	if (kind == 6 and level <= CROATIA_FINAL_LEVEL) or capped or scrap < upgrade_cost(kind):
 		return
 	scrap -= upgrade_cost(kind)
 	match kind:
@@ -3681,14 +3687,13 @@ func draw_final_orb_speech() -> void:
 	draw_colored_polygon(pointer, bubble_color)
 	if final_dialogue_stage == 1:
 		text_at("CREW:", bubble_x + 18.0, bubble_y + 28.0, 20, Color(0.46, 0.9, 1.0))
-		text_at("Sir, we have picked up an orb.", bubble_x + 18.0, bubble_y + 58.0, 19)
-		text_at("It is giving off some kind", bubble_x + 18.0, bubble_y + 85.0, 19)
-		text_at("of energy!", bubble_x + 18.0, bubble_y + 112.0, 19)
+		text_at("Sir, we have picked up", bubble_x + 18.0, bubble_y + 58.0, 19)
+		text_at("a strange glowing orb.", bubble_x + 18.0, bubble_y + 85.0, 19)
 	else:
 		text_at("CAPTAIN:", bubble_x + 18.0, bubble_y + 28.0, 20, Color(1.0, 0.83, 0.43))
-		text_at("Put it inside the isolated box.", bubble_x + 18.0, bubble_y + 58.0, 19)
-		text_at("We will examine it later", bubble_x + 18.0, bubble_y + 85.0, 19)
-		text_at("back at HQ.", bubble_x + 18.0, bubble_y + 112.0, 19)
+		text_at("We will take it back to HQ", bubble_x + 18.0, bubble_y + 58.0, 19)
+		text_at("and see what the scientists", bubble_x + 18.0, bubble_y + 85.0, 19)
+		text_at("have to say about it.", bubble_x + 18.0, bubble_y + 112.0, 19)
 
 
 func _draw() -> void:
@@ -3760,8 +3765,6 @@ func _draw() -> void:
 	for orb_i in range(4):
 		var orb_color: Color = ORB_COLORS[orb_i]
 		draw_circle(Vector2(360.0 + float(orb_i) * 24.0, 59.0), 8.0, orb_color if (collected_orb_mask & (1 << orb_i)) != 0 else Color(0.2, 0.25, 0.34))
-	# Fifth slot tracks only the final white Zone Guardian trophy.
-	draw_circle(Vector2(456.0, 59.0), 9.0, Color.WHITE if white_orb_collected else Color(0.2, 0.25, 0.34))
 	if ability_time > 0.0:
 		text_at("R SHIELD: %.1fs" % ability_time, 20, 96, 19, Color(0.3, 1.0, 1.0))
 	elif ability_cooldown > 0.0:
@@ -3954,7 +3957,7 @@ func _draw() -> void:
 			text_at("5 - Shield Upgrade: MAX", 105, 569, 22)
 		else:
 			text_at("5 - Shield Upgrade Lv.%d/3 (%d)" % [ability_level, upgrade_cost(5)], 105, 569, 22)
-		text_at("6 - ARC LIGHTNING: OWNED" if arc_lightning_owned else "6 - ARC LIGHTNING (3200 Scrap)", 105, 606, 20, Color(0.53,0.84,1.0))
+		text_at("6 - ARC LIGHTNING: LOCKED (LVL 26)" if level <= CROATIA_FINAL_LEVEL else ("6 - ARC LIGHTNING: OWNED" if arc_lightning_owned else "6 - ARC LIGHTNING (3200 Scrap)"), 105, 606, 20, Color(0.53,0.84,1.0))
 		# In-shop ship stats are live and update immediately after a purchase.
 		text_at("SHIP SPEED  %d px/s  Lv.%d/4" % [int(BASE_SPEED + speed_level * SPEED_STEP), speed_level], 105, 643, 16, Color(0.55, 0.83, 1.0))
 		text_at("FIRE RATE  %.2f shots/s  Lv.%d/4" % [shots_per_second(), rate_level], 105, 663, 16, Color(1.0, 0.65, 0.5))
