@@ -3817,6 +3817,48 @@ func draw_final_orb_speech() -> void:
 		text_at("have to say about it.", bubble_x + 18.0, bubble_y + 112.0, 19)
 
 
+func draw_hq_flight_map() -> void:
+	# Five-second cinematic on Croatia's existing stylized map.
+	# HQ is a fictional concealed base marker, not a real-world location.
+	draw_balkan_relief()
+	var zagreb: Vector2 = CITY_POINTS[4]
+	var hq: Vector2 = Vector2(138.0, 712.0)
+	var progress: float = clampf(shop_arrival_elapsed / HQ_FLIGHT_SECONDS, 0.0, 1.0)
+	# Ease into a faster flight, then decelerate before arrival.
+	var eased: float = smoothstep(0.0, 1.0, progress)
+	var ship_pos: Vector2 = zagreb.lerp(hq, eased)
+	draw_rect(Rect2(18.0, 27.0, 684.0, 148.0), Color(0.025, 0.065, 0.14, 0.95))
+	text_at("ADRIATIC UPRISING", 134.0, 78.0, 34, Color(0.95, 0.97, 1.0))
+	text_at("RETURNING TO HEADQUARTERS", 148.0, 121.0, 23, Color(0.63, 0.94, 1.0))
+	text_at("CROATIA LIBERATED", 239.0, 154.0, 18, Color(0.50, 1.0, 0.72))
+	# Show the five freed Croatian cities without unlocking Bosnia.
+	for i in range(5):
+		var city: Vector2 = CITY_POINTS[i]
+		draw_circle(city, 8.0, Color(0.32, 0.92, 0.54))
+		draw_arc(city, 14.0, 0.0, TAU, 24, Color(0.55, 1.0, 0.72), 2.0, true)
+	text_at("ZAGREB", zagreb.x + 16.0, zagreb.y - 13.0, 17, Color(0.75, 1.0, 0.83))
+	draw_circle(hq, 12.0, Color(0.12, 0.37, 0.52))
+	draw_arc(hq, 19.0, 0.0, TAU, 30, Color(0.45, 0.91, 1.0), 3.0, true)
+	text_at("HQ", hq.x + 24.0, hq.y + 6.0, 21, Color(0.68, 0.96, 1.0))
+	draw_line(zagreb, hq, Color(0.13, 0.38, 0.51, 0.8), 3.0, true)
+	draw_line(zagreb, ship_pos, Color(0.47, 0.94, 1.0, 0.95), 5.0, true)
+	# Place the same blue ship used in the campaign map, oriented along the route.
+	var heading: Vector2 = (hq - zagreb).normalized()
+	var side: Vector2 = Vector2(-heading.y, heading.x)
+	var hull := PackedVector2Array([
+		ship_pos + heading * 21.0,
+		ship_pos - heading * 10.0 - side * 15.0,
+		ship_pos - heading * 4.0,
+		ship_pos - heading * 10.0 + side * 15.0
+	])
+	draw_colored_polygon(hull, Color(0.26, 0.82, 1.0))
+	draw_circle(ship_pos, 4.5, Color(1.0, 0.94, 0.45))
+	if progress > 0.01 and progress < 0.99:
+		var exhaust: float = 13.0 + 15.0 * sin(progress * PI)
+		draw_line(ship_pos - heading * 12.0, ship_pos - heading * (12.0 + exhaust), Color(0.41, 0.89, 1.0, 0.76), 4.0, true)
+	text_at("FLIGHT TO HQ  %d%%" % int(progress * 100.0), 229.0, 865.0, 20, Color(0.76, 0.92, 1.0))
+
+
 func _draw() -> void:
 	if state == "menu_confirm_new":
 		draw_new_game_confirmation()
@@ -4125,22 +4167,25 @@ func _draw() -> void:
 		text_at("ENTER / SPACE - NEXT    AUTO ADVANCE", 143, 807, 18, Color(0.56, 0.98, 0.79))
 		text_at("%d / %d" % [hq_dialogue_index + 1, HQ_LINES.size()], 315, 752, 16, Color(0.66, 0.8, 0.95))
 	if state == "shop_arrival":
-		# Fluid six-second departure. Begin EXACTLY at the player's current
-		# position: no snap to center and no full-screen cut at t=0.
-		var duration: float = HQ_FLIGHT_SECONDS if departure_destination == "hq" else SHOP_ARRIVAL_SECONDS
-		var flight_t: float = clampf(shop_arrival_elapsed / duration, 0.0, 1.0)
-		var boost_t: float = clampf(shop_arrival_elapsed / (duration * 0.75), 0.0, 1.0)
-		# Smooth throttle rise and strong late acceleration, continuous velocity.
-		var boost: float = smoothstep(0.0, 0.70, boost_t)
-		var distance: float = 1200.0 * boost_t * boost_t * boost_t
-		var ship_pos := Vector2(player_x, PLAYER_Y - distance)
-		# No separately drawn streaks or persistent exhaust trails. The ship
-		# and its built-in animated engine flame are drawn once per frame.
-		if ship_pos.y > -100.0:
-			draw_player_ship_25d(ship_pos, 1.0 + boost * 3.3)
-		# Fade into the map (or final shop) near the end, no message overlay.
-		var fade_amount: float = smoothstep(0.80, 1.0, flight_t)
-		draw_rect(Rect2(0.0, 0.0, W, H), Color(0.015, 0.04, 0.08, fade_amount))
+		if departure_destination == "hq":
+			draw_hq_flight_map()
+		else:
+			# Fluid six-second departure. Begin EXACTLY at the player's current
+			# position: no snap to center and no full-screen cut at t=0.
+			var duration: float = HQ_FLIGHT_SECONDS if departure_destination == "hq" else SHOP_ARRIVAL_SECONDS
+			var flight_t: float = clampf(shop_arrival_elapsed / duration, 0.0, 1.0)
+			var boost_t: float = clampf(shop_arrival_elapsed / (duration * 0.75), 0.0, 1.0)
+			# Smooth throttle rise and strong late acceleration, continuous velocity.
+			var boost: float = smoothstep(0.0, 0.70, boost_t)
+			var distance: float = 1200.0 * boost_t * boost_t * boost_t
+			var ship_pos := Vector2(player_x, PLAYER_Y - distance)
+			# No separately drawn streaks or persistent exhaust trails. The ship
+			# and its built-in animated engine flame are drawn once per frame.
+			if ship_pos.y > -100.0:
+				draw_player_ship_25d(ship_pos, 1.0 + boost * 3.3)
+			# Fade into the map (or final shop) near the end, no message overlay.
+			var fade_amount: float = smoothstep(0.80, 1.0, flight_t)
+			draw_rect(Rect2(0.0, 0.0, W, H), Color(0.015, 0.04, 0.08, fade_amount))
 	if state in ["playing", "intermission", "boss_intro", "boss_rewards", "pre_boss_shop_wait", "shop"]:
 		text_at("M music %s [%d%%]  [ ] volume   , . SFX [%d%%]" % ["ON" if music_enabled else "OFF", int(music_volume * 100.0), int(sfx_volume * 100.0)], 19, H - 42, 15, Color(0.74, 0.90, 1.0))
 	if show_stats_modal and (state == "playing" or state == "intermission" or state == "boss_intro" or state == "boss_rewards"):
