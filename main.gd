@@ -1689,6 +1689,33 @@ func draw_city_map() -> void:
 	text_at("6-SECOND FLIGHT TO SELECTED CITY", 160, 873, 18, Color(0.7, 0.88, 1.0))
 
 
+func draw_mostar_background() -> void:
+	# Mostar: turquoise Neretva, pale limestone houses and the Old Bridge.
+	draw_rect(Rect2(0.0, 0.0, W, H), Color(0.075, 0.19, 0.22))
+	draw_rect(Rect2(245.0, 0.0, 230.0, H), Color(0.055, 0.37, 0.43))
+	for i in range(11):
+		var stream_y: float = fposmod(float(i) * 105.0 + bg_scroll_mid, 1155.0) - 105.0
+		draw_line(Vector2(282.0, stream_y), Vector2(430.0, stream_y + 15.0), Color(0.43, 0.83, 0.82, 0.28), 2.0, true)
+	for side in range(2):
+		var town_x: float = 20.0 if side == 0 else 490.0
+		draw_rect(Rect2(town_x, 0.0, 205.0, H), Color(0.42, 0.42, 0.34))
+		for i in range(5):
+			var building_y: float = fposmod(float(i) * 235.0 + bg_scroll_far, 1175.0) - 190.0
+			if building_y > H or building_y < -195.0:
+				continue
+			draw_rect(Rect2(town_x + 18.0, building_y + 14.0, 150.0, 118.0), Color(0.71, 0.66, 0.53))
+			draw_rect(Rect2(town_x + 26.0, building_y + 22.0, 132.0, 96.0), Color(0.64, 0.32, 0.24))
+			for window in range(3):
+				draw_rect(Rect2(town_x + 36.0 + float(window) * 37.0, building_y + 45.0, 17.0, 19.0), Color(0.16, 0.22, 0.26))
+	for i in range(3):
+		var bridge_y: float = fposmod(float(i) * 520.0 + bg_scroll_near, 1560.0) - 250.0
+		if bridge_y < -95.0 or bridge_y > H + 95.0:
+			continue
+		draw_line(Vector2(212.0, bridge_y + 5.0), Vector2(508.0, bridge_y + 5.0), Color(0.16, 0.23, 0.25, 0.35), 25.0)
+		draw_arc(Vector2(360.0, bridge_y + 73.0), 151.0, PI * 1.1, PI * 1.9, 32, Color(0.82, 0.79, 0.67), 17.0, true)
+		draw_line(Vector2(208.0, bridge_y - 14.0), Vector2(512.0, bridge_y - 14.0), Color(0.91, 0.88, 0.74), 7.0, true)
+
+
 func draw_bosnia_stage_background() -> void:
 	# New forest/river environment for the Bosnia region, independent of Croatia.
 	draw_rect(Rect2(0, 0, W, H), Color(0.025, 0.10, 0.15))
@@ -1872,11 +1899,12 @@ func jump_to_debug_level() -> void:
 	debug_run = true
 	debug_level_menu = false
 	debug_weapon_menu = false
-	# Debug run uses canonical city order regardless of campaign route.
-	city_route.clear()
-	for city_index in range(CITY_NAMES.size()):
-		city_route.append(city_index)
+	# Only preceding cities are liberated; current city's missions remain open.
 	level = clampi(debug_selected_level, 1, MAX_LEVEL)
+	city_route.clear()
+	var active_city_slot: int = int((level - 1) / 5)
+	for city_index in range(active_city_slot):
+		city_route.append(city_index)
 	lives = maxi(lives, 3)
 	drops.clear()
 	active_multipliers.clear()
@@ -2319,6 +2347,8 @@ func _process(delta: float) -> void:
 	if state in ["playing", "intermission", "boss_intro", "boss_rewards", "shop_arrival", "pre_boss_shop_wait"]:
 		if in_bosnia():
 			update_bosnia_background(delta)
+			if city_name() == "MOSTAR":
+				bg_scroll_near = fposmod(bg_scroll_near + BG_SPEED_NEAR * delta, 1560.0)
 		elif city_name() == "ZADAR":
 			update_background(delta)
 		elif city_name() == "RIJEKA":
@@ -3158,6 +3188,10 @@ func complete_level() -> void:
 	elif is_region_boss():
 		begin_departure("shop")
 	elif level % 5 == 0:
+		if debug_run:
+			var completed_city_index: int = int((level - 1) / 5)
+			if not city_route.has(completed_city_index):
+				city_route.append(completed_city_index)
 		begin_departure("map")
 	else:
 		# Advance automatically with the established silent pause and title.
@@ -3808,7 +3842,10 @@ func _draw() -> void:
 	var has_animated_port := is_playfield and (in_bosnia() or city_name() in ["ZADAR", "RIJEKA", "SPLIT", "OSIJEK", "ZAGREB"])
 	if has_animated_port:
 		if in_bosnia():
-			draw_bosnia_stage_background()
+			if city_name() == "MOSTAR":
+				draw_mostar_background()
+			else:
+				draw_bosnia_stage_background()
 		elif city_name() == "ZADAR":
 			draw_zadar_background()
 		elif city_name() == "RIJEKA":
