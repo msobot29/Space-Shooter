@@ -2975,6 +2975,28 @@ func update_multiplier_timers(delta: float) -> void:
 		if float(active_multipliers[i]["time"]) <= 0.0:
 			active_multipliers.remove_at(i)
 
+func draw_weapon_pickup_ship(pos: Vector2, barrel_count: int, cube_color: Color) -> void:
+	draw_rect(Rect2(pos.x - 16.0, pos.y - 16.0, 32.0, 32.0), cube_color.darkened(0.62))
+	draw_rect(Rect2(pos.x - 13.0, pos.y - 13.0, 26.0, 26.0), cube_color)
+	draw_rect(Rect2(pos.x - 13.0, pos.y - 13.0, 26.0, 3.0), cube_color.lightened(0.52))
+	draw_colored_polygon(PackedVector2Array([
+		pos + Vector2(0.0, -10.0), pos + Vector2(-6.0, 2.0),
+		pos + Vector2(-10.0, 8.0), pos + Vector2(-3.0, 5.0),
+		pos + Vector2(0.0, 9.0), pos + Vector2(3.0, 5.0),
+		pos + Vector2(10.0, 8.0), pos + Vector2(6.0, 2.0)
+	]), Color(0.76, 0.94, 1.0))
+	draw_circle(pos + Vector2(0.0, 1.0), 2.5, Color(0.10, 0.27, 0.47))
+	for barrel in range(barrel_count):
+		var x: float = pos.x + (float(barrel) - float(barrel_count - 1) * 0.5) * 7.0
+		draw_line(Vector2(x, pos.y - 12.0), Vector2(x, pos.y - 7.0), Color.WHITE, 2.0, true)
+
+
+func show_weapon_pickup_name(weapon_name: String, pickup_color: Color) -> void:
+	bonus_popups.append({"pos": Vector2(player_x, PLAYER_Y - 70.0), "time": 1.45, "label": weapon_name, "color": pickup_color})
+	if bonus_popups.size() > 8:
+		bonus_popups.pop_front()
+
+
 func update_pickups(delta: float) -> void:
 	for i in range(drops.size() - 1, -1, -1):
 		var pos: Vector2 = drops[i]["pos"]
@@ -2988,6 +3010,7 @@ func update_pickups(delta: float) -> void:
 				extra_bullet_level = mini(8, extra_bullet_level + 1)
 			elif drops[i].get("kind", "scrap") == "single_shot":
 				damage_level = 0
+				show_weapon_pickup_name("SINGLE SHOT", Color(0.69, 0.94, 1.0))
 				arc_lightning_owned = false
 				plasma_cannon_active = false
 				arc_lightning_effects.clear()
@@ -3000,6 +3023,7 @@ func update_pickups(delta: float) -> void:
 				elif damage_level >= 3 and damage_level < 6:
 					rate_level += 1
 				damage_level = 3
+				show_weapon_pickup_name("DOUBLE SHOT", Color(0.45, 0.83, 1.0))
 				arc_lightning_owned = false
 				plasma_cannon_active = false
 				arc_lightning_effects.clear()
@@ -3012,6 +3036,7 @@ func update_pickups(delta: float) -> void:
 				elif damage_level >= 6:
 					rate_level += 1
 				damage_level = 6
+				show_weapon_pickup_name("TRIPLE SHOT", Color(0.85, 0.62, 1.0))
 				arc_lightning_owned = false
 				plasma_cannon_active = false
 				arc_lightning_effects.clear()
@@ -3847,30 +3872,16 @@ func _draw() -> void:
 			draw_circle(pos, 13.0, orb_color)
 			draw_circle(pos + Vector2(-4.0, -5.0), 4.0, Color(1.0, 1.0, 1.0, 0.9))
 		elif drop.get("kind", "scrap") == "single_shot":
-			# Square navy pickup with a miniature silhouette of the player's ship.
-			draw_rect(Rect2(pos.x - 16.0, pos.y - 16.0, 32.0, 32.0), Color(0.07, 0.19, 0.32))
-			draw_rect(Rect2(pos.x - 13.0, pos.y - 13.0, 26.0, 26.0), Color(0.17, 0.45, 0.66))
-			draw_colored_polygon(PackedVector2Array([pos + Vector2(0,-11), pos + Vector2(-10,8), pos + Vector2(-3,5), pos + Vector2(0,9), pos + Vector2(3,5), pos + Vector2(10,8)]), Color(0.70, 0.94, 1.0))
-			draw_circle(pos, 2.7, Color(0.12, 0.27, 0.48))
+			draw_weapon_pickup_ship(pos, 1, Color(0.21, 0.57, 0.83))
 		elif drop.get("kind", "scrap") == "extra_speed" or drop.get("kind", "scrap") == "extra_bullet":
 			var is_speed: bool = String(drop.get("kind", "")) == "extra_speed"
 			draw_rect(Rect2(pos.x - 14.0, pos.y - 14.0, 28.0, 28.0), Color(0.06, 0.22, 0.41) if is_speed else Color(0.35, 0.16, 0.08))
 			draw_rect(Rect2(pos.x - 11.0, pos.y - 11.0, 22.0, 22.0), Color(0.20, 0.57, 0.95) if is_speed else Color(0.95, 0.55, 0.17))
 			text_at("S" if is_speed else "B", pos.x - 7.0, pos.y + 7.0, 20, Color.WHITE)
 		elif drop.get("kind", "scrap") == "double_shot":
-			# Smaller cube pickup with two parallel blue bars, matching the Double Shot look.
-			draw_rect(Rect2(pos.x - 14.0, pos.y - 14.0, 28.0, 28.0), Color(0.07, 0.24, 0.48))
-			draw_rect(Rect2(pos.x - 12.0, pos.y - 12.0, 24.0, 24.0), Color(0.10, 0.33, 0.62))
-			draw_rect(Rect2(pos.x - 14.0, pos.y - 14.0, 28.0, 3.0), Color(0.43, 0.83, 1.0))
-			draw_rect(Rect2(pos.x - 14.0, pos.y + 11.0, 28.0, 3.0), Color(0.04, 0.14, 0.28))
-			draw_rect(Rect2(pos.x - 9.0, pos.y - 8.0, 4.0, 16.0), Color(0.72, 0.96, 1.0))
-			draw_rect(Rect2(pos.x + 5.0, pos.y - 8.0, 4.0, 16.0), Color(0.72, 0.96, 1.0))
+			draw_weapon_pickup_ship(pos, 2, Color(0.14, 0.42, 0.81))
 		elif drop.get("kind", "scrap") == "triple_shot":
-			# Purple pickup with three vertical bars.
-			draw_rect(Rect2(pos.x - 16.0, pos.y - 15.0, 32.0, 30.0), Color(0.22, 0.09, 0.42))
-			draw_rect(Rect2(pos.x - 13.0, pos.y - 12.0, 26.0, 24.0), Color(0.50, 0.27, 0.75))
-			for bar_x in [-9.0, -2.0, 5.0]:
-				draw_rect(Rect2(pos.x + bar_x, pos.y - 8.0, 4.0, 16.0), Color(0.93, 0.79, 1.0))
+			draw_weapon_pickup_ship(pos, 3, Color(0.56, 0.26, 0.79))
 		else:
 			draw_circle(pos, 9.0, Color(0.95, 0.82, 0.25))
 			draw_circle(pos, 4.0, Color(0.45, 0.3, 0.08))
@@ -3889,10 +3900,11 @@ func _draw() -> void:
 	for bonus in bonus_popups:
 		var label_pos: Vector2 = bonus["pos"]
 		var opacity: float = clampf(float(bonus["time"]) / 0.65, 0.0, 1.0)
-		var bonus_text := "+10,000"
+		var bonus_text: String = String(bonus.get("label", "+10,000"))
 		var label_width: float = font.get_string_size(bonus_text, HORIZONTAL_ALIGNMENT_LEFT, -1, 27).x
 		var label_x: float = clampf(label_pos.x - label_width * 0.5 + 37.0, 8.0, W - label_width - 8.0)
-		text_at(bonus_text, label_x, label_pos.y, 27, Color(1.0, 0.88, 0.25, opacity))
+		var popup_color: Color = bonus.get("color", Color(1.0, 0.88, 0.25))
+		text_at(bonus_text, label_x, label_pos.y, 27, Color(popup_color.r, popup_color.g, popup_color.b, opacity))
 	if state == "boss_intro":
 		# Separate lieutenant announcement instead of an abrupt boss spawn.
 		draw_rect(Rect2(42, 338, 636, 190), Color(0.08, 0.07, 0.17, 0.94))
