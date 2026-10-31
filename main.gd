@@ -2748,7 +2748,7 @@ func _process(delta: float) -> void:
 					final_dialogue_stage = 0
 		# Wait for EVERY dropped reward to be collected or leave the bottom
 		# edge. A completed timer alone must not cut off the pickup window.
-		if drops.is_empty() and final_dialogue_stage == 0:
+		if drops.is_empty() and final_dialogue_stage == 0 and boss_reward_time <= 0.0:
 			complete_level()
 		queue_redraw()
 		return
@@ -4133,7 +4133,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
 				if victory_show_scores:
 					victory_show_scores = false
 				else:
-					state = "main_menu"
+					return_to_main_menu()
 		else:
 			if event.keycode == KEY_ENTER or event.keycode == KEY_KP_ENTER or event.keycode == KEY_ESCAPE:
 				return_to_main_menu()
