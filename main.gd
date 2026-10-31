@@ -780,10 +780,15 @@ func draw_atlantean_lancer(pos: Vector2) -> void:
 		draw_line(pos + Vector2(13,-24), pos + Vector2(13+dx,-39), Color(1.0,0.87,0.52), 3)
 
 
-func draw_coral_colossus(pos: Vector2) -> void:
+func draw_coral_colossus(pos: Vector2, armor_left: int = 3) -> void:
 	# Armored coral colossus with branching red-orange horns.
 	draw_rect(Rect2(pos.x-33,pos.y-26,66,58), Color(0.55,0.18,0.15))
-	draw_rect(Rect2(pos.x-24,pos.y-19,48,42), Color(0.94,0.43,0.23))
+	draw_rect(Rect2(pos.x-24,pos.y-19,48,42), Color(0.24,0.21,0.22))
+	# Three detachable armor plates. Missing pieces reveal the dark core.
+	for plate in range(clampi(armor_left, 0, 3)):
+		var armor_x: float = pos.x - 22.0 + float(plate) * 15.0
+		draw_rect(Rect2(armor_x, pos.y - 18.0, 14.0, 39.0), Color(0.94, 0.43, 0.23))
+		draw_rect(Rect2(armor_x, pos.y - 18.0, 14.0, 4.0), Color(1.0, 0.75, 0.45))
 	for dx in [-24.0,24.0]:
 		draw_line(pos + Vector2(dx,-17), pos + Vector2(dx*1.4,-39), Color(1.0,0.61,0.34), 7)
 	draw_circle(pos + Vector2(-10,-7), 5, Color(0.08,0.23,0.31))
@@ -2261,7 +2266,8 @@ func spawn_wave() -> void:
 				"side": -1.0 if left else 1.0,
 				"offset": float(index) * 0.26,
 				"hp": int(BOSNIA_ENEMY_STATS[kind]["hp"]) if in_bosnia() else (3 if is_guard and level <= 5 else (5 + mini(int(float(level - 1) / 5.0), 4) if is_guard else 2 + mini(int(float(level - 1) / 5.0), 4))),
-				"kind": kind
+				"kind": kind,
+				"armor_left": 3 if kind == 4 else 0
 			})
 
 func move_enemy(enemy: Dictionary, delta: float) -> void:
@@ -2984,6 +2990,23 @@ func award_enemy_kill(index: int) -> void:
 		drop_scrap(enemy_pos, 1)
 
 
+func apply_enemy_weapon_damage(target_index: int, damage: float, armor_damage: int) -> void:
+	if target_index < 0 or target_index >= enemies.size():
+		return
+	if int(enemies[target_index]["kind"]) == 4:
+		var remaining: int = 0 if god_mode else maxi(0, int(enemies[target_index].get("armor_left", 3)) - armor_damage)
+		enemies[target_index]["armor_left"] = remaining
+		if remaining > 0:
+			explosions.append({"pos": Vector2(enemies[target_index]["pos"]), "time": 0.18})
+		elif remaining == 0:
+			enemies[target_index]["hp"] = 0.0
+			award_enemy_kill(target_index)
+		return
+	enemies[target_index]["hp"] = 0.0 if god_mode else float(enemies[target_index]["hp"]) - damage
+	if float(enemies[target_index]["hp"]) <= 0.0:
+		award_enemy_kill(target_index)
+
+
 func arc_chain_impact(first_index: int) -> void:
 	# Instant first hit (8), up to two jumps (6, 4.5); each link <=130px.
 	var origin: Vector2 = Vector2.ZERO
@@ -3008,9 +3031,7 @@ func arc_chain_impact(first_index: int) -> void:
 		already_hit.append(target_pos)
 		origin = target_pos
 		var damage: float = 8.0 * pow(0.75, link)
-		enemies[target_index]["hp"] = 0.0 if god_mode else float(enemies[target_index]["hp"]) - damage
-		if float(enemies[target_index]["hp"]) <= 0.0:
-			award_enemy_kill(target_index)
+		apply_enemy_weapon_damage(target_index, damage, 2 if link == 0 else 1)
 
 
 func update_bullets(delta: float) -> void:
@@ -3084,14 +3105,10 @@ func update_bullets(delta: float) -> void:
 					arc_chain_impact(target_index)
 				elif bool(bullet.get("plasma", false)):
 					enemies[target_index]["last_plasma_hit"] = int(bullet["plasma_id"])
-					enemies[target_index]["hp"] = 0.0 if god_mode else float(enemies[target_index]["hp"]) - 12.0
-					if float(enemies[target_index]["hp"]) <= 0.0:
-						award_enemy_kill(target_index)
+					apply_enemy_weapon_damage(target_index, 12.0, 3)
 					pass # Plasma stops on first impact
 				else:
-					enemies[target_index]["hp"] = 0 if god_mode else int(enemies[target_index]["hp"]) - (1 + damage_level)
-					if int(enemies[target_index]["hp"]) <= 0:
-						award_enemy_kill(target_index)
+					apply_enemy_weapon_damage(target_index, float(1 + damage_level), 3 if damage_level >= 6 else (2 if damage_level >= 3 else 1))
 		if hit or shot.y < -20.0 or shot.x < -25.0 or shot.x > W + 25.0:
 			player_bullets.remove_at(i)
 	for i in range(radial_bullets.size() - 1, -1, -1):
@@ -4141,7 +4158,7 @@ func _draw() -> void:
 			3:
 				draw_atlantean_lancer(pos)
 			4:
-				draw_coral_colossus(pos)
+				draw_coral_colossus(pos, int(enemy.get("armor_left", 3)))
 			5:
 				draw_abyssal_siren(pos)
 	if boss_active and not boss.is_empty():
