@@ -239,6 +239,7 @@ var collected_orb_mask := 0
 var campaign_orbs_found_mask := 0 # Historical orb pickups for the ending; not consumed for extra lives
 var victory_show_scores := false
 var white_orb_collected := false # Final Zagreb guardian trophy, independent of four life-orb colors
+var bosnia_white_orb_secured := false # Level 50 white orb, including missed pickups
 # Final boss dialogue is triggered only when the player physically collects the white orb.
 # Stage 1: crew report. Stage 2: captain's reply.
 var final_dialogue_stage := 0
@@ -1667,6 +1668,7 @@ func start_new_campaign() -> void:
 	campaign_orbs_found_mask = 0
 	victory_show_scores = false
 	white_orb_collected = false
+	bosnia_white_orb_secured = false
 	final_dialogue_stage = 0
 	final_dialogue_time = 0.0
 	drops.clear()
@@ -3316,10 +3318,16 @@ func update_bullets(delta: float) -> void:
 				if boss_shields == 0 and float(boss["hp"]) <= 0.0:
 					play_arcade_sfx("boss")
 					score += 2500 * score_multiplier()
-					scrap += 300
-					if level == CROATIA_FINAL_LEVEL:
+					if level == BOSNIA_FINAL_LEVEL:
+						# Six collectible scrap tokens replace the immediate 300 Scrap grant.
+						for token in range(6):
+							drops.append({"pos": Vector2(clampf(float(boss["pos"].x) + (float(token) - 2.5) * 34.0, 35.0, W - 35.0), 320.0 - float(token % 2) * 22.0), "kind": "scrap", "value": 50, "fall_speed": 95.0 + float(token % 3) * 14.0})
 						drop_white_orb(Vector2(boss["pos"]))
 					else:
+						scrap += 300
+					if level == CROATIA_FINAL_LEVEL:
+						drop_white_orb(Vector2(boss["pos"]))
+					elif level != BOSNIA_FINAL_LEVEL:
 						drop_life_orb(Vector2(boss["pos"]))
 					boss.clear()
 			else:
@@ -3390,6 +3398,17 @@ func drop_white_orb(pos: Vector2) -> void:
 		"kind": "white_orb",
 		"fall_speed": 100.0
 	})
+
+
+func secure_bosnia_white_orb() -> void:
+	# The level 50 trophy is guaranteed even if its pickup falls off-screen.
+	if bosnia_white_orb_secured:
+		return
+	bosnia_white_orb_secured = true
+	if state == "boss_rewards" and level == BOSNIA_FINAL_LEVEL:
+		final_dialogue_stage = 1
+		final_dialogue_time = FINAL_DIALOGUE_LINE_SECONDS
+		boss_reward_time = maxf(boss_reward_time, FINAL_DIALOGUE_LINE_SECONDS * 2.0)
 
 
 func collect_life_orb(orb_index: int) -> void:
@@ -3545,7 +3564,10 @@ func update_pickups(delta: float) -> void:
 			elif drops[i].get("kind", "scrap") == "life_orb":
 				collect_life_orb(int(drops[i]["orb_index"]))
 			elif drops[i].get("kind", "scrap") == "white_orb":
-				white_orb_collected = true
+				if level == BOSNIA_FINAL_LEVEL:
+					secure_bosnia_white_orb()
+				else:
+					white_orb_collected = true
 				if level == CROATIA_FINAL_LEVEL and state == "boss_rewards":
 					final_dialogue_stage = 1
 					final_dialogue_time = FINAL_DIALOGUE_LINE_SECONDS
@@ -3561,6 +3583,8 @@ func update_pickups(delta: float) -> void:
 				scrap += int(drops[i]["value"])
 			drops.remove_at(i)
 		elif pos.y > H:
+			if drops[i].get("kind", "") == "white_orb" and level == BOSNIA_FINAL_LEVEL:
+				secure_bosnia_white_orb()
 			drops.remove_at(i)
 
 func show_weapon_score_bonus() -> void:
@@ -4182,7 +4206,7 @@ func draw_ship_status_modal() -> void:
 func draw_final_orb_speech() -> void:
 	# A readable two-part conversation anchored above the moving player ship.
 	# Bubble stays within the game window when the player is near screen edges.
-	if final_dialogue_stage == 0 or state != "boss_rewards" or level != CROATIA_FINAL_LEVEL:
+	if final_dialogue_stage == 0 or state != "boss_rewards" or level not in [CROATIA_FINAL_LEVEL, BOSNIA_FINAL_LEVEL]:
 		return
 	var bubble_width := 460.0
 	var bubble_height := 128.0
@@ -4199,10 +4223,16 @@ func draw_final_orb_speech() -> void:
 	draw_colored_polygon(pointer, bubble_color)
 	if final_dialogue_stage == 1:
 		text_at("CREW:", bubble_x + 18.0, bubble_y + 28.0, 20, Color(0.46, 0.9, 1.0))
+		if level == BOSNIA_FINAL_LEVEL:
+			text_at("Sir, we got another one!", bubble_x + 18.0, bubble_y + 65.0, 20)
+			return
 		text_at("Sir, we have picked up", bubble_x + 18.0, bubble_y + 58.0, 19)
 		text_at("a strange glowing orb.", bubble_x + 18.0, bubble_y + 85.0, 19)
 	else:
 		text_at("CAPTAIN:", bubble_x + 18.0, bubble_y + 28.0, 20, Color(1.0, 0.83, 0.43))
+		if level == BOSNIA_FINAL_LEVEL:
+			text_at("Secure it. Back to HQ.", bubble_x + 18.0, bubble_y + 65.0, 20)
+			return
 		text_at("We will take it back to HQ", bubble_x + 18.0, bubble_y + 58.0, 19)
 		text_at("and see what the scientists", bubble_x + 18.0, bubble_y + 85.0, 19)
 		text_at("have to say about it.", bubble_x + 18.0, bubble_y + 112.0, 19)
