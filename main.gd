@@ -986,7 +986,7 @@ func draw_zone_guardian_25d(pos: Vector2) -> void:
 		draw_arc(pos, layer_radius, 0.0, TAU, 64, Color(0.36, 0.88, 1.0, layer_alpha), 3.5)
 
 func city_name() -> String:
-	var slot := clampi(int((level - 1) / 5), 0, CITY_NAMES.size() - 1)
+	var slot := clampi(int(float(level - 1) / 5.0), 0, CITY_NAMES.size() - 1)
 	return CITY_NAMES[city_route[slot]] if slot < city_route.size() else CITY_NAMES[slot]
 
 
@@ -1145,7 +1145,7 @@ func generate_retro_music(theme: String) -> AudioStreamWAV:
 			lead_phase += TAU * music_note_hz(note) / float(MUSIC_SAMPLE_RATE)
 			var note_envelope := minf(1.0, step_pos * 23.0) * pow(1.0 - step_pos, 0.55)
 			lead_signal = (1.0 if sin(lead_phase) >= 0.0 else -1.0) * 0.17 * note_envelope
-		var bass_note := bass[(step_index / 4) % bass.size()]
+		var bass_note := bass[int(float(step_index) / 4.0) % bass.size()]
 		bass_phase += TAU * music_note_hz(bass_note) / float(MUSIC_SAMPLE_RATE)
 		var beat_pos := fposmod(step_f, 4.0) / 4.0
 		var bass_envelope := pow(1.0 - beat_pos, 1.2)
@@ -1911,7 +1911,7 @@ func jump_to_debug_level() -> void:
 	# Only preceding cities are liberated; current city's missions remain open.
 	level = clampi(debug_selected_level, 1, MAX_LEVEL)
 	city_route.clear()
-	var active_city_slot: int = int((level - 1) / 5)
+	var active_city_slot: int = int(float(level - 1) / 5.0)
 	for city_index in range(active_city_slot):
 		city_route.append(city_index)
 	lives = maxi(lives, 3)
@@ -1946,8 +1946,8 @@ func draw_debug_level_menu() -> void:
 			var active := stage_number == debug_selected_level
 			draw_rect(Rect2(start_x - 10.0, top, 105.0, 45.0), Color(0.14, 0.48, 0.72) if active else Color(0.10, 0.20, 0.35))
 			text_at("LVL %02d" % stage_number, start_x + 5.0, top + 30.0, 20, Color.WHITE if active else Color(0.74, 0.85, 0.95))
-	var selected_city := String(CITY_NAMES[clampi(int((debug_selected_level - 1) / 5), 0, CITY_NAMES.size() - 1)])
-	text_at("SELECTED: %s - LEVEL %d" % [selected_city, debug_selected_level], 172, 661, 23, Color(1.0, 0.9, 0.48))
+	var selected_city_name := String(CITY_NAMES[clampi(int(float(debug_selected_level - 1) / 5.0), 0, CITY_NAMES.size() - 1)])
+	text_at("SELECTED: %s - LEVEL %d" % [selected_city_name, debug_selected_level], 172, 661, 23, Color(1.0, 0.9, 0.48))
 	text_at("LEFT/RIGHT: CITY     UP/DOWN: LEVEL", 130, 702, 18, Color(0.8, 0.91, 1.0))
 	text_at("ENTER: START     ESC / F2: CLOSE", 145, 730, 18, Color(0.65, 0.97, 0.8))
 
@@ -2073,11 +2073,11 @@ func spawn_wave() -> void:
 	var path_id := randi_range(0, 3)
 	# Later missions rotate entry patterns, but keep the same smooth motion.
 	wave_path_ids.append(path_id)
-	var formation_size := int(enemies_per_wave() / 2)
+	var formation_size := int(float(enemies_per_wave()) / 2.0)
 	for side in range(2):
 		for unit_index in range(formation_size):
 			var index := unit_index % 5
-			var group_index := int(unit_index / 5)
+			var group_index := int(float(unit_index) / 5.0)
 			var left := side == 0
 			var is_guard := index < 2
 			var kind := 1 if is_guard else (0 if index == 2 or index == 4 else 2)
@@ -2120,7 +2120,7 @@ func spawn_wave() -> void:
 				"path": path_id,
 				"side": -1.0 if left else 1.0,
 				"offset": float(index) * 0.26,
-				"hp": int(BOSNIA_ENEMY_STATS[kind]["hp"]) if in_bosnia() else (3 if is_guard and level <= 5 else (5 + mini(int((level - 1) / 5), 4) if is_guard else 2 + mini(int((level - 1) / 5), 4))),
+				"hp": int(BOSNIA_ENEMY_STATS[kind]["hp"]) if in_bosnia() else (3 if is_guard and level <= 5 else (5 + mini(int(float(level - 1) / 5.0), 4) if is_guard else 2 + mini(int(float(level - 1) / 5.0), 4))),
 				"kind": kind
 			})
 
@@ -2140,21 +2140,20 @@ func move_enemy(enemy: Dictionary, delta: float) -> void:
 	var source: Vector2 = enemy["start"]
 	var target: Vector2 = enemy["target"]
 	var side: float = enemy["side"]
-	var offset: float = enemy["offset"]
 	var route: int = enemy["path"]
-	var position := source.lerp(target, eased)
+	var enemy_position := source.lerp(target, eased)
 	if fraction < 1.0:
 		# Each entrance arc starts and finishes at zero displacement.
 		var arc := sin(PI * fraction)
 		match route:
 			0:
-				position.y -= arc * 65.0
+				enemy_position.y -= arc * 65.0
 			1:
-				position.y += arc * 70.0
+				enemy_position.y += arc * 70.0
 			2:
-				position.x += side * sin(TAU * fraction) * 65.0
+				enemy_position.x += side * sin(TAU * fraction) * 65.0
 			3:
-				position.x -= side * arc * 70.0
+				enemy_position.x -= side * arc * 70.0
 	else:
 		# Sway starts at zero, so there's no visible teleport when formations settle.
 		var t := flight_time - entrance_time
@@ -2162,28 +2161,28 @@ func move_enemy(enemy: Dictionary, delta: float) -> void:
 		var vertical := sin(t * 1.25)
 		match route:
 			0:
-				position.x += sway * 32.0
-				position.y += vertical * 14.0
+				enemy_position.x += sway * 32.0
+				enemy_position.y += vertical * 14.0
 			1:
-				position.x += sway * 42.0
-				position.y += vertical * 18.0
+				enemy_position.x += sway * 42.0
+				enemy_position.y += vertical * 18.0
 			2:
-				position.x += sway * 48.0
-				position.y += vertical * 16.0
+				enemy_position.x += sway * 48.0
+				enemy_position.y += vertical * 16.0
 			3:
-				position.x += side * sway * 38.0
-				position.y += vertical * 13.0
+				enemy_position.x += side * sway * 38.0
+				enemy_position.y += vertical * 13.0
 		if int(enemy["kind"]) == 3:
-			position.x += sin(t * 2.9) * 34.0
+			enemy_position.x += sin(t * 2.9) * 34.0
 		elif int(enemy["kind"]) == 5:
-			position.y += sin(t * 2.2) * 22.0
+			enemy_position.y += sin(t * 2.2) * 22.0
 		elif int(enemy["kind"]) == 2:
-			position.x += sin(t * 3.5) * 13.0
+			enemy_position.x += sin(t * 3.5) * 13.0
 		elif int(enemy["kind"]) == 1:
-			position.y += sin(t * 0.9) * 7.0
-	position.x = clampf(position.x, -360.0, W + 360.0)
-	position.y = clampf(position.y, 55.0, 650.0)
-	enemy["pos"] = position
+			enemy_position.y += sin(t * 0.9) * 7.0
+	enemy_position.x = clampf(enemy_position.x, -360.0, W + 360.0)
+	enemy_position.y = clampf(enemy_position.y, 55.0, 650.0)
+	enemy["pos"] = enemy_position
 
 func begin_boss_reward_time() -> void:
 	# Guardian victory is independent of waves/enemies. This transition runs
@@ -2340,7 +2339,7 @@ func launch_boss() -> void:
 	boss_active = true
 	enemy_bullets.clear()
 	# Each liberated city has a stronger guardian; Zagreb is the final fight.
-	var boss_hp := 1000.0 if level == CROATIA_FINAL_LEVEL else (1500.0 if level == BOSNIA_FINAL_LEVEL else 200.0 + float(int((level - 1) / 5)) * 70.0)
+	var boss_hp := 1000.0 if level == CROATIA_FINAL_LEVEL else (1500.0 if level == BOSNIA_FINAL_LEVEL else 200.0 + float(int(float(level - 1) / 5.0)) * 70.0)
 	boss = {"pos": Vector2(W / 2.0, 155.0), "prev_pos": Vector2(W / 2.0, 155.0), "hp": boss_hp, "max_hp": boss_hp, "direction": 1.0}
 	boss_shield_max_hp = float(boss_hp) * BOSS_SHIELD_HP_RATIO
 	boss_shield_hp = boss_shield_max_hp
@@ -2543,7 +2542,7 @@ func draw_arc_burst(at: Vector2, opacity: float) -> void:
 		draw_line(at + ray_dir * 10.0, at + ray_dir * (20.0 + 4.0 * sin(level_time * 25.0 + float(ray))), Color(0.60, 0.90, 1.0, opacity * 0.8), 2.0, true)
 
 
-func draw_arc_zap(start: Vector2, finish: Vector2, opacity: float, seed: float) -> void:
+func draw_arc_zap(start: Vector2, finish: Vector2, opacity: float, zap_seed: float) -> void:
 	var delta_zap := finish - start
 	if delta_zap.length_squared() < 1.0:
 		draw_arc_burst(finish, opacity)
@@ -2553,7 +2552,7 @@ func draw_arc_zap(start: Vector2, finish: Vector2, opacity: float, seed: float) 
 	var flicker: float = floor(level_time * 32.0)
 	for step in range(13):
 		var t: float = float(step) / 12.0
-		var wander: float = sin(float(step) * 8.73 + seed * 0.17 + flicker * 2.17) * 11.0
+		var wander: float = sin(float(step) * 8.73 + zap_seed * 0.17 + flicker * 2.17) * 11.0
 		if step == 0 or step == 12:
 			wander = 0.0
 		points.append(start.lerp(finish, t) + lateral * wander)
@@ -2627,8 +2626,8 @@ func update_enemies(delta: float) -> void:
 		# Attack only after a unit is clearly on screen: no invisible off-screen fire.
 		var candidates: Array[Dictionary] = []
 		for enemy in enemies:
-			var position: Vector2 = enemy["pos"]
-			if position.x > 40.0 and position.x < W - 40.0 and position.y > 110.0:
+			var enemy_position: Vector2 = enemy["pos"]
+			if enemy_position.x > 40.0 and enemy_position.x < W - 40.0 and enemy_position.y > 110.0:
 				candidates.append(enemy)
 		if not candidates.is_empty():
 			var attacker: Dictionary = candidates.pick_random()
@@ -2943,7 +2942,7 @@ func update_bullets(delta: float) -> void:
 					arc_chain_impact(target_index)
 				elif bool(bullet.get("plasma", false)):
 					enemies[target_index]["last_plasma_hit"] = int(bullet["plasma_id"])
-					enemies[target_index]["hp"] = 0 if god_mode else float(enemies[target_index]["hp"]) - 12.0
+					enemies[target_index]["hp"] = 0.0 if god_mode else float(enemies[target_index]["hp"]) - 12.0
 					if float(enemies[target_index]["hp"]) <= 0.0:
 						award_enemy_kill(target_index)
 					pass # Plasma stops on first impact
@@ -2990,7 +2989,7 @@ func drop_scrap(pos: Vector2, amount: int) -> void:
 
 func drop_life_orb(pos: Vector2) -> void:
 	# Four guardian lieutenants grant four uniquely colored parts of one life.
-	var orb_index := (int(level / 5) - 1) % 5
+	var orb_index := (int(float(level) / 5.0) - 1) % 5
 	if orb_index < 0 or orb_index >= 4:
 		return
 	drops.append({
@@ -3205,7 +3204,7 @@ func complete_level() -> void:
 		begin_departure("shop")
 	elif level % 5 == 0:
 		if debug_run:
-			var completed_city_index: int = int((level - 1) / 5)
+			var completed_city_index: int = int(float(level - 1) / 5.0)
 			if not city_route.has(completed_city_index):
 				city_route.append(completed_city_index)
 		begin_departure("map")
@@ -3753,9 +3752,9 @@ func _unhandled_key_input(event: InputEvent) -> void:
 func text_at(value: String, x: float, y: float, size: int = 22, color: Color = Color.WHITE) -> void:
 	draw_string(font, Vector2(x, y), value, HORIZONTAL_ALIGNMENT_LEFT, -1, size, color)
 
-func draw_stat_meter(name: String, current: int, maximum: int, x: float, y: float, bar_color: Color) -> void:
+func draw_stat_meter(stat_name: String, current: int, maximum: int, x: float, y: float, bar_color: Color) -> void:
 	# Warblade-inspired compact ship status bars, adapted to our own upgrades.
-	text_at("%s %d/%d" % [name, current, maximum], x, y, 17, Color(0.83, 0.89, 1.0))
+	text_at("%s %d/%d" % [stat_name, current, maximum], x, y, 17, Color(0.83, 0.89, 1.0))
 	draw_rect(Rect2(x + 119, y - 13, 110, 11), Color(0.16, 0.21, 0.31))
 	if current > 0:
 		draw_rect(Rect2(x + 119, y - 13, 110.0 * float(current) / float(maximum), 11), bar_color)
@@ -3949,7 +3948,7 @@ func _draw() -> void:
 		text_at("SCORE x%d" % score_multiplier(), 399, 195, 24, Color(1.0, 0.85, 0.35))
 		text_at("%.1fs remaining" % multiplier_time_left(), 400, 220, 17, Color(0.95, 0.85, 1.0))
 	if state == "playing" or state == "intermission" or state == "boss_intro" or state == "boss_rewards" or state == "pre_boss_shop_wait":
-		if invulnerable <= 0.0 or int(Time.get_ticks_msec() / 100) % 2 == 0:
+		if invulnerable <= 0.0 or int(float(Time.get_ticks_msec()) / 100.0) % 2 == 0:
 			
 			draw_player_ship_25d(Vector2(player_x, PLAYER_Y))
 
