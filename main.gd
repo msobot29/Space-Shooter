@@ -1872,6 +1872,50 @@ func draw_neum_background() -> void:
 	draw_set_transform(Vector2.ZERO)
 
 
+func update_sarajevo_background(delta: float) -> void:
+	sarajevo_roof_scroll = fposmod(sarajevo_roof_scroll + BG_SPEED_FAR * delta, SARAJEVO_TILE_PERIOD)
+	sarajevo_river_scroll = fposmod(sarajevo_river_scroll + BG_SPEED_MID * delta, SARAJEVO_TILE_PERIOD)
+	sarajevo_tram_scroll = fposmod(sarajevo_tram_scroll + BG_SPEED_NEAR * delta, SARAJEVO_TILE_PERIOD)
+
+
+func draw_sarajevo_background() -> void:
+	# Sarajevo: valley rooftops, Miljacka, stone bridges and tram corridor.
+	# The middle combat lane stays subdued for projectile readability.
+	draw_rect(Rect2(0.0, 0.0, W, H), Color(0.075, 0.13, 0.18))
+	draw_rect(Rect2(275.0, 0.0, 169.0, H), Color(0.085, 0.25, 0.30))
+	for tile in range(SARAJEVO_TILE_COUNT):
+		var river_y: float = fposmod(float(tile) * SARAJEVO_TILE_SPACING + sarajevo_river_scroll, SARAJEVO_TILE_PERIOD) - SARAJEVO_TILE_SPACING
+		draw_line(Vector2(300.0, river_y + 44.0), Vector2(410.0, river_y + 56.0), Color(0.35, 0.67, 0.73, 0.26), 2.0, true)
+		draw_line(Vector2(300.0, river_y + 154.0), Vector2(420.0, river_y + 147.0), Color(0.36, 0.70, 0.75, 0.24), 2.0, true)
+		# Pale limestone bridge with darker underside, repeated seamlessly.
+		draw_rect(Rect2(258.0, river_y + 195.0, 205.0, 21.0), Color(0.38, 0.40, 0.40))
+		draw_rect(Rect2(258.0, river_y + 187.0, 205.0, 17.0), Color(0.70, 0.67, 0.58))
+	for side in range(2):
+		var left: bool = side == 0
+		var x_base: float = 0.0 if left else 476.0
+		draw_rect(Rect2(x_base, 0.0, 244.0, H), Color(0.20, 0.23, 0.25))
+		for tile in range(SARAJEVO_TILE_COUNT):
+			var street_y: float = fposmod(float(tile) * SARAJEVO_TILE_SPACING + sarajevo_roof_scroll, SARAJEVO_TILE_PERIOD) - SARAJEVO_TILE_SPACING
+			for house in range(2):
+				var hx: float = x_base + 16.0 + float(house) * 105.0
+				var hy: float = street_y + 19.0 + float(house) * 105.0
+				draw_rect(Rect2(hx + 5.0, hy + 9.0, 91.0, 100.0), Color(0.03, 0.06, 0.09, 0.36))
+				draw_rect(Rect2(hx, hy, 91.0, 99.0), Color(0.51, 0.48, 0.43))
+				draw_colored_polygon(PackedVector2Array([Vector2(hx-5.0, hy+10.0), Vector2(hx+45.0, hy-16.0), Vector2(hx+97.0, hy+10.0)]), Color(0.55, 0.27, 0.23))
+				for window in range(2):
+					draw_rect(Rect2(hx + 15.0 + float(window) * 39.0, hy + 39.0, 18.0, 23.0), Color(0.14, 0.25, 0.31))
+	# West-side tramway with regular rail ties and subdued yellow tram car.
+	draw_line(Vector2(242.0, 0.0), Vector2(242.0, H), Color(0.55, 0.55, 0.54), 2.0)
+	draw_line(Vector2(260.0, 0.0), Vector2(260.0, H), Color(0.55, 0.55, 0.54), 2.0)
+	for tile in range(SARAJEVO_TILE_COUNT):
+		var tram_y: float = fposmod(float(tile) * SARAJEVO_TILE_SPACING + sarajevo_tram_scroll, SARAJEVO_TILE_PERIOD) - SARAJEVO_TILE_SPACING
+		for tie in range(4):
+			draw_line(Vector2(239.0, tram_y + float(tie) * 62.0), Vector2(263.0, tram_y + float(tie) * 62.0), Color(0.38, 0.40, 0.40), 3.0)
+		if tile % 3 == 0:
+			draw_rect(Rect2(236.0, tram_y + 40.0, 30.0, 91.0), Color(0.72, 0.57, 0.20))
+			draw_rect(Rect2(240.0, tram_y + 56.0, 22.0, 43.0), Color(0.17, 0.30, 0.36))
+
+
 func draw_bosnia_stage_background() -> void:
 	# New forest/river environment for the Bosnia region, independent of Croatia.
 	draw_rect(Rect2(0, 0, W, H), Color(0.025, 0.10, 0.15))
@@ -2515,6 +2559,8 @@ func _process(delta: float) -> void:
 				bg_scroll_near = fposmod(bg_scroll_near + BG_SPEED_NEAR * delta, 1560.0)
 			if city_name() == "NEUM":
 				update_neum_background(delta)
+			elif city_name() == "SARAJEVO":
+				update_sarajevo_background(delta)
 		elif city_name() == "ZADAR":
 			update_background(delta)
 		elif city_name() == "RIJEKA":
@@ -4130,6 +4176,8 @@ func _draw() -> void:
 				draw_mostar_background()
 			elif city_name() == "NEUM":
 				draw_neum_background()
+			elif city_name() == "SARAJEVO":
+				draw_sarajevo_background()
 			else:
 				draw_bosnia_stage_background()
 		elif city_name() == "ZADAR":
