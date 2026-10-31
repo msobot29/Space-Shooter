@@ -155,6 +155,7 @@ var state := "main_menu" # main_menu, menu_confirm_new, menu_options, menu_highs
 var main_menu_selection := 0
 var pending_campaign_save: Dictionary = {}
 var save_available := false
+var campaign_loading := false
 var options_menu_selection := 0
 var binding_selection := 0
 var binding_capture := false
@@ -1357,58 +1358,126 @@ func _ready() -> void:
 	queue_redraw()
 
 
+func reconcile_campaign_progress(saved_level: int, checkpoint: String, route_value: Variant) -> Dictionary:
+	if saved_level < 1 or saved_level > MAX_LEVEL:
+		return {}
+	if not checkpoint in ["city_select", "playing", "shop", "pre_boss_shop", "pre_boss", "hq_flight", "hq_dialogue"]:
+		return {}
+	if not typeof(route_value) in [TYPE_ARRAY, TYPE_PACKED_INT32_ARRAY, TYPE_PACKED_INT64_ARRAY]:
+		return {}
+	var route: Array[int] = []
+	for raw_city in route_value:
+		# Never coerce strings/floats into a different city or count duplicates as progress.
+		if typeof(raw_city) != TYPE_INT or raw_city < 0 or raw_city >= CITY_NAMES.size():
+			return {}
+		if not route.has(raw_city):
+			route.append(raw_city)
+	# A region's four ordinary cities may be played in any order; its capital is last.
+	for slot in range(route.size()):
+		if slot < 4 and route[slot] >= 4:
+			return {}
+		if slot == 4 and route[slot] != 4:
+			return {}
+		if slot > 4 and slot < 9 and (route[slot] < 5 or route[slot] >= 9):
+			return {}
+		if slot == 9 and route[slot] != 9:
+			return {}
+	# Old HQ saves sometimes omit Zagreb. The checkpoint proves Croatia was completed.
+	if checkpoint in ["hq_flight", "hq_dialogue"] or (checkpoint == "shop" and saved_level == CROATIA_FINAL_LEVEL):
+		if saved_level != CROATIA_FINAL_LEVEL or not route.size() in [4, 5]:
+			return {}
+		if route.size() == 4:
+			route.append(4)
+		if checkpoint == "shop":
+			checkpoint = "hq_flight"
+	# Level 26 proves the HQ handoff happened, but does not identify a Bosnia city.
+	elif saved_level == BOSNIA_START_LEVEL and route.size() == 4:
+		route.append(4)
+	# At a capital there is only one possible missing active city; never guess others.
+	elif checkpoint in ["playing", "pre_boss", "pre_boss_shop"]:
+		if route.size() == 4 and saved_level >= 21 and saved_level <= CROATIA_FINAL_LEVEL:
+			route.append(4)
+		elif route.size() == 9 and saved_level >= 46:
+			route.append(9)
+	var city_count := route.size()
+	if checkpoint in ["hq_flight", "hq_dialogue"]:
+		pass # Already checked above; keep level 25 until debriefing finishes.
+	elif checkpoint == "city_select":
+		if city_count >= CITY_NAMES.size():
+			return {} # No unplayed city; do not invent a victory checkpoint.
+		if city_count == 0:
+			if saved_level != 1:
+				return {}
+		elif saved_level != city_count * 5 and saved_level != city_count * 5 + 1:
+			return {}
+		if city_count == 5 and saved_level == CROATIA_FINAL_LEVEL:
+			checkpoint = "hq_flight" # An old Croatia map must not bypass HQ either.
+	elif checkpoint == "shop":
+		if not (saved_level == BOSNIA_START_LEVEL and city_count == 5):
+			if city_count == 0 or saved_level != city_count * 5:
+				return {}
+	elif checkpoint in ["pre_boss", "pre_boss_shop"]:
+		if city_count == 0 or saved_level != city_count * 5:
+			return {}
+	elif checkpoint == "playing":
+		if city_count < CITY_NAMES.size() and saved_level == city_count * 5 + 1:
+			# Next mission recorded without a selected city: ask the player, never auto-start.
+			checkpoint = "city_select"
+		elif city_count == 0 or saved_level <= (city_count - 1) * 5 or saved_level > city_count * 5:
+			return {}
+	return {"checkpoint": checkpoint, "level": saved_level, "city_route": route}
+
+
+func decode_campaign_save(config: ConfigFile) -> Dictionary:
+	# Parse into temporary data. A rejected or migrated save is never rewritten on load.
+	var defaults := {
+		"version": -1, "checkpoint": "", "level": 0, "lives": 0,
+		"score": 0, "scrap": 0, "damage_level": 0, "rate_level": 0,
+		"speed_level": 0, "extra_bullet_level": 0, "ability_level": 1,
+		"arc_lightning_owned": false, "plasma_cannon_active": false,
+		"collected_orb_mask": 0, "campaign_orbs_found_mask": 0,
+		"white_orb_collected": false, "total_kills": 0
+	}
+	var data: Dictionary = {}
+	for key in defaults:
+		var value: Variant = config.get_value("campaign", key, defaults[key])
+		if typeof(value) != typeof(defaults[key]):
+			return {}
+		data[key] = value
+	if data["version"] != CAMPAIGN_SAVE_VERSION or data["lives"] <= 0:
+		return {}
+	var limits := {"damage_level": 6, "rate_level": 4, "speed_level": 4, "extra_bullet_level": 8, "ability_level": 3}
+	for key in limits:
+		if data[key] < (1 if key == "ability_level" else 0) or data[key] > limits[key]:
+			return {}
+	for key in ["score", "scrap", "total_kills", "collected_orb_mask", "campaign_orbs_found_mask"]:
+		if data[key] < 0:
+			return {}
+	if data["arc_lightning_owned"] and data["plasma_cannon_active"]:
+		return {} # Mutually exclusive weapons: do not guess which one was equipped.
+	if data["level"] <= CROATIA_FINAL_LEVEL and (data["arc_lightning_owned"] or data["plasma_cannon_active"]):
+		return {} # Starting a Croatia level would silently discard these weapons.
+	var progress := reconcile_campaign_progress(data["level"], data["checkpoint"], config.get_value("campaign", "city_route", []))
+	if progress.is_empty():
+		return {}
+	data.merge(progress, true)
+	return data
+
+
 func read_campaign_save() -> void:
 	pending_campaign_save.clear()
 	save_available = false
 	var config := ConfigFile.new()
 	if config.load(CAMPAIGN_SAVE_FILE) != OK:
 		return
-	if int(config.get_value("campaign", "version", -1)) != CAMPAIGN_SAVE_VERSION:
-		return
-	var checkpoint_state := String(config.get_value("campaign", "checkpoint", ""))
-	if not checkpoint_state in ["city_select", "playing", "shop", "pre_boss_shop", "pre_boss", "hq_flight", "hq_dialogue"]:
-		return
-	var saved_level := int(config.get_value("campaign", "level", 0))
-	var saved_lives := int(config.get_value("campaign", "lives", 0))
-	var route_value: Variant = config.get_value("campaign", "city_route", [])
-	if saved_level < 1 or saved_level > MAX_LEVEL or saved_lives <= 0 or not route_value is Array:
-		return
-	var validated_route: Array[int] = []
-	for raw_city in route_value:
-		var city_id := int(raw_city)
-		if city_id < 0 or city_id >= CITY_NAMES.size() or validated_route.has(city_id):
-			return
-		validated_route.append(city_id)
-	if validated_route.size() > CITY_NAMES.size():
-		return
-	# Level 1 and city_select can be saved before choosing any city.
-	if checkpoint_state != "city_select" and validated_route.is_empty():
-		return
-	pending_campaign_save = {
-		"checkpoint": checkpoint_state,
-		"level": saved_level,
-		"lives": saved_lives,
-		"score": int(config.get_value("campaign", "score", 0)),
-		"scrap": int(config.get_value("campaign", "scrap", 0)),
-		"damage_level": int(config.get_value("campaign", "damage_level", 0)),
-		"rate_level": int(config.get_value("campaign", "rate_level", 0)),
-		"speed_level": int(config.get_value("campaign", "speed_level", 0)),
-		"extra_bullet_level": int(config.get_value("campaign", "extra_bullet_level", 0)),
-		"ability_level": int(config.get_value("campaign", "ability_level", 1)),
-		"arc_lightning_owned": bool(config.get_value("campaign", "arc_lightning_owned", false)),
-		"collected_orb_mask": int(config.get_value("campaign", "collected_orb_mask", 0)),
-		"campaign_orbs_found_mask": int(config.get_value("campaign", "campaign_orbs_found_mask", 0)),
-		"white_orb_collected": bool(config.get_value("campaign", "white_orb_collected", false)),
-		"total_kills": int(config.get_value("campaign", "total_kills", 0)),
-		"city_route": validated_route
-	}
-	save_available = true
+	pending_campaign_save = decode_campaign_save(config)
+	save_available = not pending_campaign_save.is_empty()
 
 
 func save_campaign_checkpoint(checkpoint_state: String) -> void:
 	# Checkpoints are written at mission starts, city selection and shops.
 	# DEBUG sessions are never saved or submitted to High Scores.
-	if debug_run or not checkpoint_state in ["city_select", "playing", "shop", "pre_boss_shop", "pre_boss"]:
+	if campaign_loading or debug_run or not checkpoint_state in ["city_select", "playing", "shop", "pre_boss_shop", "pre_boss", "hq_flight", "hq_dialogue"]:
 		return
 	var config := ConfigFile.new()
 	config.set_value("campaign", "version", CAMPAIGN_SAVE_VERSION)
@@ -1423,6 +1492,7 @@ func save_campaign_checkpoint(checkpoint_state: String) -> void:
 	config.set_value("campaign", "extra_bullet_level", extra_bullet_level)
 	config.set_value("campaign", "ability_level", ability_level)
 	config.set_value("campaign", "arc_lightning_owned", arc_lightning_owned)
+	config.set_value("campaign", "plasma_cannon_active", plasma_cannon_active)
 	config.set_value("campaign", "collected_orb_mask", collected_orb_mask)
 	config.set_value("campaign", "campaign_orbs_found_mask", campaign_orbs_found_mask)
 	config.set_value("campaign", "white_orb_collected", white_orb_collected)
@@ -1447,6 +1517,7 @@ func continue_campaign() -> void:
 	read_campaign_save()
 	if not save_available:
 		return
+	campaign_loading = true
 	var data: Dictionary = pending_campaign_save
 	level = clampi(int(data["level"]), 1, MAX_LEVEL)
 	lives = maxi(1, int(data["lives"]))
@@ -1458,7 +1529,7 @@ func continue_campaign() -> void:
 	extra_bullet_level = clampi(int(data.get("extra_bullet_level", 0)), 0, 8)
 	ability_level = clampi(int(data["ability_level"]), 1, 3)
 	arc_lightning_owned = bool(data.get("arc_lightning_owned", false))
-	plasma_cannon_active = false
+	plasma_cannon_active = bool(data.get("plasma_cannon_active", false))
 	arc_lightning_cooldown = 0.0
 	arc_lightning_effects.clear()
 	collected_orb_mask = int(data["collected_orb_mask"])
@@ -1504,6 +1575,7 @@ func continue_campaign() -> void:
 	else:
 		# A saved in-progress level restarts at its beginning, never mid-wave.
 		start_level()
+	campaign_loading = false
 	queue_redraw()
 
 
