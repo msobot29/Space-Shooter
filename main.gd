@@ -1888,6 +1888,64 @@ var banja_river_scroll := 0.0
 var banja_fort_scroll := 0.0
 var banja_trees_scroll := 0.0
 
+# Tuzla independent parallax loops: salt lakes, old town and industrial skyline.
+const TUZLA_TILE_SPACING := 300.0
+const TUZLA_TILE_COUNT := 6
+const TUZLA_TILE_PERIOD := TUZLA_TILE_SPACING * TUZLA_TILE_COUNT
+var tuzla_lake_scroll := 0.0
+var tuzla_town_scroll := 0.0
+var tuzla_industry_scroll := 0.0
+
+
+func update_tuzla_background(delta: float) -> void:
+	tuzla_lake_scroll = fposmod(tuzla_lake_scroll + BG_SPEED_MID * delta, TUZLA_TILE_PERIOD)
+	tuzla_town_scroll = fposmod(tuzla_town_scroll + BG_SPEED_NEAR * delta, TUZLA_TILE_PERIOD)
+	tuzla_industry_scroll = fposmod(tuzla_industry_scroll + BG_SPEED_FAR * delta, TUZLA_TILE_PERIOD)
+
+
+func draw_tuzla_background() -> void:
+	# Tuzla: turquoise Pannonian salt lakes, pale salt banks, colorful old-town
+	# buildings and industrial chimneys. Everything is decorative only.
+	draw_rect(Rect2(0.0, 0.0, W, H), Color(0.055, 0.12, 0.16))
+	# Distant industry first, then the lakes and near old-town foreground.
+	for tile in range(TUZLA_TILE_COUNT):
+		var industrial_y: float = fposmod(float(tile) * TUZLA_TILE_SPACING + tuzla_industry_scroll, TUZLA_TILE_PERIOD) - TUZLA_TILE_SPACING
+		for side in range(2):
+			var industrial_x: float = 18.0 if side == 0 else W - 114.0
+			draw_rect(Rect2(industrial_x, industrial_y + 82.0, 100.0, 65.0), Color(0.16, 0.20, 0.24))
+			draw_rect(Rect2(industrial_x + 16.0, industrial_y + 18.0, 18.0, 77.0), Color(0.31, 0.27, 0.26))
+			draw_rect(Rect2(industrial_x + 64.0, industrial_y + 42.0, 15.0, 56.0), Color(0.31, 0.27, 0.26))
+			draw_rect(Rect2(industrial_x + 17.0, industrial_y + 18.0, 16.0, 6.0), Color(0.61, 0.48, 0.42))
+	# Turquoise lake corridor, with off-white salt beaches and repeating highlights.
+	draw_rect(Rect2(223.0, 0.0, 272.0, H), Color(0.09, 0.38, 0.42))
+	draw_rect(Rect2(219.0, 0.0, 12.0, H), Color(0.69, 0.72, 0.61))
+	draw_rect(Rect2(488.0, 0.0, 13.0, H), Color(0.69, 0.72, 0.61))
+	for tile in range(TUZLA_TILE_COUNT):
+		var lake_y: float = fposmod(float(tile) * TUZLA_TILE_SPACING + tuzla_lake_scroll, TUZLA_TILE_PERIOD) - TUZLA_TILE_SPACING
+		draw_line(Vector2(265.0, lake_y + 65.0), Vector2(450.0, lake_y + 52.0), Color(0.52, 0.88, 0.82, 0.28), 3.0, true)
+		draw_line(Vector2(275.0, lake_y + 181.0), Vector2(470.0, lake_y + 190.0), Color(0.67, 0.95, 0.87, 0.24), 2.0, true)
+		# A slim pale promenade across the water.
+		draw_rect(Rect2(226.0, lake_y + 250.0, 266.0, 19.0), Color(0.57, 0.59, 0.54))
+		draw_rect(Rect2(226.0, lake_y + 244.0, 266.0, 7.0), Color(0.77, 0.76, 0.67))
+	# Old Tuzla: warm plaster facades, tiled roofs and narrow street blocks.
+	for side in range(2):
+		var block_x: float = 0.0 if side == 0 else W - 218.0
+		for tile in range(TUZLA_TILE_COUNT):
+			var town_y: float = fposmod(float(tile) * TUZLA_TILE_SPACING + tuzla_town_scroll, TUZLA_TILE_PERIOD) - TUZLA_TILE_SPACING
+			for building in range(2):
+				var bx: float = block_x + 13.0 + float(building) * 100.0
+				var by: float = town_y + 24.0 + float(building) * 116.0
+				var wall_color: Color = Color(0.53, 0.42, 0.34) if building == 0 else Color(0.49, 0.51, 0.48)
+				draw_rect(Rect2(bx, by, 86.0, 105.0), wall_color)
+				draw_colored_polygon(PackedVector2Array([
+					Vector2(bx - 3.0, by + 8.0),
+					Vector2(bx + 43.0, by - 14.0),
+					Vector2(bx + 89.0, by + 8.0)
+				]), Color(0.48, 0.24, 0.22))
+				draw_rect(Rect2(bx + 15.0, by + 42.0, 19.0, 26.0), Color(0.14, 0.23, 0.27))
+				draw_rect(Rect2(bx + 52.0, by + 42.0, 19.0, 26.0), Color(0.14, 0.23, 0.27))
+
+
 func update_banja_luka_background(delta: float) -> void:
 	banja_river_scroll = fposmod(banja_river_scroll + BG_SPEED_MID * delta, BANJA_TILE_PERIOD)
 	banja_fort_scroll = fposmod(banja_fort_scroll + BG_SPEED_FAR * delta, BANJA_TILE_PERIOD)
@@ -2618,6 +2676,8 @@ func _process(delta: float) -> void:
 				update_sarajevo_background(delta)
 			elif city_name() == "BANJA LUKA":
 				update_banja_luka_background(delta)
+			elif city_name() == "TUZLA":
+				update_tuzla_background(delta)
 		elif city_name() == "ZADAR":
 			update_background(delta)
 		elif city_name() == "RIJEKA":
@@ -4237,6 +4297,8 @@ func _draw() -> void:
 				draw_sarajevo_background()
 			elif city_name() == "BANJA LUKA":
 				draw_banja_luka_background()
+			elif city_name() == "TUZLA":
+				draw_tuzla_background()
 			else:
 				draw_bosnia_stage_background()
 		elif city_name() == "ZADAR":
