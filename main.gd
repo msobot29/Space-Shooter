@@ -33,6 +33,7 @@ const ABILITY_COOLDOWN := 10.0 # Starts after the shield expires
 const REGULAR_ENEMY_FIRE_MIN := 0.90
 const REGULAR_ENEMY_PROJECTILE_SPEED_FACTOR := 0.80
 const BOSS_RED_PROJECTILE_SPEED_FACTOR := 0.88
+const BOSNIA_BOSS_RED_SPEED_FACTOR := 0.62 # Lower only Bosnia guardian red projectile speed
 const WAVE_DELAY := 5.0
 const LEVEL_TRANSITION_SECONDS := 5.0 # Silent pause before showing the title
 const LEVEL_TITLE_SECONDS := 3.5 # Enemies begin after the title is shown
@@ -2659,7 +2660,11 @@ func update_player(delta: float) -> void:
 	# Shooting remains available between levels; bullets are updated even
 	# while the next wave has not started. Boss announcements stay non-combat.
 	# Keep edge-triggered shots: holding the key does not repeat volleys.
-	if (state == "playing" or state == "intermission" or state == "boss_rewards") and pressed and not fire_held and fire_clock <= 0.0 and player_bullets.size() < 5 + extra_bullet_level:
+	# Extra Bullet upgrades are independent of the equipped weapon.
+	# Triple volleys require three available slots; do not silently suppress the shot.
+	var volley_size: int = 3 if not arc_lightning_owned and not plasma_cannon_active and damage_level >= 6 else (2 if not arc_lightning_owned and not plasma_cannon_active and damage_level >= 3 else 1)
+	var projectile_capacity: int = 5 + extra_bullet_level
+	if (state == "playing" or state == "intermission" or state == "boss_rewards") and pressed and not fire_held and fire_clock <= 0.0 and player_bullets.size() + volley_size <= projectile_capacity:
 		fire_weapon()
 		fire_clock = maxf(0.12, 0.34 - rate_level * 0.05) / (0.6 if plasma_cannon_active else 1.0)
 	fire_held = pressed
@@ -2873,7 +2878,7 @@ func update_boss(delta: float) -> void:
 	boss_warning_time = maxf(0.0, boss_warning_time - delta)
 	if previous_warning > 0.0 and boss_warning_time <= 0.0:
 		# Final Guardian: a single telegraphed red projectile; lieutenants retain three.
-		var aimed_lanes := [0] if level == CROATIA_FINAL_LEVEL else [-1, 0, 1]
+		var aimed_lanes := [0] if level == CROATIA_FINAL_LEVEL else ([-1, 1] if in_bosnia() else [-1, 0, 1])
 		for lane in aimed_lanes:
 			enemy_bullets.append(Vector2(boss_warning_x + lane * 22.0, pos.y + 38.0))
 	if boss_fire_clock <= 0.0:
@@ -2886,7 +2891,7 @@ func update_boss(delta: float) -> void:
 				storm_pending = true
 		elif boss_attack_index % 3 == 0:
 			# Final Guardian fires three red shots, instead of five.
-			var spread_lanes := [-1, 0, 1] if level == CROATIA_FINAL_LEVEL else [-2, -1, 0, 1, 2]
+			var spread_lanes := [-1, 0, 1] if level == CROATIA_FINAL_LEVEL else ([-1, 0, 1] if in_bosnia() else [-2, -1, 0, 1, 2])
 			for lane in spread_lanes:
 				enemy_bullets.append(pos + Vector2(lane * 42.0, 38.0))
 		elif boss_attack_index % 3 == 2:
@@ -2903,7 +2908,7 @@ func update_boss(delta: float) -> void:
 				spin_rotation = 0.0
 				# The lieutenant's radial volley begins after the warning.
 		boss_attack_index += 1
-		boss_fire_clock = (1.20 if boss_phase == 1 else 0.98) if level == CROATIA_FINAL_LEVEL else (1.5 if boss_phase == 1 else 1.2)
+		boss_fire_clock = (1.20 if boss_phase == 1 else 0.98) if level == CROATIA_FINAL_LEVEL else ((2.15 if boss_phase == 1 else 1.75) if in_bosnia() else (1.5 if boss_phase == 1 else 1.2))
 	if boss_phase == 1 and float(boss["hp"]) <= float(boss["max_hp"]) * 0.475:
 		boss_phase = 2
 
@@ -3177,7 +3182,7 @@ func update_bullets(delta: float) -> void:
 			radial_bullets.remove_at(i)
 			take_damage()
 	for i in range(enemy_bullets.size() - 1, -1, -1):
-		enemy_bullets[i].y += (240.0 + level * 18.0) * (BOSS_RED_PROJECTILE_SPEED_FACTOR if boss_active else REGULAR_ENEMY_PROJECTILE_SPEED_FACTOR) * delta
+		enemy_bullets[i].y += (240.0 + level * 18.0) * (BOSNIA_BOSS_RED_SPEED_FACTOR if boss_active and in_bosnia() else (BOSS_RED_PROJECTILE_SPEED_FACTOR if boss_active else REGULAR_ENEMY_PROJECTILE_SPEED_FACTOR)) * delta
 		if enemy_bullets[i].y > H + 20.0:
 			enemy_bullets.remove_at(i)
 		elif enemy_bullets[i].distance_to(Vector2(player_x, PLAYER_Y)) < 24.0:
@@ -3334,7 +3339,13 @@ func update_pickups(delta: float) -> void:
 			if drops[i].get("kind", "scrap") == "extra_speed":
 				speed_level = mini(4, speed_level + 1)
 			elif drops[i].get("kind", "scrap") == "extra_bullet":
+				var previous_bullet_level: int = extra_bullet_level
 				extra_bullet_level = mini(8, extra_bullet_level + 1)
+				if extra_bullet_level > previous_bullet_level:
+					show_weapon_pickup_name("EXTRA BULLET LV.%d" % extra_bullet_level, Color(1.0, 0.72, 0.32))
+				else:
+					score += 10000
+					show_weapon_score_bonus()
 			elif drops[i].get("kind", "scrap") == "single_shot":
 				damage_level = 0
 				show_weapon_pickup_name("SINGLE SHOT", Color(0.69, 0.94, 1.0))
