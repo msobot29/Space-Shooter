@@ -8,6 +8,11 @@ const PLAYER_Y := 840.0
 const BASE_SPEED := 295.0
 const SPEED_STEP := 48.0
 const SPIN_WARNING := 1.5
+const DROWNED_WAVE_WARNING := 1.5
+const DROWNED_WAVE_INTERVAL := 3.0
+const DROWNED_WAVE_COUNT := 3
+const DROWNED_WAVE_SPACING := 18.0
+const DROWNED_WAVE_GAP_HALF_WIDTH := 55.0
 const SPIN_PROJECTILES := 48
 const SPIN_GAP_PRIMARY := 0.125 # Slightly narrower than the previous 0.145
 const SPIN_GAP_SECONDARY := 0.105 # Slightly narrower than the previous 0.12
@@ -184,6 +189,9 @@ var city_route: Array[int] = []
 var selected_city := 0
 var city_flight_time := 0.0
 var briefing_city_index := 0
+var drowned_wave_warning := 0.0
+var drowned_waves_remaining := 0
+var drowned_wave_clock := 0.0
 var boss_reward_time := 0.0
 var boss_intro_time := 0.0
 var level_transition_time := 0.0
@@ -872,7 +880,13 @@ func draw_atlantean_guardian(pos: Vector2) -> void:
 		var x: float = horn * 23.0
 		draw_colored_polygon(PackedVector2Array([Vector2(x-10,-43), Vector2(x,-85 if final_boss else -69), Vector2(x+10,-43)]),Color(0.97,0.77,0.31))
 	for eye_x in [-11.0, 11.0]:
-		draw_circle(Vector2(eye_x,-22), 5, Color(0.51,1.0,0.90))
+		var charging: bool = final_boss and (drowned_wave_warning > 0.0 or drowned_waves_remaining > 0)
+		if charging:
+			var glow: float = 0.55 + 0.45 * absf(sin(Time.get_ticks_msec() * 0.018))
+			draw_circle(Vector2(eye_x,-22), 13.0, Color(0.20, 0.85, 1.0, glow * 0.44))
+			draw_circle(Vector2(eye_x,-22), 7.0, Color(0.65, 1.0, 1.0, glow))
+		else:
+			draw_circle(Vector2(eye_x,-22), 5, Color(0.51,1.0,0.90))
 	draw_set_transform(Vector2.ZERO)
 
 
@@ -2317,6 +2331,9 @@ func start_level(resume_boss: bool = false) -> void:
 	pre_boss_shop = false
 	boss_intro_time = 0.0
 	boss_reward_time = 0.0
+	drowned_wave_warning = 0.0
+	drowned_waves_remaining = 0
+	drowned_wave_clock = 0.0
 	final_dialogue_stage = 0
 	final_dialogue_time = 0.0
 	waves_spawned = 0
@@ -3031,6 +3048,23 @@ func update_boss(delta: float) -> void:
 					# Brief recovery before the Guardian resumes ordinary red shots.
 					boss_fire_clock = maxf(boss_fire_clock, 1.4)
 		return
+	# Drowned King alone uses three horizontal waves instead of a radial spin.
+	if level == BOSNIA_FINAL_LEVEL and (drowned_wave_warning > 0.0 or drowned_waves_remaining > 0):
+		if drowned_wave_warning > 0.0:
+			drowned_wave_warning = maxf(0.0, drowned_wave_warning - delta)
+			if drowned_wave_warning <= 0.0:
+				fire_drowned_horizontal_wave()
+				drowned_waves_remaining -= 1
+				drowned_wave_clock = DROWNED_WAVE_INTERVAL
+		else:
+			drowned_wave_clock -= delta
+			if drowned_wave_clock <= 0.0:
+				fire_drowned_horizontal_wave()
+				drowned_waves_remaining -= 1
+				drowned_wave_clock = DROWNED_WAVE_INTERVAL
+		if drowned_waves_remaining <= 0:
+			boss_fire_clock = maxf(boss_fire_clock, 1.6)
+		return
 	# 360-degree spin telegraph. The radial barrage is released when the rotation ends.
 	if spin_countdown > 0.0:
 		spin_rotation += TAU * delta / SPIN_WARNING
@@ -3069,9 +3103,15 @@ func update_boss(delta: float) -> void:
 				boss_warning_x = player_x
 				boss_warning_time = 0.7
 			else:
-				spin_countdown = SPIN_WARNING
-				spin_rotation = 0.0
-				# The lieutenant's radial volley begins after the warning.
+				if level == BOSNIA_FINAL_LEVEL:
+					drowned_wave_warning = DROWNED_WAVE_WARNING
+					drowned_waves_remaining = DROWNED_WAVE_COUNT
+					drowned_wave_clock = 0.0
+					boss_warning_time = 0.0
+				else:
+					spin_countdown = SPIN_WARNING
+					spin_rotation = 0.0
+					# The lieutenant's radial volley begins after the warning.
 		boss_attack_index += 1
 		boss_fire_clock = (1.20 if boss_phase == 1 else 0.98) if level == CROATIA_FINAL_LEVEL else ((2.15 if boss_phase == 1 else 1.75) if in_bosnia() else (1.5 if boss_phase == 1 else 1.2))
 	if boss_phase == 1 and float(boss["hp"]) <= float(boss["max_hp"]) * 0.475:
@@ -3107,6 +3147,20 @@ func fire_adriatic_storm_pulse() -> void:
 			"pos": Vector2(bullet_x, 195.0),
 			"velocity": Vector2(0.0, 420.0),
 			"color": Color(0.42, 0.85, 1.0)
+		})
+
+
+func fire_drowned_horizontal_wave() -> void:
+	# A horizontal row with one safe opening, descending toward the player.
+	var safe_center: float = clampf(player_x + randf_range(-85.0, 85.0), 100.0, W - 100.0)
+	for column in range(int(W / DROWNED_WAVE_SPACING) + 1):
+		var bullet_x: float = float(column) * DROWNED_WAVE_SPACING
+		if absf(bullet_x - safe_center) <= DROWNED_WAVE_GAP_HALF_WIDTH:
+			continue
+		radial_bullets.append({
+			"pos": Vector2(bullet_x, 235.0),
+			"velocity": Vector2(0.0, 335.0 if boss_phase == 1 else 385.0),
+			"color": Color(0.13, 0.75, 1.0)
 		})
 
 
