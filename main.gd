@@ -2965,7 +2965,7 @@ func apply_enemy_weapon_damage(target_index: int, damage: float, armor_damage: i
 	if target_index < 0 or target_index >= enemies.size():
 		return
 	if int(enemies[target_index]["kind"]) == 4:
-		var remaining: int = maxi(0, int(enemies[target_index].get("armor_left", 3)) - armor_damage)
+		var remaining: int = 0 if god_mode else maxi(0, int(enemies[target_index].get("armor_left", 3)) - armor_damage)
 		enemies[target_index]["armor_left"] = remaining
 		if remaining > 0:
 			explosions.append({"pos": Vector2(enemies[target_index]["pos"]), "time": 0.18})
