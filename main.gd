@@ -212,6 +212,7 @@ var enemy_bullets: Array[Vector2] = []
 var radial_bullets: Array[Dictionary] = []
 var drops: Array[Dictionary] = []
 var explosions: Array[Dictionary] = []
+var armor_fragments: Array[Dictionary] = []
 var bonus_popups: Array[Dictionary] = []
 var fire_clock := 0.0
 var fire_held := false
@@ -2146,6 +2147,7 @@ func start_level(resume_boss: bool = false) -> void:
 	radial_bullets.clear()
 	# Keep falling rewards across stages; they continue falling in the new mission.
 	explosions.clear()
+	armor_fragments.clear()
 	bonus_popups.clear()
 	arc_lightning_effects.clear()
 	arc_lightning_cooldown = 0.0
@@ -2990,11 +2992,65 @@ func award_enemy_kill(index: int) -> void:
 		drop_scrap(enemy_pos, 1)
 
 
-func apply_enemy_weapon_damage(target_index: int, damage: float, armor_damage: int) -> void:
+func spawn_armor_fragments(tank_pos: Vector2, old_armor: int, new_armor: int, weapon_fx: String) -> void:
+	# Detach exactly the plates that were removed; visual only, no collisions.
+	for plate in range(new_armor, old_armor):
+		var offset_x: float = -15.0 + float(plate) * 15.0
+		var velocity: Vector2 = Vector2(randf_range(-130.0, 130.0), randf_range(-220.0, -95.0))
+		armor_fragments.append({
+			"pos": tank_pos + Vector2(offset_x, -6.0),
+			"velocity": velocity,
+			"rotation": randf_range(-0.2, 0.2),
+			"spin": randf_range(-9.0, 9.0),
+			"time": 0.55,
+			"fx": weapon_fx
+		})
+	# Keep draw/update overhead predictable during large waves.
+	while armor_fragments.size() > 72:
+		armor_fragments.pop_front()
+
+
+func update_armor_fragments(delta: float) -> void:
+	for i in range(armor_fragments.size() - 1, -1, -1):
+		var fragment: Dictionary = armor_fragments[i]
+		var remaining: float = float(fragment["time"]) - delta
+		if remaining <= 0.0:
+			armor_fragments.remove_at(i)
+			continue
+		fragment["time"] = remaining
+		fragment["pos"] = Vector2(fragment["pos"]) + Vector2(fragment["velocity"]) * delta
+		fragment["velocity"] = Vector2(fragment["velocity"]) + Vector2(0.0, 390.0) * delta
+		fragment["rotation"] = float(fragment["rotation"]) + float(fragment["spin"]) * delta
+		armor_fragments[i] = fragment
+
+
+func draw_armor_fragments() -> void:
+	for fragment in armor_fragments:
+		var pos: Vector2 = fragment["pos"]
+		var fade: float = clampf(float(fragment["time"]) / 0.20, 0.0, 1.0)
+		var angle: float = float(fragment["rotation"])
+		var axis_x: Vector2 = Vector2(cos(angle), sin(angle))
+		var axis_y: Vector2 = Vector2(-sin(angle), cos(angle))
+		var corners := PackedVector2Array([
+			pos - axis_x * 7.0 - axis_y * 12.0,
+			pos + axis_x * 7.0 - axis_y * 12.0,
+			pos + axis_x * 7.0 + axis_y * 12.0,
+			pos - axis_x * 7.0 + axis_y * 12.0
+		])
+		draw_colored_polygon(corners, Color(0.92, 0.40, 0.23, fade))
+		var fx: String = String(fragment["fx"])
+		var spark_color: Color = Color(0.42, 0.86, 1.0, fade) if fx == "arc" else (Color(0.39, 1.0, 0.55, fade) if fx == "plasma" else Color(1.0, 0.74, 0.40, fade))
+		draw_line(pos, pos - Vector2(fragment["velocity"]).normalized() * 10.0, spark_color, 2.5, true)
+
+
+func apply_enemy_weapon_damage(target_index: int, damage: float, armor_damage: int, weapon_fx: String = "normal") -> void:
 	if target_index < 0 or target_index >= enemies.size():
 		return
 	if int(enemies[target_index]["kind"]) == 4:
-		var remaining: int = 0 if god_mode else maxi(0, int(enemies[target_index].get("armor_left", 3)) - armor_damage)
+		var old_armor: int = int(enemies[target_index].get("armor_left", 3))
+		var remaining: int = 0 if god_mode else maxi(0, old_armor - armor_damage)
+		if remaining < old_armor:
+			spawn_armor_fragments(Vector2(enemies[target_index]["pos"]), old_armor, remaining, weapon_fx)
 		enemies[target_index]["armor_left"] = remaining
 		if remaining > 0:
 			explosions.append({"pos": Vector2(enemies[target_index]["pos"]), "time": 0.18})
@@ -3031,7 +3087,7 @@ func arc_chain_impact(first_index: int) -> void:
 		already_hit.append(target_pos)
 		origin = target_pos
 		var damage: float = 8.0 * pow(0.75, link)
-		apply_enemy_weapon_damage(target_index, damage, 2 if link == 0 else 1)
+		apply_enemy_weapon_damage(target_index, damage, 2 if link == 0 else 1, "arc")
 
 
 func update_bullets(delta: float) -> void:
@@ -3105,7 +3161,7 @@ func update_bullets(delta: float) -> void:
 					arc_chain_impact(target_index)
 				elif bool(bullet.get("plasma", false)):
 					enemies[target_index]["last_plasma_hit"] = int(bullet["plasma_id"])
-					apply_enemy_weapon_damage(target_index, 12.0, 3)
+					apply_enemy_weapon_damage(target_index, 12.0, 3, "plasma")
 					pass # Plasma stops on first impact
 				else:
 					apply_enemy_weapon_damage(target_index, float(1 + damage_level), 3 if damage_level >= 6 else (2 if damage_level >= 3 else 1))
@@ -3349,6 +3405,7 @@ func update_effects(delta: float) -> void:
 		bonus_popups[i]["pos"] = Vector2(bonus_popups[i]["pos"]) + Vector2(0.0, -42.0 * delta)
 		if float(bonus_popups[i]["time"]) <= 0.0:
 			bonus_popups.remove_at(i)
+	update_armor_fragments(delta)
 	for i in range(explosions.size() - 1, -1, -1):
 		explosions[i]["time"] = float(explosions[i]["time"]) - delta
 		if float(explosions[i]["time"]) <= 0.0:
@@ -4225,6 +4282,7 @@ func _draw() -> void:
 		else:
 			draw_arc_zap(from_pos, to_pos, alpha, from_pos.x + from_pos.y)
 			draw_arc_burst(to_pos, alpha * 0.85)
+	draw_armor_fragments()
 	for effect in explosions:
 		var pos: Vector2 = effect["pos"]
 		draw_arc(pos, 30.0 * float(effect["time"]) / 0.3 + 8.0, 0, TAU, 20, Color(1.0, 0.68, 0.2), 4.0)
