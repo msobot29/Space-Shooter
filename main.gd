@@ -262,6 +262,14 @@ var pre_boss_shop := false
 var pre_boss_shop_wait_time := 0.0
 
 
+# Sarajevo repeating parallax layers (procedural, visual-only).
+const SARAJEVO_TILE_SPACING := 280.0
+const SARAJEVO_TILE_COUNT := 6
+const SARAJEVO_TILE_PERIOD := SARAJEVO_TILE_SPACING * SARAJEVO_TILE_COUNT
+var sarajevo_roof_scroll := 0.0
+var sarajevo_river_scroll := 0.0
+var sarajevo_tram_scroll := 0.0
+
 func update_background(delta: float) -> void:
 	bg_scroll_far = fposmod(bg_scroll_far + BG_SPEED_FAR * delta, 10.0 * 120.0)
 	bg_scroll_mid = fposmod(bg_scroll_mid + BG_SPEED_MID * delta, 6.0 * 245.0)
