@@ -1880,6 +1880,53 @@ func draw_neum_background() -> void:
 	draw_set_transform(Vector2.ZERO)
 
 
+# Banja Luka independent repeating visual layers.
+const BANJA_TILE_SPACING := 320.0
+const BANJA_TILE_COUNT := 6
+const BANJA_TILE_PERIOD := BANJA_TILE_SPACING * BANJA_TILE_COUNT
+var banja_river_scroll := 0.0
+var banja_fort_scroll := 0.0
+var banja_trees_scroll := 0.0
+
+func update_banja_luka_background(delta: float) -> void:
+	banja_river_scroll = fposmod(banja_river_scroll + BG_SPEED_MID * delta, BANJA_TILE_PERIOD)
+	banja_fort_scroll = fposmod(banja_fort_scroll + BG_SPEED_FAR * delta, BANJA_TILE_PERIOD)
+	banja_trees_scroll = fposmod(banja_trees_scroll + BG_SPEED_NEAR * delta, BANJA_TILE_PERIOD)
+
+
+func draw_banja_luka_background() -> void:
+	# Vrbas river, Kastel-inspired ramparts and thick riverside woodland.
+	# Decoration is non-colliding; the center remains dark for bullet readability.
+	draw_rect(Rect2(0.0, 0.0, W, H), Color(0.035, 0.12, 0.12))
+	draw_rect(Rect2(270.0, 0.0, 185.0, H), Color(0.045, 0.24, 0.23))
+	draw_rect(Rect2(257.0, 0.0, 13.0, H), Color(0.23, 0.30, 0.22))
+	draw_rect(Rect2(455.0, 0.0, 13.0, H), Color(0.23, 0.30, 0.22))
+	for tile in range(BANJA_TILE_COUNT):
+		var river_y: float = fposmod(float(tile) * BANJA_TILE_SPACING + banja_river_scroll, BANJA_TILE_PERIOD) - BANJA_TILE_SPACING
+		draw_line(Vector2(295.0, river_y + 42.0), Vector2(425.0, river_y + 61.0), Color(0.26, 0.67, 0.55, 0.25), 3.0, true)
+		draw_line(Vector2(310.0, river_y + 168.0), Vector2(438.0, river_y + 153.0), Color(0.34, 0.72, 0.63, 0.22), 2.0, true)
+		# Repeating stone bridge deck and railings.
+		draw_rect(Rect2(246.0, river_y + 244.0, 229.0, 28.0), Color(0.24, 0.29, 0.26))
+		draw_rect(Rect2(246.0, river_y + 239.0, 229.0, 9.0), Color(0.58, 0.61, 0.53))
+		draw_rect(Rect2(246.0, river_y + 268.0, 229.0, 5.0), Color(0.61, 0.62, 0.54))
+	for side in range(2):
+		var bank_x: float = 0.0 if side == 0 else 480.0
+		draw_rect(Rect2(bank_x, 0.0, 239.0, H), Color(0.075, 0.18, 0.12))
+		for tile in range(BANJA_TILE_COUNT):
+			var tree_y: float = fposmod(float(tile) * BANJA_TILE_SPACING + banja_trees_scroll, BANJA_TILE_PERIOD) - BANJA_TILE_SPACING
+			for tree in range(3):
+				var tx: float = bank_x + 35.0 + float(tree) * 75.0
+				var ty: float = tree_y + 30.0 + float(tree) * 69.0
+				draw_circle(Vector2(tx, ty), 32.0, Color(0.08, 0.28, 0.18))
+				draw_circle(Vector2(tx - 8.0, ty - 8.0), 19.0, Color(0.12, 0.37, 0.20))
+			# Kastel-inspired battlements glide slowly under foreground trees.
+			var fort_y: float = fposmod(float(tile) * BANJA_TILE_SPACING + banja_fort_scroll, BANJA_TILE_PERIOD) - BANJA_TILE_SPACING
+			draw_rect(Rect2(bank_x + 30.0, fort_y + 185.0, 172.0, 76.0), Color(0.40, 0.39, 0.30))
+			for tower in range(4):
+				draw_rect(Rect2(bank_x + 34.0 + float(tower) * 43.0, fort_y + 171.0, 27.0, 23.0), Color(0.49, 0.46, 0.35))
+			draw_rect(Rect2(bank_x + 86.0, fort_y + 218.0, 56.0, 43.0), Color(0.12, 0.17, 0.14))
+
+
 func update_sarajevo_background(delta: float) -> void:
 	sarajevo_roof_scroll = fposmod(sarajevo_roof_scroll + BG_SPEED_FAR * delta, SARAJEVO_TILE_PERIOD)
 	sarajevo_river_scroll = fposmod(sarajevo_river_scroll + BG_SPEED_MID * delta, SARAJEVO_TILE_PERIOD)
@@ -2569,6 +2616,8 @@ func _process(delta: float) -> void:
 				update_neum_background(delta)
 			elif city_name() == "SARAJEVO":
 				update_sarajevo_background(delta)
+			elif city_name() == "BANJA LUKA":
+				update_banja_luka_background(delta)
 		elif city_name() == "ZADAR":
 			update_background(delta)
 		elif city_name() == "RIJEKA":
@@ -4186,6 +4235,8 @@ func _draw() -> void:
 				draw_neum_background()
 			elif city_name() == "SARAJEVO":
 				draw_sarajevo_background()
+			elif city_name() == "BANJA LUKA":
+				draw_banja_luka_background()
 			else:
 				draw_bosnia_stage_background()
 		elif city_name() == "ZADAR":
