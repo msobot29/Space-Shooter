@@ -102,6 +102,23 @@ const BG_SPEED_FAR := 22.0
 const BG_SPEED_MID := 48.0
 const BG_SPEED_NEAR := 90.0
 
+# Neum layers have independent phases and use the same periods when updating/drawing.
+var neum_water_scroll := 0.0
+var neum_coast_scroll := 0.0
+var neum_boat_scroll := 0.0
+const NEUM_WATER_SPACING := 100.0
+const NEUM_WATER_COUNT := 12
+const NEUM_WATER_PERIOD := NEUM_WATER_SPACING * NEUM_WATER_COUNT
+const NEUM_COAST_SPACING := 260.0
+const NEUM_COAST_COUNT := 6 # Even: left/right shores repeat across the wrap.
+const NEUM_COAST_PERIOD := NEUM_COAST_SPACING * NEUM_COAST_COUNT
+const NEUM_BOAT_SPACING := 260.0
+const NEUM_BOAT_COUNT := 6 # Even: boat lanes repeat across the wrap.
+const NEUM_BOAT_PERIOD := NEUM_BOAT_SPACING * NEUM_BOAT_COUNT
+var neum_boat_polygon := PackedVector2Array([
+	Vector2(0.0, -18.0), Vector2(-9.0, 6.0), Vector2(0.0, 22.0), Vector2(9.0, 6.0)
+])
+
 # Rijeka has its own seamless scrolling periods (multiples of object spacing).
 var rijeka_water_scroll := 0.0
 var rijeka_dock_scroll := 0.0
@@ -1797,17 +1814,23 @@ func draw_mostar_background() -> void:
 		draw_line(Vector2(208.0, bridge_y - 14.0), Vector2(512.0, bridge_y - 14.0), Color(0.91, 0.88, 0.74), 7.0, true)
 
 
+func update_neum_background(delta: float) -> void:
+	neum_water_scroll = fposmod(neum_water_scroll + BG_SPEED_FAR * delta, NEUM_WATER_PERIOD)
+	neum_coast_scroll = fposmod(neum_coast_scroll + BG_SPEED_MID * delta, NEUM_COAST_PERIOD)
+	neum_boat_scroll = fposmod(neum_boat_scroll + BG_SPEED_NEAR * delta, NEUM_BOAT_PERIOD)
+
+
 func draw_neum_background() -> void:
 	# Neum: sheltered Adriatic bay, limestone coast, red-roofed hotels and piers.
-	# All decoration is procedural, non-colliding and scrolls with existing layers.
+	# All decoration is procedural, non-colliding and scrolls with independent layers.
 	draw_rect(Rect2(0.0, 0.0, W, H), Color(0.025, 0.19, 0.28))
-	for stripe in range(12):
-		var sy: float = fposmod(float(stripe) * 100.0 + bg_scroll_far, 1200.0) - 110.0
+	for stripe in range(NEUM_WATER_COUNT):
+		var sy: float = fposmod(float(stripe) * NEUM_WATER_SPACING + neum_water_scroll, NEUM_WATER_PERIOD) - 110.0
 		draw_rect(Rect2(0.0, sy, W, 33.0), Color(0.08, 0.39, 0.44, 0.18))
 		draw_line(Vector2(240.0, sy + 21.0), Vector2(488.0, sy + 25.0), Color(0.52, 0.89, 0.88, 0.23), 2.0, true)
 	# Waterfront tile period equals the drawing pattern period: no visible snap.
-	for tile in range(6):
-		var sy: float = fposmod(float(tile) * 260.0 + bg_scroll_mid, 1560.0) - 260.0
+	for tile in range(NEUM_COAST_COUNT):
+		var sy: float = fposmod(float(tile) * NEUM_COAST_SPACING + neum_coast_scroll, NEUM_COAST_PERIOD) - 260.0
 		if sy > H + 40.0 or sy + 245.0 < -40.0:
 			continue
 		var on_left: bool = tile % 2 == 0
@@ -1828,14 +1851,18 @@ func draw_neum_background() -> void:
 		draw_rect(Rect2(pier_origin, sy + 168.0, 100.0, 15.0), Color(0.69, 0.65, 0.56))
 		draw_line(Vector2(pier_origin, sy + 169.0), Vector2(pier_origin + 100.0, sy + 169.0), Color(0.94, 0.89, 0.72), 3.0, true)
 	# Boat wakes pass by slowly without gameplay collisions.
-	for boat in range(6):
-		var by: float = fposmod(float(boat) * 260.0 + bg_scroll_near, 1560.0) - 260.0
+	for boat in range(NEUM_BOAT_COUNT):
+		var by: float = fposmod(float(boat) * NEUM_BOAT_SPACING + neum_boat_scroll, NEUM_BOAT_PERIOD) - 260.0
 		if by < -55.0 or by > H + 55.0:
 			continue
 		var bx: float = 315.0 if boat % 2 == 0 else 427.0
-		draw_colored_polygon(PackedVector2Array([Vector2(bx, by - 18.0), Vector2(bx - 9.0, by + 6.0), Vector2(bx, by + 22.0), Vector2(bx + 9.0, by + 6.0)]), Color(0.92, 0.93, 0.86))
-		draw_line(Vector2(bx - 15.0, by + 27.0), Vector2(bx - 23.0, by + 53.0), Color(0.67, 0.96, 1.0, 0.35), 2.0, true)
-		draw_line(Vector2(bx + 15.0, by + 27.0), Vector2(bx + 23.0, by + 53.0), Color(0.67, 0.96, 1.0, 0.35), 2.0, true)
+		# Reuse local hull geometry instead of allocating a new polygon for every boat.
+		draw_set_transform(Vector2(bx, by))
+		draw_colored_polygon(neum_boat_polygon, Color(0.92, 0.93, 0.86))
+		draw_line(Vector2(-15.0, 27.0), Vector2(-23.0, 53.0), Color(0.67, 0.96, 1.0, 0.35), 2.0, true)
+		draw_line(Vector2(15.0, 27.0), Vector2(23.0, 53.0), Color(0.67, 0.96, 1.0, 0.35), 2.0, true)
+	# Subsequent gameplay drawing must retain its original canvas coordinates.
+	draw_set_transform(Vector2.ZERO)
 
 
 func draw_bosnia_stage_background() -> void:
@@ -2477,6 +2504,8 @@ func _process(delta: float) -> void:
 			update_bosnia_background(delta)
 			if city_name() == "MOSTAR" or city_name() == "NEUM":
 				bg_scroll_near = fposmod(bg_scroll_near + BG_SPEED_NEAR * delta, 1560.0)
+			if city_name() == "NEUM":
+				update_neum_background(delta)
 		elif city_name() == "ZADAR":
 			update_background(delta)
 		elif city_name() == "RIJEKA":
