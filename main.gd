@@ -1797,6 +1797,47 @@ func draw_mostar_background() -> void:
 		draw_line(Vector2(208.0, bridge_y - 14.0), Vector2(512.0, bridge_y - 14.0), Color(0.91, 0.88, 0.74), 7.0, true)
 
 
+func draw_neum_background() -> void:
+	# Neum: sheltered Adriatic bay, limestone coast, red-roofed hotels and piers.
+	# All decoration is procedural, non-colliding and scrolls with existing layers.
+	draw_rect(Rect2(0.0, 0.0, W, H), Color(0.025, 0.19, 0.28))
+	for stripe in range(12):
+		var sy: float = fposmod(float(stripe) * 100.0 + bg_scroll_far, 1200.0) - 110.0
+		draw_rect(Rect2(0.0, sy, W, 33.0), Color(0.08, 0.39, 0.44, 0.18))
+		draw_line(Vector2(240.0, sy + 21.0), Vector2(488.0, sy + 25.0), Color(0.52, 0.89, 0.88, 0.23), 2.0, true)
+	# Waterfront tile period equals the drawing pattern period: no visible snap.
+	for tile in range(6):
+		var sy: float = fposmod(float(tile) * 260.0 + bg_scroll_mid, 1560.0) - 260.0
+		if sy > H + 40.0 or sy + 245.0 < -40.0:
+			continue
+		var on_left: bool = tile % 2 == 0
+		var shore_x: float = 0.0 if on_left else 555.0
+		var beach_edge: float = 171.0 if on_left else 549.0
+		draw_rect(Rect2(shore_x, sy, 165.0, 245.0), Color(0.29, 0.38, 0.29))
+		draw_rect(Rect2(shore_x, sy + 9.0, 165.0, 220.0), Color(0.58, 0.56, 0.43))
+		draw_line(Vector2(beach_edge, sy + 5.0), Vector2(beach_edge, sy + 229.0), Color(0.90, 0.82, 0.63), 12.0, true)
+		for house in range(2):
+			var hx: float = shore_x + 22.0 + float(house) * 65.0
+			var hy: float = sy + 28.0 + float(house) * 91.0
+			draw_rect(Rect2(hx + 4.0, hy + 7.0, 55.0, 73.0), Color(0.05, 0.12, 0.13, 0.33))
+			draw_rect(Rect2(hx, hy, 55.0, 73.0), Color(0.81, 0.78, 0.66))
+			draw_rect(Rect2(hx - 5.0, hy - 5.0, 65.0, 19.0), Color(0.63, 0.30, 0.23))
+			for window in range(2):
+				draw_rect(Rect2(hx + 10.0 + float(window) * 24.0, hy + 28.0, 12.0, 19.0), Color(0.19, 0.38, 0.47))
+		var pier_origin: float = 164.0 if on_left else 456.0
+		draw_rect(Rect2(pier_origin, sy + 168.0, 100.0, 15.0), Color(0.69, 0.65, 0.56))
+		draw_line(Vector2(pier_origin, sy + 169.0), Vector2(pier_origin + 100.0, sy + 169.0), Color(0.94, 0.89, 0.72), 3.0, true)
+	# Boat wakes pass by slowly without gameplay collisions.
+	for boat in range(6):
+		var by: float = fposmod(float(boat) * 260.0 + bg_scroll_near, 1560.0) - 260.0
+		if by < -55.0 or by > H + 55.0:
+			continue
+		var bx: float = 315.0 if boat % 2 == 0 else 427.0
+		draw_colored_polygon(PackedVector2Array([Vector2(bx, by - 18.0), Vector2(bx - 9.0, by + 6.0), Vector2(bx, by + 22.0), Vector2(bx + 9.0, by + 6.0)]), Color(0.92, 0.93, 0.86))
+		draw_line(Vector2(bx - 15.0, by + 27.0), Vector2(bx - 23.0, by + 53.0), Color(0.67, 0.96, 1.0, 0.35), 2.0, true)
+		draw_line(Vector2(bx + 15.0, by + 27.0), Vector2(bx + 23.0, by + 53.0), Color(0.67, 0.96, 1.0, 0.35), 2.0, true)
+
+
 func draw_bosnia_stage_background() -> void:
 	# New forest/river environment for the Bosnia region, independent of Croatia.
 	draw_rect(Rect2(0, 0, W, H), Color(0.025, 0.10, 0.15))
@@ -2434,7 +2475,7 @@ func _process(delta: float) -> void:
 	if state in ["playing", "intermission", "boss_intro", "boss_rewards", "shop_arrival", "pre_boss_shop_wait"]:
 		if in_bosnia():
 			update_bosnia_background(delta)
-			if city_name() == "MOSTAR":
+			if city_name() == "MOSTAR" or city_name() == "NEUM":
 				bg_scroll_near = fposmod(bg_scroll_near + BG_SPEED_NEAR * delta, 1560.0)
 		elif city_name() == "ZADAR":
 			update_background(delta)
@@ -3973,6 +4014,8 @@ func _draw() -> void:
 		if in_bosnia():
 			if city_name() == "MOSTAR":
 				draw_mostar_background()
+			elif city_name() == "NEUM":
+				draw_neum_background()
 			else:
 				draw_bosnia_stage_background()
 		elif city_name() == "ZADAR":
