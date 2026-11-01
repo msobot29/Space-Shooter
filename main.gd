@@ -1425,10 +1425,19 @@ func reconcile_campaign_progress(saved_level: int, checkpoint: String, route_val
 			return {}
 		if slot == 4 and route[slot] != 4:
 			return {}
-		if slot > 4 and slot < 9 and (route[slot] < 5 or route[slot] >= 9):
+		if slot > 4 and slot < 9 and (route[slot] < 5 or route[slot] >= 10):
 			return {}
-		if slot == 9 and route[slot] != 9:
-			return {}
+	# Accept previously saved campaigns with Tuzla at slot 9.
+	var legacy_route: bool = route.size() == 10 and route[9] == 9
+	for slot in range(5, route.size()):
+		if legacy_route:
+			if slot < 9 and route[slot] == 9:
+				return {}
+		else:
+			if slot < 9 and route[slot] == 7:
+				return {}
+			if slot == 9 and route[slot] != 7:
+				return {}
 	# Old HQ saves sometimes omit Zagreb. The checkpoint proves Croatia was completed.
 	if checkpoint in ["hq_flight", "hq_dialogue"] or (checkpoint == "shop" and saved_level == CROATIA_FINAL_LEVEL):
 		if saved_level != CROATIA_FINAL_LEVEL or not route.size() in [4, 5]:
@@ -1632,7 +1641,7 @@ func city_selectable(city_index: int) -> bool:
 	if city_route.size() < 5:
 		return city_index < 5 and (city_index != 4 or city_route.size() == 4)
 	# The second region unlocks only after Zagreb's guardian was defeated.
-	return city_index >= 5 and (city_index != 9 or city_route.size() == 9)
+	return city_index >= 5 and (city_index != 7 or city_route.size() == 9)
 
 
 func show_mission_briefing(city_index: int) -> void:
@@ -1800,7 +1809,7 @@ func draw_city_map() -> void:
 		# Both regional capitals are locked until four local cities are free.
 		if city_index == 4 and city_route.size() < 4:
 			continue
-		if city_index == 9 and city_route.size() < 9:
+		if city_index == 7 and city_route.size() < 9:
 			continue
 		var point: Vector2 = CITY_POINTS[city_index]
 		var finished := city_route.has(city_index)
