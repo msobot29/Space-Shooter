@@ -1428,7 +1428,7 @@ func reconcile_campaign_progress(saved_level: int, checkpoint: String, route_val
 		if slot > 4 and slot < 9 and (route[slot] < 5 or route[slot] >= 10):
 			return {}
 	# Accept previously saved campaigns with Tuzla at slot 9.
-	var legacy_route: bool = route.size() == 10 and route[9] == 9
+	var legacy_route: bool = (route.size() == 10 and route[9] == 9) or (route.size() > 5 and route.size() < 10 and route.has(7))
 	for slot in range(5, route.size()):
 		if legacy_route:
 			if slot < 9 and route[slot] == 9:
