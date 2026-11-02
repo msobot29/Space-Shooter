@@ -29,9 +29,17 @@ Ne slati neuspešan ili nepotpun build playtesteru.
 - Samo u kopiji uklanja Godot AI autoload i editor plugin. Ne kopira addons,
   kredencijale, `.git`, lokalne QA foldere, `main2.gd` niti razvojne alate.
 - Proverava 50-level konstante i pokreće Ship Status, Upgrade Toggle,
-  Weapon System, Destruction i Reactive Armor regresione testove.
+  Weapon System, Destruction, Reactive Armor i Campaign Save regresione testove.
+- Samo export kopija koristi stabilni `user://` folder
+  `%APPDATA%\AdriaticUprising\Playtest\`. Razvojni folder ostaje
+  `%APPDATA%\Godot\app_userdata\Adriatic Uprising\`; napredak se ne prenosi
+  automatski. Verzija formata snimaka ostaje 1. Kontrole ostaju u postojećem
+  `%APPDATA%\AdriaticUprising\controls.cfg` folderu.
 - Izvozi release, pa pokreće kopirani EXE headless iz privremenog foldera
   izvan checkout-a. Ovo proverava startup bez izvornog projekta.
+- Nad izvezenim EXE-om pokreće spoljašnji QA skript za potvrdu/otkazivanje
+  New Game, Continue i diskovno snimanje/učitavanje kroz odvojene procese.
+  Test skript i testni snimci nisu deo ZIP-a.
 - Pakuje samo x86_64 EXE, README i eventualni odvojeni PCK; proverava PE
   arhitekturu, spisak i integritet ZIP-a. Upload dolazi tek posle svih provera.
 
@@ -42,9 +50,10 @@ folderu prekida se umesto mešanja sa starim fajlovima; GitHub run ima svež che
 
 ## Ograničenja
 
-Uspešan workflow potvrđuje export, regresione testove i headless startup.
+Uspešan workflow potvrđuje export, regresione testove, headless startup i
+diskovno snimanje/učitavanje u izdvojenim QA profilima kroz odvojene EXE procese.
 Ne potvrđuje interaktivne menije, prikaz na GPU-u, zvuk, fizičke tastere,
-diskovni save/load round-trip niti svih 50 nivoa odigranih do kraja.
+niti svih 50 nivoa odigranih do kraja.
 Playtester treba posebno da proveri pucanje, TAB, bossove, prelazak Hrvatska /
 Bosna i Continue. Postojeće debug prečice nisu uklanjane iz gameplay koda.
 

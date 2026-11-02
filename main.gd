@@ -1554,11 +1554,15 @@ func decode_campaign_save(config: ConfigFile) -> Dictionary:
 	return data
 
 
+func campaign_save_path() -> String:
+	return CAMPAIGN_SAVE_FILE
+
+
 func read_campaign_save() -> void:
 	pending_campaign_save.clear()
 	save_available = false
 	var config := ConfigFile.new()
-	if config.load(CAMPAIGN_SAVE_FILE) != OK:
+	if config.load(campaign_save_path()) != OK:
 		return
 	pending_campaign_save = decode_campaign_save(config)
 	save_available = not pending_campaign_save.is_empty()
@@ -1588,7 +1592,7 @@ func save_campaign_checkpoint(checkpoint_state: String) -> void:
 	config.set_value("campaign", "white_orb_collected", white_orb_collected)
 	config.set_value("campaign", "total_kills", total_kills)
 	config.set_value("campaign", "city_route", city_route)
-	var save_result := config.save(CAMPAIGN_SAVE_FILE)
+	var save_result := config.save(campaign_save_path())
 	if save_result != OK:
 		push_warning("Could not save campaign checkpoint: %d" % save_result)
 	else:
@@ -1596,8 +1600,8 @@ func save_campaign_checkpoint(checkpoint_state: String) -> void:
 
 
 func erase_campaign_save() -> void:
-	if FileAccess.file_exists(CAMPAIGN_SAVE_FILE):
-		var error := DirAccess.remove_absolute(ProjectSettings.globalize_path(CAMPAIGN_SAVE_FILE))
+	if FileAccess.file_exists(campaign_save_path()):
+		var error := DirAccess.remove_absolute(ProjectSettings.globalize_path(campaign_save_path()))
 		if error != OK:
 			push_warning("Could not remove old campaign save: %d" % error)
 	read_campaign_save()
@@ -1711,8 +1715,20 @@ func show_city_map() -> void:
 	queue_redraw()
 
 
+func request_new_campaign() -> void:
+	# Recheck the file at activation time, including invalid/unreadable saves.
+	# Cancel only changes the menu state; it never writes or deletes progress.
+	read_campaign_save()
+	if FileAccess.file_exists(campaign_save_path()):
+		state = "menu_confirm_new"
+	else:
+		start_new_campaign()
+
+
 func start_new_campaign() -> void:
-	erase_campaign_save()
+	# The fresh city-map checkpoint replaces the old campaign only after confirmation.
+	# Do not delete the previous file before attempting to write its replacement.
+	campaign_loading = false
 	god_mode = false
 	lives = 3
 	score = 0
@@ -1723,6 +1739,8 @@ func start_new_campaign() -> void:
 	debug_run = false
 	city_route.clear()
 	selected_city = 0
+	briefing_city_index = 0
+	city_flight_time = 0.0
 	collected_orb_mask = 0
 	campaign_orbs_found_mask = 0
 	victory_show_scores = false
@@ -1738,6 +1756,7 @@ func start_new_campaign() -> void:
 	radial_bullets.clear()
 	explosions.clear()
 	destruction_effects.clear()
+	armor_fragments.clear()
 	coral_armor_sparks.clear()
 	coral_energy_flashes.clear()
 	boss.clear()
@@ -1752,10 +1771,58 @@ func start_new_campaign() -> void:
 	plasma_cannon_active = false
 	arc_lightning_cooldown = 0.0
 	arc_lightning_effects.clear()
+	plasma_shot_sequence = 0
 	ability_time = 0.0
 	ability_cooldown = 0.0
 	game_paused = false
 	ship_status_open = false
+	debug_level_menu = false
+	debug_weapon_menu = false
+	debug_selected_level = 1
+	debug_weapon_selection = 0
+	pause_screen = "menu"
+	pause_menu_selection = 0
+	pause_confirm_yes = false
+	pre_boss_shop = false
+	pre_boss_shop_wait_time = 0.0
+	shop_arrival_elapsed = 0.0
+	departure_destination = "shop"
+	hq_elapsed = 0.0
+	hq_dialogue_index = 0
+	level_transition_time = 0.0
+	level_time = 0.0
+	kills = 0
+	target_kills = 0
+	waves_spawned = 0
+	wave_path_ids.clear()
+	boss_pending = false
+	boss_reward_time = 0.0
+	boss_intro_time = 0.0
+	boss_fire_clock = 0.0
+	boss_phase = 1
+	boss_shields = 2
+	boss_shield_hp = 0.0
+	boss_shield_max_hp = 0.0
+	boss_shield_round = 1
+	boss_attack_index = 0
+	boss_warning_time = 0.0
+	boss_warning_x = W * 0.5
+	spin_countdown = 0.0
+	spin_rotation = 0.0
+	storm_warning_time = 0.0
+	storm_pulses_remaining = 0
+	storm_pulse_time = 0.0
+	storm_safe_lane = 4
+	storm_pending = false
+	drowned_wave_warning = 0.0
+	drowned_waves_remaining = 0
+	drowned_wave_clock = 0.0
+	invulnerable = 0.0
+	fire_clock = 0.0
+	fire_held = false
+	enemy_fire_clock = 1.0
+	spawn_clock = 0.0
+	drift = 1.0
 	awaiting_score_name = false
 	new_personal_record = false
 	player_x = W * 0.5
@@ -4354,10 +4421,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
 					0:
 						continue_campaign()
 					1:
-						if save_available:
-							state = "menu_confirm_new"
-						else:
-							start_new_campaign()
+						request_new_campaign()
 					2:
 						state = "menu_highscores"
 					3:

@@ -63,6 +63,11 @@ jobs:
           python tools/build_playtest.py smoke
           if ($LASTEXITCODE -ne 0) { throw 'EXE startup failed' }
 
+      - name: Verify exported campaign saves and process restart
+        run: |
+          python tools/build_playtest.py verify-saves
+          if ($LASTEXITCODE -ne 0) { throw 'Exported save/load tests failed' }
+
       - name: Package playable files
         run: |
           python tools/build_playtest.py package
@@ -74,7 +79,7 @@ jobs:
           Commit: $env:GITHUB_SHA
           ZIP: $($zip.Name), $($zip.Length) bytes
           SHA256: $hash
-          Regression suites and clean headless EXE startup passed.
+          Regression suites, clean headless startup and exported save/restart tests passed.
           Interactive gameplay, graphics, audio and full campaign require manual testing.
           "@ | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
 

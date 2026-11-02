@@ -16,7 +16,8 @@ SOURCE = BUILD / 'playtest-ci-source'
 OUTPUT = BUILD / 'AdriaticUprising_Playtest_Win64'
 ZIP = BUILD / 'AdriaticUprising_Playtest_Win64.zip'
 EXE = 'AdriaticUprising_Playtest.exe'
-TESTS = ('ship_status', 'upgrade_toggle', 'weapon_system', 'destruction', 'reactive_armor')
+TESTS = ('ship_status', 'upgrade_toggle', 'weapon_system', 'destruction', 'reactive_armor', 'campaign_save')
+PLAYTEST_USER_DIR = 'AdriaticUprising/Playtest'
 
 
 def prepare():
@@ -29,6 +30,10 @@ def prepare():
     for section in ('autoload', 'editor_plugins'):
         config = re.sub(r'(?ms)^\[' + section + r'\].*?(?=^\[|\Z)', '', config)
     assert 'addons/' not in config, 'Unexpected plugin dependency'
+    # Only the export copy changes user://. Never migrate developer campaign data.
+    config = re.sub(r'(?m)^config/(?:use_custom_user_dir|custom_user_dir_name)=.*\n?', '', config)
+    config = config.replace('[application]', '[application]\n\nconfig/use_custom_user_dir=true\n'
+                            f'config/custom_user_dir_name="{PLAYTEST_USER_DIR}"')
     (SOURCE / 'project.godot').write_text(config, encoding='utf-8')
     preset_path = SOURCE / 'export_presets.cfg'
     preset = preset_path.read_text(encoding='utf-8')
@@ -36,7 +41,10 @@ def prepare():
     assert 'binary_format/embed_pck=true' in preset
     preset = preset.replace('export_filter="all_resources"',
                             'export_filter="scenes"\nexport_files=PackedStringArray("res://main.tscn")')
-    preset = preset.replace('exclude_filter=""', 'exclude_filter="tests/*,addons/*,tools/*,build/*"')
+    preset = preset.replace('exclude_filter=""',
+                            'exclude_filter="tests/*,addons/*,tools/*,build/*,'
+                            'campaign_save.cfg,*/campaign_save.cfg,highscores.cfg,*/highscores.cfg,'
+                            'controls.cfg,*/controls.cfg"')
     preset = preset.replace('Adriatic Uprising - Croatia campaign', 'Adriatic Uprising - Windows Playtest')
     preset = preset.replace('[preset.0.options]', 'script_export_mode=2\n\n[preset.0.options]')
     preset_path.write_text(preset, encoding='utf-8')
@@ -99,6 +107,29 @@ def smoke():
     print('Clean headless EXE startup passed; interactive testing still required.')
 
 
+def verify_saves():
+    """Run external QA scripts against the real exported pack, never ship them."""
+    assert os.environ.get('GITHUB_ACTIONS') == 'true', 'Requires disposable GitHub runner'
+    with tempfile.TemporaryDirectory(prefix='adriatic-save-qa-') as temp:
+        destination = Path(temp)
+        for file in OUTPUT.iterdir():
+            shutil.copy2(file, destination / file.name)
+        for phase in ('all', 'write', 'read'):
+            profile = destination / ('all-profile' if phase == 'all' else 'restart-profile')
+            log = destination / f'{phase}.log'
+            result = subprocess.run([
+                str(destination / EXE), '--headless', '--log-file', str(log),
+                '--script', str(ROOT / 'tests/campaign_save_test.gd'), '--',
+                f'--save-test-dir={profile}', f'--phase={phase}'], cwd=destination,
+                capture_output=True, timeout=120)
+            result.check_returncode()
+            text = log.read_text(encoding='utf-8')
+            (BUILD / f'playtest-exported-save-{phase}.log').write_text(text, encoding='utf-8')
+            assert re.search(r'CAMPAIGN SAVE QA: \d+ checks, 0 failures', text), text
+            assert not re.search(r'ERROR:|SCRIPT ERROR:|Parse Error:|FAIL:', text), text
+    print('Exported EXE: fresh save, confirmation/cancel, Continue and process restart passed.')
+
+
 def package():
     expected = {EXE, 'README.txt'}
     pck = OUTPUT / 'AdriaticUprising_Playtest.pck'
@@ -125,7 +156,7 @@ def package():
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=('prepare', 'build', 'smoke', 'package'))
+    parser.add_argument('action', choices=('prepare', 'build', 'smoke', 'verify-saves', 'package'))
     parser.add_argument('--godot')
     args = parser.parse_args()
     if args.action == 'build':
@@ -133,4 +164,4 @@ if __name__ == '__main__':
             parser.error('build requires --godot')
         build(args.godot)
     else:
-        globals()[args.action]()
+        globals()[args.action.replace('-', '_')]()
