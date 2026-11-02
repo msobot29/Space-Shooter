@@ -31,7 +31,8 @@ An existing playtest campaign remains available through Continue after updates.
 Controls: %APPDATA%\AdriaticUprising\controls.cfg
 
 KNOWN LIMITATIONS
-CI checks regression suites, headless EXE startup and campaign save/restart.
+CI checks regression suites and this player EXE's headless startup. A separate
+release QA executable tests campaign save/restart using the same game code.
 It does not verify GPU rendering, sound, physical input or all 50 levels played
 end to end. Please test those interactively. Existing F2/F3/F4 and O test
 shortcuts remain in gameplay code; avoid them for normal playtesting.

@@ -53,6 +53,11 @@ jobs:
           if ($LASTEXITCODE -ne 0 -or $version -notmatch '^4\.7\.2\.stable\.') { throw "Wrong Godot version: $version" }
           "GODOT_BIN=$godot" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
+      - name: Validate save harness failure handling
+        run: |
+          python -B -m unittest discover -s tests -p test_build_playtest.py
+          if ($LASTEXITCODE -ne 0) { throw 'Save harness regression tests failed' }
+
       - name: Validate and export isolated release
         run: |
           python tools/build_playtest.py build --godot "$env:GODOT_BIN"
@@ -63,7 +68,7 @@ jobs:
           python tools/build_playtest.py smoke
           if ($LASTEXITCODE -ne 0) { throw 'EXE startup failed' }
 
-      - name: Verify exported campaign saves and process restart
+      - name: Verify release QA scene saves and process restart
         run: |
           python tools/build_playtest.py verify-saves
           if ($LASTEXITCODE -ne 0) { throw 'Exported save/load tests failed' }
@@ -79,7 +84,7 @@ jobs:
           Commit: $env:GITHUB_SHA
           ZIP: $($zip.Name), $($zip.Length) bytes
           SHA256: $hash
-          Regression suites, clean headless startup and exported save/restart tests passed.
+          Regression suites, player EXE startup and separate release QA save/restart tests passed.
           Interactive gameplay, graphics, audio and full campaign require manual testing.
           "@ | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
 
@@ -91,3 +96,14 @@ jobs:
           if-no-files-found: error
           compression-level: 0
           retention-days: 30
+
+      - name: Upload build diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: AdriaticUprising_Build_Diagnostics
+          path: |
+            build/playtest-*.log
+            build/playtest-save-qa-runs/**/*.log
+          if-no-files-found: ignore
+          retention-days: 14

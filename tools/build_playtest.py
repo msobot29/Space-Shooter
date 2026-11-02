@@ -8,6 +8,7 @@ import shutil
 import struct
 import subprocess
 import tempfile
+import uuid
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -18,6 +19,9 @@ ZIP = BUILD / 'AdriaticUprising_Playtest_Win64.zip'
 EXE = 'AdriaticUprising_Playtest.exe'
 TESTS = ('ship_status', 'upgrade_toggle', 'weapon_system', 'destruction', 'reactive_armor', 'campaign_save')
 PLAYTEST_USER_DIR = 'AdriaticUprising/Playtest'
+QA_SOURCE = BUILD / 'playtest-save-qa-source'
+QA_OUTPUT = BUILD / 'playtest-save-qa'
+QA_EXE = 'AdriaticUprising_SaveQA.exe'
 
 
 def prepare():
@@ -57,8 +61,8 @@ def prepare():
     assert (ROOT / 'main.gd').read_bytes() == (SOURCE / 'main.gd').read_bytes()
 
 
-def run_godot(godot, label, *args):
-    result = subprocess.run([godot, '--headless', '--path', str(SOURCE),
+def run_godot(godot, label, *args, project=None):
+    result = subprocess.run([godot, '--headless', '--path', str(project or SOURCE),
                              '--log-file', str(BUILD / f'playtest-{label}.log'), *args],
                             capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=240)
     print(result.stdout, end='')
@@ -78,6 +82,7 @@ def build(godot):
     tests.mkdir()
     for name in TESTS:
         shutil.copy2(ROOT / 'tests' / f'{name}_test.gd', tests)
+    shutil.copy2(ROOT / 'tests/campaign_save_suite.gd', tests)
     run_godot(godot, 'import', '--editor', '--quit')
     for name in TESTS:
         output = run_godot(godot, name, '--script', f'res://tests/{name}_test.gd')
@@ -86,6 +91,36 @@ def build(godot):
     shutil.rmtree(tests)
     run_godot(godot, 'export', '--export-release', 'Windows Desktop', str(OUTPUT / EXE))
     assert (OUTPUT / EXE).stat().st_size > 0
+    prepare_save_qa()
+    run_godot(godot, 'qa-import', '--editor', '--quit', project=QA_SOURCE)
+    run_godot(godot, 'qa-export', '--export-release', 'Windows Desktop',
+              str(QA_OUTPUT / QA_EXE), project=QA_SOURCE)
+    assert (QA_OUTPUT / QA_EXE).stat().st_size > 0
+
+
+def prepare_save_qa():
+    """Same game and release template, with a test main scene in a separate export."""
+    QA_SOURCE.mkdir(parents=True, exist_ok=False)
+    QA_OUTPUT.mkdir(parents=True, exist_ok=False)
+    for name in ('main.gd', 'main.gd.uid', 'main.tscn', 'project.godot', 'export_presets.cfg'):
+        shutil.copy2(SOURCE / name, QA_SOURCE / name)
+    tests = QA_SOURCE / 'tests'
+    tests.mkdir()
+    for name in ('campaign_save_suite.gd', 'campaign_save_qa.tscn'):
+        shutil.copy2(ROOT / 'tests' / name, tests / name)
+    config_path = QA_SOURCE / 'project.godot'
+    config = config_path.read_text(encoding='utf-8').replace(
+        'run/main_scene="res://main.tscn"', 'run/main_scene="res://tests/campaign_save_qa.tscn"')
+    config = config.replace(f'config/custom_user_dir_name="{PLAYTEST_USER_DIR}"',
+                            f'config/custom_user_dir_name="{PLAYTEST_USER_DIR}-SaveQA"')
+    config_path.write_text(config, encoding='utf-8')
+    preset_path = QA_SOURCE / 'export_presets.cfg'
+    preset = preset_path.read_text(encoding='utf-8').replace(
+        'export_files=PackedStringArray("res://main.tscn")',
+        'export_files=PackedStringArray("res://tests/campaign_save_qa.tscn", "res://main.tscn")')
+    preset = preset.replace('exclude_filter="tests/*,', 'exclude_filter="')
+    preset_path.write_text(preset, encoding='utf-8')
+    assert (QA_SOURCE / 'main.gd').read_bytes() == (SOURCE / 'main.gd').read_bytes()
 
 
 def smoke():
@@ -108,26 +143,41 @@ def smoke():
 
 
 def verify_saves():
-    """Run external QA scripts against the real exported pack, never ship them."""
-    assert os.environ.get('GITHUB_ACTIONS') == 'true', 'Requires disposable GitHub runner'
-    with tempfile.TemporaryDirectory(prefix='adriatic-save-qa-') as temp:
-        destination = Path(temp)
-        for file in OUTPUT.iterdir():
-            shutil.copy2(file, destination / file.name)
-        for phase in ('all', 'write', 'read'):
-            profile = destination / ('all-profile' if phase == 'all' else 'restart-profile')
-            log = destination / f'{phase}.log'
+    """Run the compiled QA main scene; release templates ignore external --script."""
+    destination = BUILD / 'playtest-save-qa-runs' / uuid.uuid4().hex
+    destination.mkdir(parents=True, exist_ok=False)
+    # Retain profiles and logs, including on timeout, for diagnosis. Never distribute them.
+    for file in QA_OUTPUT.iterdir():
+        shutil.copy2(file, destination / file.name)
+    for phase, count in (('all', 67), ('write', 1), ('read', 2)):
+        profile = destination / ('all-profile' if phase == 'all' else 'restart-profile')
+        log = destination / f'{phase}.log'
+        stdout = stderr = b''
+        try:
             result = subprocess.run([
-                str(destination / EXE), '--headless', '--log-file', str(log),
-                '--script', str(ROOT / 'tests/campaign_save_test.gd'), '--',
+                str(destination / QA_EXE), '--headless', '--max-fps', '60', '--quit-after', '1800',
+                '--log-file', str(log), '--',
                 f'--save-test-dir={profile}', f'--phase={phase}'], cwd=destination,
                 capture_output=True, timeout=120)
+            stdout, stderr = result.stdout, result.stderr
             result.check_returncode()
-            text = log.read_text(encoding='utf-8')
+        except subprocess.TimeoutExpired as error:
+            stdout, stderr = error.stdout or b'', error.stderr or b''
+            raise RuntimeError(f'Save QA {phase} timed out; diagnostics: {destination}') from error
+        finally:
+            (destination / f'{phase}-stdout.log').write_bytes(stdout)
+            (destination / f'{phase}-stderr.log').write_bytes(stderr)
+            text = log.read_text(encoding='utf-8') if log.exists() else ''
             (BUILD / f'playtest-exported-save-{phase}.log').write_text(text, encoding='utf-8')
-            assert re.search(r'CAMPAIGN SAVE QA: \d+ checks, 0 failures', text), text
-            assert not re.search(r'ERROR:|SCRIPT ERROR:|Parse Error:|FAIL:', text), text
-    print('Exported EXE: fresh save, confirmation/cancel, Continue and process restart passed.')
+            print(text, end='', flush=True)
+        if not log.exists():
+            raise RuntimeError(f'Save QA {phase} did not create a log: {destination}')
+        completion = f'CAMPAIGN SAVE QA COMPLETE: phase={phase} checks={count} failures=0'
+        if (f'CAMPAIGN SAVE QA BEGIN: phase={phase}' not in text
+                or completion not in text
+                or re.search(r'ERROR:|SCRIPT ERROR:|Parse Error:|FAIL:', text)):
+            raise RuntimeError(f'Save QA {phase} failed or never completed; diagnostics: {destination}')
+    print('Release QA scene: fresh New Game, cancel/confirm, Continue and process restart passed.')
 
 
 def package():

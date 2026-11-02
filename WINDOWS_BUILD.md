@@ -37,9 +37,18 @@ Ne slati neuspešan ili nepotpun build playtesteru.
   `%APPDATA%\AdriaticUprising\controls.cfg` folderu.
 - Izvozi release, pa pokreće kopirani EXE headless iz privremenog foldera
   izvan checkout-a. Ovo proverava startup bez izvornog projekta.
-- Nad izvezenim EXE-om pokreće spoljašnji QA skript za potvrdu/otkazivanje
-  New Game, Continue i diskovno snimanje/učitavanje kroz odvojene procese.
-  Test skript i testni snimci nisu deo ZIP-a.
+- Pravi zaseban release QA EXE sa istim `main.gd` i Windows šablonom, ali sa
+  testnom glavnom scenom. Normalno pokretanje te scene proverava potvrdu i
+  otkazivanje New Game, Continue i diskovno snimanje kroz odvojene procese.
+  Editor CLI test i QA scena dele `tests/campaign_save_suite.gd`.
+  Godot 4.7.2 zvanični export šabloni podrazumevano ignorišu `--script`;
+  zato release test ne pokušava izvršavanje spoljašnjeg GDScript fajla.
+  QA EXE, testni kod i snimci nikada nisu deo ZIP-a za igrača.
+- Save test zahteva BEGIN i COMPLETE oznake za svaku fazu, tačan broj provera,
+  nula neuspeha i exit 0. Vremensko ograničenje procesa ostaje 120 sekundi;
+  scena ima watchdog od 30 sekundi i dodatno ograničenje broja frejmova.
+  Greška, nedostajuća oznaka i timeout prekidaju build. Logovi se čuvaju i pri
+  timeout-u, a poseban Diagnostics artefakt se šalje i za neuspešne buildove.
 - Pakuje samo x86_64 EXE, README i eventualni odvojeni PCK; proverava PE
   arhitekturu, spisak i integritet ZIP-a. Upload dolazi tek posle svih provera.
 
@@ -51,7 +60,9 @@ folderu prekida se umesto mešanja sa starim fajlovima; GitHub run ima svež che
 ## Ograničenja
 
 Uspešan workflow potvrđuje export, regresione testove, headless startup i
-diskovno snimanje/učitavanje u izdvojenim QA profilima kroz odvojene EXE procese.
+diskovno snimanje/učitavanje u izdvojenim QA profilima kroz odvojene QA EXE procese.
+Produkcioni EXE prolazi startup proveru; save test koristi zasebnu release scenu
+sa istim gameplay kodom i kontrolisanim putanjama za testne snimke.
 Ne potvrđuje interaktivne menije, prikaz na GPU-u, zvuk, fizičke tastere,
 niti svih 50 nivoa odigranih do kraja.
 Playtester treba posebno da proveri pucanje, TAB, bossove, prelazak Hrvatska /
