@@ -1,5 +1,21 @@
 # Adriatic Uprising / Space Shooter
 
+Windows playtest builds: see [GitHub Actions instructions](WINDOWS_BUILD.md).
+The manual workflow exports Godot 4.7.2 Windows x86_64 release, validates the
+game and uploads `AdriaticUprising_Playtest_Win64.zip`. A build is confirmed
+only after its GitHub Actions run succeeds.
+
+## Upgrade bonuses, life loss and TAB status (latest)
+
+- Extra Speed at level 4 awards **10,000 points** per collected pickup, exactly like Extra Bullet at level 8. It uses the existing `+10,000` popup near the ship, without a score multiplier. Below maximum, Speed still increases normally.
+- Every actual life loss reduces **Speed, Rate of Fire and Extra Bullets by one level**, clamped at zero. The existing weapon downgrade remains. God Mode, R Shield and post-hit invulnerability block these penalties. Projectile capacity is immediately `5 + extra_bullet_level`; already flying shots remain, while new volleys wait for enough free slots.
+
+- SHIP STATUS starts closed. **TAB** opens/closes its compact panel without pausing gameplay or music. It shows SHIP SPEED, RATE OF FIRE and EXTRA BULLETS with current `LVL` values and segmented green/orange/cyan bars. The panel sits below boss status and to the left of score multipliers; it closes on mission restart, pause/debug screens and departure from gameplay. The old pausing status modal is no longer used.
+- These are three independent existing stats: `speed_level` 0–4, `rate_level` 0–4 and `extra_bullet_level` 0–8. Extra Bullets displays the upgrade level, not the 5-plus-level projectile capacity. The renderer reads live state every frame, so pickups, purchases, weapon changes, life loss and save/load need no separate HUD synchronization.
+- The Extra Bullet cap remains 8. TAB is reserved for status: new bindings cannot assign it to another action, and legacy TAB assignments cannot also move, shoot, activate a shield or pause. A custom status binding still works alongside TAB. Text entry, menus, modified TAB shortcuts and key-repeat events do not toggle the panel.
+- The fixed logical layout follows the game's existing canvas stretch settings; visual checks cover 540×720, 720×960 and 1080×1440. During boss fights, the shield readout uses a shorter label in the left gutter to avoid the HP bars.
+- Tests: `godot --headless --path . --script res://tests/upgrade_toggle_test.gd` and `godot --headless --path . --script res://tests/ship_status_test.gd`. These exercise real upgrades, life-loss penalties, status input and in-memory save decoding without accessing player save files.
+
 ## Shared enemy destruction (latest)
 
 - All six ordinary enemy types, city lieutenants and both final guardians use a shared destruction entry point and burst renderer. A short bright flash expands into a fading ring, rotating falling fragments and sparks; colors match the enemy and bosses use larger effects.
@@ -18,7 +34,7 @@
 ## Projectile capacity and life-loss upgrades (latest)
 
 - All five weapons share a limit of **5 + Extra Bullet level** active player projectiles (5–13). Single, Arc and Plasma need one free slot, Double needs two, and Triple needs three. A volley fires only when the entire volley fits; rejected attempts do not consume firing cooldowns. Holding fire still does not repeat shots.
-- Each actual life loss reduces **Speed and ROF by one level**, with a minimum of zero. The existing weapon downgrade remains; Extra Bullet, shield upgrades, score and Scrap are preserved. R Shield, post-hit invulnerability and God Mode prevent these penalties.
+- Each actual life loss reduces **Speed, ROF and Extra Bullet by one level**, with a minimum of zero. The existing weapon downgrade remains; shield upgrades, score and Scrap are preserved. R Shield, post-hit invulnerability and God Mode prevent these penalties.
 - Damage, projectile speeds, spread angles, upgrade prices and firing interval formulas are unchanged. Shots already in flight retain their launch damage.
 - Regression test: `godot --headless --path . --script res://tests/weapon_system_test.gd`. It runs without normal game startup or reading/writing player saves.
 

@@ -71,9 +71,9 @@ func test_life_loss() -> void:
 				game.take_damage()
 				expect(game.lives == 2 and game.speed_level == maxi(0, speed - 1) and game.rate_level == maxi(0, rate - 1), "One life and one Speed/ROF level lost %d / %d / %d" % [choice, speed, rate])
 				expect(game.damage_level == [0, 0, 3, 0, 0][choice] and game.arc_lightning_owned == (choice == 3) and game.plasma_cannon_active == (choice == 4), "Existing weapon penalty preserved")
-				expect(game.extra_bullet_level == 8 and game.scrap == 1234 and game.score == 5678 and game.ability_level == 3, "Other upgrades and rewards preserved")
+				expect(game.extra_bullet_level == 7 and game.scrap == 1234 and game.score == 5678 and game.ability_level == 3, "Extra Bullet loses one level; rewards and shield upgrade preserved")
 				game.take_damage()
-				expect(game.lives == 2 and game.speed_level == maxi(0, speed - 1) and game.rate_level == maxi(0, rate - 1), "Post-hit invulnerability prevents repeat penalties")
+				expect(game.lives == 2 and game.speed_level == maxi(0, speed - 1) and game.rate_level == maxi(0, rate - 1) and game.extra_bullet_level == 7, "Post-hit invulnerability prevents repeat penalties")
 				game.free()
 	for protection in ["god_mode", "invulnerable", "ability_time"]:
 		var game = make_game(2)
@@ -100,7 +100,7 @@ func test_life_loss() -> void:
 	game.enemy_bullets.append(Vector2(game.player_x, game.PLAYER_Y))
 	game.radial_bullets.append({"pos": Vector2(game.player_x, game.PLAYER_Y), "velocity": Vector2.ZERO})
 	game.update_bullets(0.0)
-	expect(game.lives == 2 and game.speed_level == 3 and game.rate_level == 3 and game.extra_bullet_level == 3, "Incoming bullet collisions apply exactly one penalty per life")
+	expect(game.lives == 2 and game.speed_level == 3 and game.rate_level == 3 and game.extra_bullet_level == 2, "Incoming bullet collisions apply exactly one penalty per life")
 	game.free()
 
 func mouse_button(pressed: bool) -> void:

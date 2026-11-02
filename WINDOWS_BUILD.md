@@ -1,41 +1,52 @@
-# Windows test build — Adriatic Uprising
+﻿# Windows playtest - GitHub Actions
 
-This repository contains the Godot 4 game source. The Windows .exe must be exported using Godot and matching export templates.
+Workflow: `.github/workflows/windows-build.yml`, samo `workflow_dispatch`.
+Godot verzija: **4.7.2 stable**, Windows x86_64 release sa ugrađenim PCK-om.
 
-## Automatic GitHub build (no local export required)
+## Pokretanje i preuzimanje
 
-1. Open https://github.com/msobot29/Space-Shooter/actions/workflows/windows-build.yml while signed in to GitHub.
-2. Click **Run workflow**, keep the **main** branch selected and confirm.
-3. Open the resulting run. When its status is **Success**, scroll to **Artifacts**.
-4. Download **AdriaticUprising-Windows-Alpha**. Extract the artifact ZIP to get `AdriaticUprising.exe`.
-5. Test the EXE on Windows and then send a ZIP of it to your friend.
+1. Nakon pregleda i odobrenja, uraditi push pripremljenog commita na `main`.
+   GitHub Actions koristi isključivo commit sa GitHub-a, ne lokalne izmene.
+2. Otvoriti https://github.com/msobot29/Space-Shooter/actions/workflows/windows-build.yml
+3. Kliknuti **Run workflow**, izabrati **main**, pa **Run workflow**.
+4. Otvoriti nov run i proveriti SHA commita. Sačekati zeleni **Success**.
+5. U odeljku **Artifacts** preuzeti **AdriaticUprising_Playtest_Win64**.
+6. Raspakovati GitHub artifact arhivu. Unutra je
+   `AdriaticUprising_Playtest_Win64.zip`; to je paket za playtestera.
+7. Raspakovati taj ZIP i pokrenuti `AdriaticUprising_Playtest.exe`.
+   Pročitati `README.txt`; eventualni `.pck` mora ostati pored EXE-a.
 
-This automation uses Godot 4.7.2 and matching Windows export template. If the workflow fails, inspect the job log or export manually with the steps below. A workflow file is not itself an executable.
+Artefakt se čuva 30 dana. GitHub nalog sa pristupom repozitorijumu je potreban
+za preuzimanje. Na Summary stranici su SHA commita, veličina i SHA256 ZIP-a.
+Ne slati neuspešan ili nepotpun build playtesteru.
 
-## Export a single Windows executable
+## Šta pipeline radi
 
-1. Open the project in **Godot 4.7.2** (or the matching Godot version you use).
-2. Use **Editor > Manage Export Templates** and download/install the templates for that exact editor version.
-3. Run the game once with **F5** and confirm that there are no errors.
-4. Open **Project > Export** and select the existing **Windows Desktop** preset. If it is not displayed, add a Windows Desktop preset.
-5. Check **Architecture: x86_64** and **Embed PCK: ON**. This embeds game resources into one .exe.
-6. Make an empty **build** folder in your local project if it does not exist.
-7. Click **Export Project** (not Export PCK/ZIP), choose `build/AdriaticUprising.exe`, and **turn off "Export With Debug"**.
-8. Run the resulting `.exe` on your own Windows PC before sharing it.
-9. ZIP `AdriaticUprising.exe` and send it to your friend. They should extract the ZIP and launch the EXE.
+- Preuzima zvanični Godot editor 4.7.2 i export templates iste verzije;
+  instalira oba Windows x86_64 šablona. Greška preuzimanja prekida build.
+- Priprema izdvojenu kopiju `main.gd`, njegovog UID-a, `main.tscn`, podešavanja
+  projekta i export preseta. Gameplay kod se kopira bez izmena.
+- Samo u kopiji uklanja Godot AI autoload i editor plugin. Ne kopira addons,
+  kredencijale, `.git`, lokalne QA foldere, `main2.gd` niti razvojne alate.
+- Proverava 50-level konstante i pokreće Ship Status, Upgrade Toggle,
+  Weapon System, Destruction i Reactive Armor regresione testove.
+- Izvozi release, pa pokreće kopirani EXE headless iz privremenog foldera
+  izvan checkout-a. Ovo proverava startup bez izvornog projekta.
+- Pakuje samo x86_64 EXE, README i eventualni odvojeni PCK; proverava PE
+  arhitekturu, spisak i integritet ZIP-a. Upload dolazi tek posle svih provera.
 
-If embedding is unavailable, leave the separate `.pck` alongside the `.exe` and include both files in the ZIP.
+`tools/build_playtest.py` koristi Python 3.12 standardnu biblioteku. Nove
+resurse igre treba eksplicitno dodati u allowlist; promena zavisnosti prekida
+pripremu dok se lista ne pregleda. Pokušaj ponovne pripreme u istom staging
+folderu prekida se umesto mešanja sa starim fajlovima; GitHub run ima svež checkout.
 
-## QA smoke test
+## Ograničenja
 
-- Main Menu: Continue / New Game / Options / High Scores.
-- Options: rebind LEFT and RIGHT to arrow keys, play, then restart and confirm settings persist.
-- Levels 1 and 5: two enemy waves, shop and first guardian.
-- Level 21: Zagreb background and difficulty.
-- Level 25: final guardian shield phases, Adriatic Storm, white orb and finale.
-- In a normal run, exit mid-level and verify Continue restarts from the checkpoint.
-- Test with the debug F2 menu, but debug runs intentionally do not write High Scores.
+Uspešan workflow potvrđuje export, regresione testove i headless startup.
+Ne potvrđuje interaktivne menije, prikaz na GPU-u, zvuk, fizičke tastere,
+diskovni save/load round-trip niti svih 50 nivoa odigranih do kraja.
+Playtester treba posebno da proveri pucanje, TAB, bossove, prelazak Hrvatska /
+Bosna i Continue. Postojeće debug prečice nisu uklanjane iz gameplay koda.
 
-No completed Windows executable is included in this repository until it is exported with Godot.
-
-For further details: https://docs.godotengine.org/en/stable/tutorials/export/exporting_for_windows.html
+Lokalni editor ne zahteva instalirane export šablone za ovaj udaljeni build.
+Build još nije potvrđen dok konkretan GitHub Actions run ne završi uspešno.

@@ -1,4 +1,5 @@
 name: Build Adriatic Uprising for Windows
+run-name: Windows playtest - ${{ github.ref_name }} - ${{ github.sha }}
 
 on:
   workflow_dispatch:
@@ -6,46 +7,82 @@ on:
 permissions:
   contents: read
 
+env:
+  GODOT_VERSION: 4.7.2
+  PYTHONUTF8: '1'
+
 jobs:
   windows-release:
-    runs-on: ubuntu-24.04
+    runs-on: windows-2025
     timeout-minutes: 40
+    defaults:
+      run:
+        shell: pwsh
     steps:
-      - name: Checkout game source
+      - name: Checkout selected revision
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
-      - name: Download Godot 4.7.2 and Windows release template
-        shell: bash
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Download exact Godot editor and matching Windows templates
         run: |
-          set -euo pipefail
-          mkdir -p build
-          curl --fail --location --retry 3 --output /tmp/godot.zip \
-            "https://github.com/godotengine/godot-builds/releases/download/4.7.2-stable/Godot_v4.7.2-stable_linux.x86_64.zip"
-          unzip -q /tmp/godot.zip -d /tmp/godot-bin
-          chmod +x /tmp/godot-bin/Godot_v4.7.2-stable_linux.x86_64
-          mkdir -p "$HOME/.local/share/godot/export_templates/4.7.2.stable"
-          curl --fail --location --retry 3 --output /tmp/templates.tpz \
-            "https://github.com/godotengine/godot-builds/releases/download/4.7.2-stable/Godot_v4.7.2-stable_export_templates.tpz"
-          unzip -j /tmp/templates.tpz 'templates/windows_release_x86_64.exe' \
-            -d "$HOME/.local/share/godot/export_templates/4.7.2.stable"
+          $ErrorActionPreference = 'Stop'
+          $release = "$env:GODOT_VERSION-stable"
+          $base = "https://github.com/godotengine/godot-builds/releases/download/$release"
+          $editorZip = Join-Path $env:RUNNER_TEMP 'godot-editor.zip'
+          $templateZip = Join-Path $env:RUNNER_TEMP 'godot-templates.zip'
+          curl.exe --fail --location --retry 3 --output $editorZip "$base/Godot_v${release}_win64.exe.zip"
+          if ($LASTEXITCODE -ne 0) { throw 'Godot editor download failed' }
+          curl.exe --fail --location --retry 3 --output $templateZip "$base/Godot_v${release}_export_templates.tpz"
+          if ($LASTEXITCODE -ne 0) { throw 'Matching template download failed' }
+          $editorDir = Join-Path $env:RUNNER_TEMP 'godot-editor'
+          Expand-Archive -LiteralPath $editorZip -DestinationPath $editorDir
+          $templateDir = Join-Path $env:APPDATA "Godot/export_templates/$env:GODOT_VERSION.stable"
+          New-Item -ItemType Directory -Path $templateDir -Force | Out-Null
+          $env:PLAYTEST_TEMPLATE_ZIP = $templateZip
+          $env:PLAYTEST_TEMPLATE_DIR = $templateDir
+          python -c "import os, pathlib, zipfile; z=zipfile.ZipFile(os.environ['PLAYTEST_TEMPLATE_ZIP']); d=pathlib.Path(os.environ['PLAYTEST_TEMPLATE_DIR']); [(d/n).write_bytes(z.read('templates/'+n)) for n in ('windows_debug_x86_64.exe','windows_release_x86_64.exe')]"
+          if ($LASTEXITCODE -ne 0) { throw 'Template extraction failed' }
+          $godot = Join-Path $editorDir "Godot_v${release}_win64_console.exe"
+          $version = & $godot --version
+          if ($LASTEXITCODE -ne 0 -or $version -notmatch '^4\.7\.2\.stable\.') { throw "Wrong Godot version: $version" }
+          "GODOT_BIN=$godot" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
-      - name: Import Godot resources and check scripts
-        shell: bash
+      - name: Validate and export isolated release
         run: |
-          set -euo pipefail
-          /tmp/godot-bin/Godot_v4.7.2-stable_linux.x86_64 --headless --path . --editor --quit
+          python tools/build_playtest.py build --godot "$env:GODOT_BIN"
+          if ($LASTEXITCODE -ne 0) { throw 'Build or validation failed' }
 
-      - name: Export single Windows EXE
-        shell: bash
+      - name: Clean headless launch outside checkout
         run: |
-          set -euo pipefail
-          /tmp/godot-bin/Godot_v4.7.2-stable_linux.x86_64 --headless --path . \
-            --export-release "Windows Desktop" "build/AdriaticUprising.exe"
-          test -s "build/AdriaticUprising.exe"
+          python tools/build_playtest.py smoke
+          if ($LASTEXITCODE -ne 0) { throw 'EXE startup failed' }
 
-      - name: Upload Windows game
+      - name: Package playable files
+        run: |
+          python tools/build_playtest.py package
+          if ($LASTEXITCODE -ne 0) { throw 'ZIP validation failed' }
+          $zip = Get-Item build/AdriaticUprising_Playtest_Win64.zip
+          $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $zip.FullName).Hash
+          @"
+          Windows x86_64 release, Godot $env:GODOT_VERSION stable.
+          Commit: $env:GITHUB_SHA
+          ZIP: $($zip.Name), $($zip.Length) bytes
+          SHA256: $hash
+          Regression suites and clean headless EXE startup passed.
+          Interactive gameplay, graphics, audio and full campaign require manual testing.
+          "@ | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+
+      - name: Upload playtest ZIP
         uses: actions/upload-artifact@v4
         with:
-          name: AdriaticUprising-Windows-Alpha
-          path: build/AdriaticUprising.exe
+          name: AdriaticUprising_Playtest_Win64
+          path: build/AdriaticUprising_Playtest_Win64.zip
           if-no-files-found: error
+          compression-level: 0
+          retention-days: 30

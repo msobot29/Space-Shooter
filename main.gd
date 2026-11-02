@@ -171,6 +171,9 @@ var arc_lightning_effects: Array[Dictionary] = []
 var rate_level := 0
 var speed_level := 0
 var extra_bullet_level := 0 # Warblade-style maximum bullets on screen
+const EXTRA_BULLET_MAX_LEVEL := 8
+const MAX_UPGRADE_SCORE_BONUS := 10000
+const SHIP_STATUS_HUD_RECT := Rect2(14, 148, 344, 138)
 var ability_level := 1 # 1/2/3 = 2/4/6 seconds
 var ability_time := 0.0
 var ability_cooldown := 0.0
@@ -195,7 +198,7 @@ var drowned_wave_clock := 0.0
 var boss_reward_time := 0.0
 var boss_intro_time := 0.0
 var level_transition_time := 0.0
-var show_stats_modal := false
+var ship_status_open := false
 var shop_arrival_elapsed := 0.0
 var hq_elapsed := 0.0
 var hq_dialogue_index := 0
@@ -1269,7 +1272,7 @@ func update_retro_music() -> void:
 		current_music = needed
 		music_player.stream = music_streams[needed]
 		music_player.play()
-	music_player.stream_paused = game_paused or show_stats_modal or debug_level_menu or debug_weapon_menu
+	music_player.stream_paused = game_paused or debug_level_menu or debug_weapon_menu
 	music_player.volume_db = -80.0 if music_volume <= 0.0 else linear_to_db(music_volume)
 
 
@@ -1381,6 +1384,9 @@ func load_bindings() -> void:
 
 
 func key_down(action: int) -> bool:
+	# TAB is reserved for the status display, including legacy custom bindings.
+	if action < 5 and bindings[action] == KEY_TAB:
+		return false
 	return Input.is_physical_key_pressed(bindings[action])
 
 
@@ -1530,7 +1536,7 @@ func decode_campaign_save(config: ConfigFile) -> Dictionary:
 		data[key] = value
 	if data["version"] != CAMPAIGN_SAVE_VERSION or data["lives"] <= 0:
 		return {}
-	var limits := {"damage_level": 6, "rate_level": 4, "speed_level": 4, "extra_bullet_level": 8, "ability_level": 3}
+	var limits := {"damage_level": 6, "rate_level": 4, "speed_level": 4, "extra_bullet_level": EXTRA_BULLET_MAX_LEVEL, "ability_level": 3}
 	for key in limits:
 		if data[key] < (1 if key == "ability_level" else 0) or data[key] > limits[key]:
 			return {}
@@ -1610,7 +1616,7 @@ func continue_campaign() -> void:
 	damage_level = clampi(int(data["damage_level"]), 0, 6)
 	rate_level = clampi(int(data["rate_level"]), 0, 4)
 	speed_level = clampi(int(data["speed_level"]), 0, 4)
-	extra_bullet_level = clampi(int(data.get("extra_bullet_level", 0)), 0, 8)
+	extra_bullet_level = clampi(int(data.get("extra_bullet_level", 0)), 0, EXTRA_BULLET_MAX_LEVEL)
 	ability_level = clampi(int(data["ability_level"]), 1, 3)
 	arc_lightning_owned = bool(data.get("arc_lightning_owned", false))
 	plasma_cannon_active = bool(data.get("plasma_cannon_active", false))
@@ -1625,7 +1631,7 @@ func continue_campaign() -> void:
 		city_route.append(int(city_index))
 	debug_run = false
 	game_paused = false
-	show_stats_modal = false
+	ship_status_open = false
 	debug_level_menu = false
 	debug_weapon_menu = false
 	god_mode = false
@@ -1691,7 +1697,7 @@ func start_city_flight(city_index: int) -> void:
 	city_flight_time = 0.0
 	state = "city_flight"
 	game_paused = false
-	show_stats_modal = false
+	ship_status_open = false
 	queue_redraw()
 
 
@@ -1749,7 +1755,7 @@ func start_new_campaign() -> void:
 	ability_time = 0.0
 	ability_cooldown = 0.0
 	game_paused = false
-	show_stats_modal = false
+	ship_status_open = false
 	awaiting_score_name = false
 	new_personal_record = false
 	player_x = W * 0.5
@@ -2350,7 +2356,7 @@ func start_level(resume_boss: bool = false) -> void:
 		arc_lightning_owned = false
 		plasma_cannon_active = false
 	state = "playing"
-	show_stats_modal = false
+	ship_status_open = false
 	game_paused = false
 	awaiting_score_name = false
 	new_personal_record = false
@@ -2424,6 +2430,7 @@ func start_level(resume_boss: bool = false) -> void:
 	queue_redraw()
 
 func begin_level_transition() -> void:
+	ship_status_open = false
 	# Preserve falling rewards during the silent break and level-title intro.
 	state = "intermission"
 	level_transition_time = LEVEL_TRANSITION_SECONDS + LEVEL_TITLE_SECONDS
@@ -2610,6 +2617,7 @@ func advance_hq_dialogue() -> void:
 
 
 func begin_hq_sequence() -> void:
+	ship_status_open = false
 	departure_destination = "hq"
 	shop_arrival_elapsed = 0.0
 	state = "shop_arrival"
@@ -2631,7 +2639,7 @@ func begin_departure(destination: String) -> void:
 	shop_arrival_elapsed = 0.0
 	state = "shop_arrival" # Reuse the existing six-second flight state.
 	game_paused = false
-	show_stats_modal = false
+	ship_status_open = false
 	player_bullets.clear()
 	enemy_bullets.clear()
 	radial_bullets.clear()
@@ -2680,7 +2688,7 @@ func open_pre_boss_shop() -> void:
 	state = "shop"
 	pre_boss_shop = true
 	game_paused = false
-	show_stats_modal = false
+	ship_status_open = false
 	enemy_bullets.clear()
 	radial_bullets.clear()
 	player_bullets.clear()
@@ -2723,12 +2731,14 @@ func launch_boss() -> void:
 
 
 func _process(delta: float) -> void:
+	if not ship_status_gameplay_active() or game_paused or debug_level_menu or debug_weapon_menu:
+		ship_status_open = false
 	update_retro_music()
 	if state in ["main_menu", "menu_confirm_new", "menu_options", "menu_highscores", "menu_bindings"]:
 		menu_anim_time += delta
 		queue_redraw()
 		return
-	if debug_level_menu or debug_weapon_menu or game_paused or show_stats_modal:
+	if debug_level_menu or debug_weapon_menu or game_paused:
 		queue_redraw()
 		return
 	
@@ -3680,9 +3690,10 @@ func take_damage() -> void:
 	if god_mode or invulnerable > 0.0 or ability_time > 0.0:
 		return
 	lives -= 1
-	# Each actual life loss removes one Speed and ROF level, never Extra Bullet.
+	# Each actual life loss removes one level from all three ship upgrades.
 	speed_level = maxi(0, speed_level - 1)
 	rate_level = maxi(0, rate_level - 1)
+	extra_bullet_level = maxi(0, extra_bullet_level - 1)
 	play_arcade_sfx("hurt")
 	# Weapon power drops exactly one tier on each actual life lost.
 	# Triple -> Double -> Single; shields/invulnerability prevent the loss.
@@ -3838,15 +3849,17 @@ func update_pickups(delta: float) -> void:
 		if pos.distance_to(Vector2(player_x, PLAYER_Y)) < 34.0:
 			play_arcade_sfx("pickup")
 			if drops[i].get("kind", "scrap") == "extra_speed":
-				speed_level = mini(4, speed_level + 1)
+				if speed_level >= SPEED_UPGRADE_COSTS.size():
+					award_max_upgrade_score_bonus()
+				else:
+					speed_level = mini(4, speed_level + 1)
 			elif drops[i].get("kind", "scrap") == "extra_bullet":
 				var previous_bullet_level: int = extra_bullet_level
-				extra_bullet_level = mini(8, extra_bullet_level + 1)
+				extra_bullet_level = mini(EXTRA_BULLET_MAX_LEVEL, extra_bullet_level + 1)
 				if extra_bullet_level > previous_bullet_level:
 					show_weapon_pickup_name("EXTRA BULLET LV.%d" % extra_bullet_level, Color(1.0, 0.72, 0.32))
 				else:
-					score += 10000
-					show_weapon_score_bonus()
+					award_max_upgrade_score_bonus()
 			elif drops[i].get("kind", "scrap") == "single_shot":
 				damage_level = 0
 				show_weapon_pickup_name("SINGLE SHOT", Color(0.69, 0.94, 1.0))
@@ -3857,8 +3870,7 @@ func update_pickups(delta: float) -> void:
 			elif drops[i].get("kind", "scrap") == "double_shot":
 				# The last pickup is the active weapon, even when switching tiers.
 				if rate_level >= 4:
-					score += 10000
-					show_weapon_score_bonus()
+					award_max_upgrade_score_bonus()
 				elif damage_level >= 3 and damage_level < 6:
 					rate_level += 1
 				damage_level = 3
@@ -3870,8 +3882,7 @@ func update_pickups(delta: float) -> void:
 				explosions.append({"pos": Vector2(player_x, PLAYER_Y), "time": 0.32})
 			elif drops[i].get("kind", "scrap") == "triple_shot":
 				if rate_level >= 4:
-					score += 10000
-					show_weapon_score_bonus()
+					award_max_upgrade_score_bonus()
 				elif damage_level >= 6:
 					rate_level += 1
 				damage_level = 6
@@ -3905,6 +3916,11 @@ func update_pickups(delta: float) -> void:
 			if drops[i].get("kind", "") == "white_orb" and level == BOSNIA_FINAL_LEVEL:
 				secure_bosnia_white_orb()
 			drops.remove_at(i)
+
+func award_max_upgrade_score_bonus() -> void:
+	score += MAX_UPGRADE_SCORE_BONUS
+	show_weapon_score_bonus()
+
 
 func show_weapon_score_bonus() -> void:
 	bonus_popups.append({"pos": Vector2(player_x, PLAYER_Y - 54.0), "time": 1.45})
@@ -3985,6 +4001,7 @@ func qualifies_for_high_scores(points: int) -> bool:
 	return points > 0 and (high_scores.size() < HIGH_SCORE_LIMIT or points > int(high_scores[HIGH_SCORE_LIMIT - 1]["score"]))
 
 func finish_run(won: bool) -> void:
+	ship_status_open = false
 	if not debug_run:
 		erase_campaign_save()
 	state = "victory" if won else "gameover"
@@ -4022,7 +4039,7 @@ func return_to_main_menu() -> void:
 		score_name_field.release_focus()
 	game_paused = false
 	pause_screen = "menu"
-	show_stats_modal = false
+	ship_status_open = false
 	debug_level_menu = false
 	victory_show_scores = false
 	read_campaign_save()
@@ -4144,7 +4161,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
 				binding_notice = "CANCELLED"
 			else:
 				var key: int = int(event.physical_keycode if event.physical_keycode != 0 else event.keycode)
-				if key <= 0 or BIND_RESTRICTED.has(key):
+				if key <= 0 or BIND_RESTRICTED.has(key) or (key == KEY_TAB and binding_selection != 5):
 					binding_notice = "KEY RESERVED"
 				elif bindings.has(key) and bindings[binding_selection] != key:
 					binding_notice = "KEY ALREADY USED"
@@ -4178,11 +4195,24 @@ func _unhandled_key_input(event: InputEvent) -> void:
 							state = "menu_options"
 		queue_redraw()
 		return
+	var status_key: bool = event.keycode == KEY_TAB or event.physical_keycode == KEY_TAB or event.keycode == bindings[5] or event.physical_keycode == bindings[5]
+	if status_key and ship_status_gameplay_active():
+		if event.alt_pressed or event.ctrl_pressed or event.meta_pressed or event.shift_pressed:
+			return
+		var focus: Control = get_viewport().gui_get_focus_owner() if is_inside_tree() else null
+		if focus is LineEdit or focus is TextEdit:
+			return # Text entry and GUI focus navigation retain their normal key handling.
+		if not game_paused and not debug_level_menu and not debug_weapon_menu:
+			ship_status_open = not ship_status_open
+			queue_redraw()
+		if is_inside_tree():
+			get_viewport().set_input_as_handled()
+		return
 	# ESC opens a proper pause menu instead of leaving or unpausing directly.
 	if state in ["playing", "intermission", "boss_intro", "boss_rewards", "pre_boss_shop_wait"] and event.keycode == KEY_ESCAPE:
 		if not game_paused:
 			game_paused = true
-			show_stats_modal = false
+			ship_status_open = false
 			pause_screen = "menu"
 			pause_menu_selection = 0
 		elif pause_screen == "menu":
@@ -4258,6 +4288,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
 	if event.keycode == KEY_F4 and not state in ["main_menu", "menu_confirm_new", "menu_options", "menu_highscores", "menu_bindings"]:
 		debug_weapon_menu = not debug_weapon_menu
 		if debug_weapon_menu:
+			ship_status_open = false
 			debug_level_menu = false
 			debug_weapon_selection = 4 if plasma_cannon_active else (3 if arc_lightning_owned else (2 if damage_level >= 6 else (1 if damage_level >= 3 else 0)))
 		queue_redraw()
@@ -4285,6 +4316,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
 	if event.keycode == KEY_F2 and not state in ["main_menu", "menu_confirm_new", "menu_options", "menu_highscores", "menu_bindings"]:
 		debug_level_menu = not debug_level_menu
 		if debug_level_menu:
+			ship_status_open = false
 			debug_selected_level = level
 		queue_redraw()
 		return
@@ -4456,12 +4488,8 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			pause_menu_selection = 0
 			game_paused = not game_paused
 			if game_paused:
-				show_stats_modal = false
+				ship_status_open = false
 		elif game_paused:
-			return
-		elif event.physical_keycode == bindings[5] or event.keycode == bindings[5]:
-			show_stats_modal = not show_stats_modal
-		elif show_stats_modal:
 			return
 		elif (event.physical_keycode == bindings[3] or event.keycode == bindings[3]) and ability_time <= 0.0 and ability_cooldown <= 0.0:
 			ability_time = float(ability_level * 2)
@@ -4494,6 +4522,49 @@ func draw_stat_meter(stat_name: String, current: int, maximum: int, x: float, y:
 	if current > 0:
 		draw_rect(Rect2(x + 119, y - 13, 110.0 * float(current) / float(maximum), 11), bar_color)
 
+func ship_status_rows() -> Array[Dictionary]:
+	# Read live levels on every draw; ROF and Extra Bullet are independent upgrades.
+	return [
+		{"label": "SHIP SPEED", "level": speed_level, "max": SPEED_UPGRADE_COSTS.size(), "color": Color(0.38, 0.96, 0.48)},
+		{"label": "RATE OF FIRE", "level": rate_level, "max": FIRE_UPGRADE_COSTS.size(), "color": Color(1.0, 0.60, 0.22)},
+		{"label": "EXTRA BULLETS", "level": extra_bullet_level, "max": EXTRA_BULLET_MAX_LEVEL, "color": Color(0.27, 0.83, 1.0)}
+	]
+
+
+func ship_status_gameplay_active() -> bool:
+	return state in ["playing", "intermission", "boss_intro", "boss_rewards", "pre_boss_shop_wait"]
+
+
+func ship_status_hud_visible() -> bool:
+	return ship_status_open and ship_status_gameplay_active() and not game_paused and not debug_level_menu and not debug_weapon_menu
+
+
+func draw_ship_status_hud() -> void:
+	if not ship_status_hud_visible():
+		return
+	# Canvas-item stretching keeps this layout aligned with the rest of the 720x960 HUD.
+	var panel := SHIP_STATUS_HUD_RECT
+	draw_rect(panel, Color(0.025, 0.065, 0.12, 0.94))
+	draw_rect(panel, Color(0.25, 0.46, 0.61, 0.9), false, 1.0)
+	draw_rect(Rect2(panel.position, Vector2(3, panel.size.y)), Color(0.27, 0.83, 1.0))
+	text_at("SHIP STATUS", 26, 170, 17, Color(0.91, 0.96, 1.0))
+	draw_line(Vector2(26, 179), Vector2(345, 179), Color(0.18, 0.3, 0.4), 1.0)
+	var rows := ship_status_rows()
+	for i in range(rows.size()):
+		var row: Dictionary = rows[i]
+		var y := 199.0 + float(i) * 27.0
+		var tint: Color = row["color"]
+		text_at(row["label"], 26, y, 14, tint)
+		text_at("LVL %d" % int(row["level"]), 176, y, 14, Color(0.94, 0.97, 1.0))
+		var maximum: int = row["max"]
+		var segment_width := (108.0 - float(maximum - 1) * 3.0) / float(maximum)
+		for segment in range(maximum):
+			var rect := Rect2(237.0 + float(segment) * (segment_width + 3.0), y - 11.0, segment_width, 12.0)
+			draw_rect(rect, tint if segment < int(row["level"]) else Color(0.11, 0.19, 0.27))
+	var shortcut := "TAB" if bindings[5] == KEY_TAB else "TAB / %s" % binding_name(bindings[5])
+	text_at("%s  CLOSE" % shortcut, 26, 275, 12, Color(0.63, 0.76, 0.85))
+
+
 func equipped_weapon_name() -> String:
 	if plasma_cannon_active:
 		return "PLASMA CANNON"
@@ -4507,22 +4578,6 @@ func equipped_weapon_name() -> String:
 
 func shots_per_second() -> float:
 	return 1.0 / maxf(0.12, 0.34 - float(rate_level) * 0.05)
-
-func draw_ship_status_modal() -> void:
-	# Status overview opened with TAB; simulation pauses while viewing it.
-	draw_rect(Rect2(0, 0, W, H), Color(0.0, 0.02, 0.06, 0.70))
-	draw_rect(Rect2(95, 255, 530, 426), Color(0.06, 0.12, 0.23, 0.98))
-	draw_rect(Rect2(95, 255, 530, 8), Color(0.24, 0.72, 1.0))
-	text_at("SHIP STATUS", 245, 319, 34, Color(0.95, 0.98, 1.0))
-	text_at("S - SPEED", 126, 379, 23, Color(0.35, 0.76, 1.0))
-	draw_stat_meter("LEVEL", speed_level, 4, 127, 411, Color(0.24, 0.7, 1.0))
-	text_at("%d px/s    (+%d each upgrade)" % [int(BASE_SPEED + speed_level * SPEED_STEP), int(SPEED_STEP)], 128, 443, 19)
-	text_at("F - RATE OF FIRE", 126, 496, 23, Color(1.0, 0.55, 0.45))
-	draw_stat_meter("LEVEL", rate_level, 4, 127, 528, Color(1.0, 0.38, 0.3))
-	text_at("%.2f shots/s    (%.2fs between shots)" % [shots_per_second(), 1.0 / shots_per_second()], 128, 560, 18)
-	text_at("WEAPON: %s  |  SHIELD Lv.%d" % [equipped_weapon_name(), ability_level], 126, 612, 20, Color(0.70, 0.95, 0.8))
-	text_at("EXTRA BULLET: %d/8   MAX ON SCREEN: %d" % [extra_bullet_level, 5 + extra_bullet_level], 126, 586, 16, Color(1.0, 0.78, 0.48))
-	text_at("%s - CLOSE / RESUME" % binding_name(bindings[5]), 230, 652, 19, Color(0.80, 0.91, 1.0))
 
 func draw_final_orb_speech() -> void:
 	# A readable two-part conversation anchored above the moving player ship.
@@ -4681,17 +4736,20 @@ func _draw() -> void:
 	for orb_i in range(4):
 		var orb_color: Color = ORB_COLORS[orb_i]
 		draw_circle(Vector2(360.0 + float(orb_i) * 24.0, 59.0), 8.0, orb_color if (collected_orb_mask & (1 << orb_i)) != 0 else Color(0.2, 0.25, 0.34))
-	if ability_time > 0.0:
+	if boss_active and not boss.is_empty():
+		# The boss bars start at x=150; keep the shield readout in the left gutter.
+		if ability_time > 0.0:
+			text_at("R ACTIVE %.1fs" % ability_time, 20, 96, 12, Color(0.3, 1.0, 1.0))
+		elif ability_cooldown > 0.0:
+			text_at("R CD %.1fs" % ability_cooldown, 20, 96, 12, Color(0.9, 0.75, 0.5))
+		else:
+			text_at("R READY Lv.%d" % ability_level, 20, 96, 12, Color(0.4, 1.0, 0.7))
+	elif ability_time > 0.0:
 		text_at("R SHIELD: %.1fs" % ability_time, 20, 96, 19, Color(0.3, 1.0, 1.0))
 	elif ability_cooldown > 0.0:
 		text_at("R RECHARGE: %.1fs" % ability_cooldown, 20, 96, 19, Color(0.9, 0.75, 0.5))
 	else:
 		text_at("R SHIELD READY (Lv.%d)" % ability_level, 20, 96, 19, Color(0.4, 1.0, 0.7))
-	# Compact Warblade-inspired S/F status indicators; no large box obscuring enemies.
-	draw_rect(Rect2(14, 111, 291, 82), Color(0.05, 0.11, 0.2, 0.80))
-	draw_stat_meter("SPEED", speed_level, 4, 25, 135, Color(0.24, 0.7, 1.0))
-	draw_stat_meter("FIRE", rate_level, 4, 25, 162, Color(1.0, 0.38, 0.3))
-	text_at("%s - SHIP STATUS" % binding_name(bindings[5]), 27, 183, 14, Color(0.7, 0.85, 0.98))
 	if not active_multipliers.is_empty():
 		draw_rect(Rect2(385, 168, 316, 65), Color(0.17, 0.10, 0.26, 0.90))
 		text_at("SCORE x%d" % score_multiplier(), 399, 195, 24, Color(1.0, 0.85, 0.35))
@@ -4830,6 +4888,7 @@ func _draw() -> void:
 		var label_x: float = clampf(label_pos.x - label_width * 0.5 + 37.0, 8.0, W - label_width - 8.0)
 		var popup_color: Color = bonus.get("color", Color(1.0, 0.88, 0.25))
 		text_at(bonus_text, label_x, label_pos.y, 27, Color(popup_color.r, popup_color.g, popup_color.b, opacity))
+	draw_ship_status_hud()
 	if state == "boss_intro":
 		# Separate lieutenant announcement instead of an abrupt boss spawn.
 		draw_rect(Rect2(42, 338, 636, 190), Color(0.08, 0.07, 0.17, 0.94))
@@ -4944,8 +5003,6 @@ func _draw() -> void:
 			draw_rect(Rect2(0.0, 0.0, W, H), Color(0.015, 0.04, 0.08, fade_amount))
 	if state in ["playing", "intermission", "boss_intro", "boss_rewards", "pre_boss_shop_wait", "shop"]:
 		text_at("M music %s [%d%%]  [ ] volume   , . SFX [%d%%]" % ["ON" if music_enabled else "OFF", int(music_volume * 100.0), int(sfx_volume * 100.0)], 19, H - 42, 15, Color(0.74, 0.90, 1.0))
-	if show_stats_modal and (state == "playing" or state == "intermission" or state == "boss_intro" or state == "boss_rewards"):
-		draw_ship_status_modal()
 	if game_paused and state in ["playing", "intermission", "boss_intro", "boss_rewards", "pre_boss_shop_wait"]:
 		draw_rect(Rect2(0, 0, W, H), Color(0.0, 0.02, 0.06, 0.78))
 		if pause_screen == "options":
