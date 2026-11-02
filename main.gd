@@ -221,7 +221,12 @@ var enemy_bullets: Array[Vector2] = []
 var radial_bullets: Array[Dictionary] = []
 var drops: Array[Dictionary] = []
 var explosions: Array[Dictionary] = []
+var destruction_effects: Array[Dictionary] = []
+const MAX_DESTRUCTION_EFFECTS := 24
 var armor_fragments: Array[Dictionary] = []
+var coral_armor_sparks: Array[Dictionary] = []
+var coral_energy_flashes: Array[Dictionary] = []
+const CORAL_ARMOR_SHOCK_SECONDS := 0.15
 var bonus_popups: Array[Dictionary] = []
 var fire_clock := 0.0
 var fire_held := false
@@ -766,7 +771,7 @@ func draw_jellyfish_25d(pos: Vector2) -> void:
 	draw_line(pos + Vector2(-17.0, 8.0), pos + Vector2(18.0, 8.0), Color(0.78, 0.96, 1.0, 0.72), 3.0, true)
 
 
-func draw_crab_25d(pos: Vector2) -> void:
+func draw_crab_25d(pos: Vector2, shell_remaining: int = -1, shell_max: int = 0) -> void:
 	var claw_motion := sin(level_time * 4.8 + pos.x * 0.015) * 3.0
 	# Offset shadow and rear legs produce a raised armored body.
 	draw_circle(pos + Vector2(5.0, 9.0), 26.0, Color(0.0, 0.03, 0.07, 0.35))
@@ -786,6 +791,16 @@ func draw_crab_25d(pos: Vector2) -> void:
 	draw_circle(pos + Vector2(-5.0, -7.0), 13.0, Color(1.0, 0.43, 0.28))
 	draw_arc(pos + Vector2(0.0, -1.0), 20.0, PI + 0.38, TAU - 0.42, 22, Color(1.0, 0.68, 0.43), 3.0, true)
 	draw_line(pos + Vector2(-16.0, 7.0), pos + Vector2(16.0, 7.0), Color(0.49, 0.08, 0.12), 4.0, true)
+	if shell_max > 0 and shell_remaining < shell_max:
+		# Cosmetic shell sectors follow the crab's existing HP, not new armor HP.
+		for plate in range(maxi(0, shell_remaining), shell_max):
+			var sector := PackedVector2Array([pos])
+			for step in range(7):
+				var angle := -PI / 2.0 + (float(plate) + float(step) / 6.0) * TAU / float(shell_max)
+				sector.append(pos + Vector2(cos(angle), sin(angle)) * 20.0)
+			draw_colored_polygon(sector, Color(0.20, 0.055, 0.08))
+		if shell_remaining <= maxi(1, int(float(shell_max) / 3.0)):
+			draw_reactive_armor_core(pos, Vector2(-5.0, 6.0))
 	draw_circle(pos + Vector2(-7.0, -4.0), 2.2, Color(0.23, 0.07, 0.12))
 	draw_circle(pos + Vector2(7.0, -4.0), 2.2, Color(0.23, 0.07, 0.12))
 
@@ -799,10 +814,13 @@ func draw_atlantean_lancer(pos: Vector2) -> void:
 		draw_line(pos + Vector2(13,-24), pos + Vector2(13+dx,-39), Color(1.0,0.87,0.52), 3)
 
 
-func draw_coral_colossus(pos: Vector2, armor_left: int = 3) -> void:
+func draw_coral_colossus(pos: Vector2, armor_left: int = 3, enhanced_armor: bool = false) -> void:
 	# Armored coral colossus with branching red-orange horns.
 	draw_rect(Rect2(pos.x-33,pos.y-26,66,58), Color(0.55,0.18,0.15))
 	draw_rect(Rect2(pos.x-24,pos.y-19,48,42), Color(0.24,0.21,0.22))
+	if enhanced_armor and armor_left <= 1:
+		# The right-hand plates have gone: illuminate the exposed recess only.
+		draw_reactive_armor_core(pos)
 	# Three detachable armor plates. Missing pieces reveal the dark core.
 	for plate in range(clampi(armor_left, 0, 3)):
 		var armor_x: float = pos.x - 22.0 + float(plate) * 15.0
@@ -813,6 +831,16 @@ func draw_coral_colossus(pos: Vector2, armor_left: int = 3) -> void:
 	draw_circle(pos + Vector2(-10,-7), 5, Color(0.08,0.23,0.31))
 	draw_circle(pos + Vector2(10,-7), 5, Color(0.08,0.23,0.31))
 	draw_arc(pos, 33, 0, TAU, 32, Color(1.0,0.75,0.44,0.67), 3)
+
+
+func draw_reactive_armor_core(pos: Vector2, offset: Vector2 = Vector2(9.0, 8.0)) -> void:
+	var core_pos := pos + offset
+	var pulse := 0.88 + 0.12 * sin(level_time * 4.0 + pos.y * 0.015)
+	draw_circle(core_pos, 16.0, Color(0.08, 0.58, 1.0, 0.16 * pulse))
+	draw_circle(core_pos, 12.0, Color(0.05, 0.75, 1.0, 0.28 * pulse))
+	draw_circle(core_pos, 7.5 * pulse, Color(0.18, 0.88, 1.0, 0.95))
+	draw_circle(core_pos, 3.5, Color(0.81, 1.0, 1.0))
+	draw_arc(core_pos, 10.0, 0.0, TAU, 24, Color(0.25, 0.9, 1.0, 0.8 * pulse), 1.5, true)
 
 
 func draw_abyssal_siren(pos: Vector2) -> void:
@@ -1604,6 +1632,7 @@ func continue_campaign() -> void:
 	awaiting_score_name = false
 	drops.clear()
 	active_multipliers.clear()
+	destruction_effects.clear()
 	enemies.clear()
 	player_bullets.clear()
 	enemy_bullets.clear()
@@ -1702,6 +1731,9 @@ func start_new_campaign() -> void:
 	enemy_bullets.clear()
 	radial_bullets.clear()
 	explosions.clear()
+	destruction_effects.clear()
+	coral_armor_sparks.clear()
+	coral_energy_flashes.clear()
 	boss.clear()
 	boss_active = false
 	level = 1
@@ -2331,6 +2363,9 @@ func start_level(resume_boss: bool = false) -> void:
 	radial_bullets.clear()
 	# Keep falling rewards across stages; they continue falling in the new mission.
 	explosions.clear()
+	destruction_effects.clear()
+	coral_armor_sparks.clear()
+	coral_energy_flashes.clear()
 	armor_fragments.clear()
 	bonus_popups.clear()
 	arc_lightning_effects.clear()
@@ -2398,6 +2433,7 @@ func begin_level_transition() -> void:
 	enemy_bullets.clear()
 	radial_bullets.clear()
 	explosions.clear()
+	# Let the last enemy's purely visual destruction finish during intermission.
 	queue_redraw()
 
 func spawn_wave() -> void:
@@ -2458,6 +2494,8 @@ func spawn_wave() -> void:
 				"kind": kind,
 				"armor_left": 3 if kind == 4 else 0
 			})
+			if kind == 1:
+				enemies.back()["visual_armor_max_hp"] = float(enemies.back()["hp"])
 
 func move_enemy(enemy: Dictionary, delta: float) -> void:
 	enemy["prev_pos"] = enemy["pos"]
@@ -2803,10 +2841,11 @@ func _process(delta: float) -> void:
 		queue_redraw()
 		return
 	if state != "playing":
+		if state in ["gameover", "victory"]:
+			update_effects(delta)
 		queue_redraw()
 		return
 	level_time += delta
-	arc_lightning_cooldown = maxf(0.0, arc_lightning_cooldown - delta)
 	invulnerable = maxf(0.0, invulnerable - delta)
 	if ability_time > 0.0:
 		ability_time = maxf(0.0, ability_time - delta)
@@ -2848,17 +2887,14 @@ func update_player(delta: float) -> void:
 		move += 1.0
 	player_x = clampf(player_x + clampf(move, -1.0, 1.0) * (BASE_SPEED + speed_level * SPEED_STEP) * delta, 28.0, W - 28.0)
 	fire_clock = maxf(0.0, fire_clock - delta)
+	arc_lightning_cooldown = maxf(0.0, arc_lightning_cooldown - delta)
 	var pressed := key_down(2) or Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)
 	# Shooting remains available between levels; bullets are updated even
 	# while the next wave has not started. Boss announcements stay non-combat.
 	# Keep edge-triggered shots: holding the key does not repeat volleys.
-	# Extra Bullet upgrades are independent of the equipped weapon.
-	# Triple volleys require three available slots; do not silently suppress the shot.
-	var volley_size: int = 3 if not arc_lightning_owned and not plasma_cannon_active and damage_level >= 6 else (2 if not arc_lightning_owned and not plasma_cannon_active and damage_level >= 3 else 1)
-	var projectile_capacity: int = 5 + extra_bullet_level
-	if (state == "playing" or state == "intermission" or state == "boss_rewards") and pressed and not fire_held and fire_clock <= 0.0 and player_bullets.size() + volley_size <= projectile_capacity:
-		fire_weapon()
-		fire_clock = maxf(0.12, 0.34 - rate_level * 0.05) / (0.6 if plasma_cannon_active else 1.0)
+	if (state == "playing" or state == "intermission" or state == "boss_rewards") and pressed and not fire_held and fire_clock <= 0.0:
+		if fire_weapon():
+			fire_clock = maxf(0.12, 0.34 - rate_level * 0.05) / (0.6 if plasma_cannon_active else 1.0)
 	fire_held = pressed
 
 func weapon_projectile_color() -> Color:
@@ -2872,7 +2908,10 @@ func add_player_bullet(offset_x: float, angle_degrees: float) -> void:
 	# Negative angle goes left; positive angle goes right, with up as the forward axis.
 	var radians := deg_to_rad(angle_degrees)
 	var velocity := Vector2(sin(radians), -cos(radians)) * BULLET_SPEED
-	player_bullets.append({"pos": Vector2(player_x + offset_x, PLAYER_Y - 34.0), "velocity": velocity, "color": weapon_projectile_color()})
+	# A flying shot keeps the power it had at launch, even after a pickup or life loss.
+	player_bullets.append({"pos": Vector2(player_x + offset_x, PLAYER_Y - 34.0), "velocity": velocity, "color": weapon_projectile_color(),
+		"damage": float(1 + damage_level), "boss_damage": 2.0 + damage_level,
+		"armor_damage": 3 if damage_level >= 6 else (2 if damage_level >= 3 else 1)})
 
 func add_arc_flash(at: Vector2) -> void:
 	# Cosmetic-only hit pulse; physics and damage are unchanged.
@@ -2916,19 +2955,27 @@ func draw_arc_zap(start: Vector2, finish: Vector2, opacity: float, zap_seed: flo
 		draw_line(pivot, tip, Color(0.54, 0.89, 1.0, opacity * 0.7), 2.0, true)
 
 
-func fire_weapon() -> void:
+func fire_weapon() -> bool:
+	# Every projectile uses one slot, regardless of the equipped weapon.
+	# Reserve room for the whole volley before creating shots or consuming cooldowns.
+	var volley_size: int = 1 if plasma_cannon_active or arc_lightning_owned else (3 if damage_level >= 6 else (2 if damage_level >= 3 else 1))
+	if player_bullets.size() + volley_size > 5 + extra_bullet_level:
+		return false
 	if plasma_cannon_active:
 		plasma_shot_sequence += 1
-		player_bullets.append({"pos": Vector2(player_x, PLAYER_Y - 34.0), "velocity": Vector2(0.0, -BULLET_SPEED * 1.65), "plasma": true, "plasma_id": plasma_shot_sequence, "pierces": 0})
+		player_bullets.append({"pos": Vector2(player_x, PLAYER_Y - 34.0), "velocity": Vector2(0.0, -BULLET_SPEED * 1.65), "plasma": true, "plasma_id": plasma_shot_sequence, "pierces": 0,
+			"damage": 12.0, "boss_damage": 12.0, "armor_damage": 3})
 		play_arcade_sfx("shoot")
-		return
+		return true
 	# Arc Lightning replaces Single/Double/Triple while equipped.
 	if arc_lightning_owned:
 		if arc_lightning_cooldown <= 0.0:
-			player_bullets.append({"pos": Vector2(player_x, PLAYER_Y - 34.0), "velocity": Vector2(0.0, -BULLET_SPEED * 0.85), "color": Color(0.60, 0.90, 1.0), "arc": true})
+			player_bullets.append({"pos": Vector2(player_x, PLAYER_Y - 34.0), "velocity": Vector2(0.0, -BULLET_SPEED * 0.85), "color": Color(0.60, 0.90, 1.0), "arc": true,
+				"damage": 8.0, "boss_damage": 8.0, "armor_damage": 2})
 			arc_lightning_cooldown = ARC_LIGHTNING_COOLDOWN
 			play_arcade_sfx("shoot")
-		return
+			return true
+		return false
 	if damage_level >= 6:
 		play_arcade_sfx("triple_shoot")
 	elif damage_level >= 3:
@@ -2944,6 +2991,7 @@ func fire_weapon() -> void:
 		add_player_bullet(17.0, 0.0)
 	else:
 		add_player_bullet(0.0, 0.0)
+	return true
 
 func weapon_label() -> String:
 	if plasma_cannon_active:
@@ -3213,6 +3261,7 @@ func award_enemy_kill(index: int) -> void:
 	play_arcade_sfx("destroy")
 	var enemy_pos: Vector2 = enemies[index]["pos"]
 	var defeated_kind: int = int(enemies[index]["kind"])
+	spawn_enemy_destruction(enemies[index])
 	enemies.remove_at(index)
 	kills += 1
 	total_kills += 1
@@ -3221,27 +3270,208 @@ func award_enemy_kill(index: int) -> void:
 	if total_kills % 30 == 0:
 		drop_score_multiplier(enemy_pos)
 	scrap += int(BOSNIA_ENEMY_STATS[defeated_kind]["scrap"]) if defeated_kind >= 3 else 12
-	explosions.append({"pos": enemy_pos, "time": 0.3})
 	if randf() < 0.85:
 		drop_scrap(enemy_pos, 1)
 
 
-func spawn_armor_fragments(tank_pos: Vector2, old_armor: int, new_armor: int, weapon_fx: String) -> void:
+func spawn_enemy_destruction(enemy: Dictionary, boss_enemy: bool = false) -> void:
+	# One entry point for deaths; no gameplay RNG and no live enemy retained.
+	var pos: Vector2 = enemy["pos"]
+	if not boss_enemy and has_reactive_armor(enemy):
+		# Armor damage already detached the lost plates and spawned impact sparks.
+		# Reuse its final burst/shards instead of adding a second explosion.
+		spawn_reactive_armor_destruction(pos, is_croatian_tank(enemy))
+		return
+	var kind := int(enemy.get("kind", 0))
+	var colors := [Color(0.2, 0.7, 0.95), Color(1.0, 0.32, 0.2), Color(0.48, 0.91, 0.18),
+		Color(0.12, 0.8, 0.78), Color(1.0, 0.5, 0.25), Color(0.85, 0.4, 1.0)]
+	var tint: Color = colors[clampi(kind, 0, colors.size() - 1)]
+	var effect_scale := 1.0
+	if boss_enemy:
+		effect_scale = 3.0 if level in [CROATIA_FINAL_LEVEL, BOSNIA_FINAL_LEVEL] else 2.0
+		if in_bosnia():
+			tint = Color(0.14, 0.48, 0.57)
+		elif level == CROATIA_FINAL_LEVEL:
+			tint = Color(0.17, 0.38, 0.51)
+		else:
+			tint = {"ZADAR": Color(0.14, 0.58, 0.61), "RIJEKA": Color(0.37, 0.48, 0.68),
+				"SPLIT": Color(0.70, 0.38, 0.22), "OSIJEK": Color(0.32, 0.59, 0.23)}.get(city_name(), Color(0.12, 0.48, 0.51))
+	destruction_effects.append({"pos": pos, "time": 1.1 if boss_enemy else 0.65,
+		"duration": 1.1 if boss_enemy else 0.65, "scale": effect_scale,
+		"color": tint, "pieces": 12 if boss_enemy else 8, "seed": pos.x * 0.013 + pos.y * 0.017 + float(kind)})
+	while destruction_effects.size() > MAX_DESTRUCTION_EFFECTS:
+		destruction_effects.pop_front()
+
+
+func update_destruction_effects(delta: float) -> void:
+	for i in range(destruction_effects.size() - 1, -1, -1):
+		destruction_effects[i]["time"] = float(destruction_effects[i]["time"]) - delta
+		if float(destruction_effects[i]["time"]) <= 0.0:
+			destruction_effects.remove_at(i)
+
+
+func draw_destruction_burst(pos: Vector2, fade: float, effect_scale: float, glow: Color, rim: Color) -> void:
+	var radius := (18.0 + (1.0 - fade) * 52.0) * effect_scale
+	draw_circle(pos, radius * 0.7, Color(glow.r, glow.g, glow.b, fade * fade * 0.35))
+	draw_arc(pos, radius, 0.0, TAU, 40, Color(rim.r, rim.g, rim.b, fade), (4.0 * fade + 1.0) * effect_scale, true)
+	draw_circle(pos, 24.0 * fade * effect_scale, Color(0.75, 0.97, 1.0, fade * fade * 0.8))
+
+
+func draw_enemy_destructions() -> void:
+	for effect in destruction_effects:
+		var pos: Vector2 = effect["pos"]
+		var duration: float = effect["duration"]
+		var age := duration - float(effect["time"])
+		var fade := clampf(float(effect["time"]) / duration, 0.0, 1.0)
+		var effect_scale: float = effect["scale"]
+		var tint: Color = effect["color"]
+		draw_destruction_burst(pos, fade, effect_scale, tint, tint.lightened(0.35))
+		var pieces: int = effect["pieces"]
+		for piece in range(pieces):
+			var angle := float(piece) * TAU / float(pieces) + float(effect["seed"])
+			var direction := Vector2(cos(angle), sin(angle))
+			var velocity := direction * (75.0 + float(piece % 3) * 28.0) * effect_scale
+			var shard_pos := pos + direction * 12.0 * effect_scale + velocity * age + Vector2(0, 130.0 * age * age)
+			var spin := angle + age * (-7.0 if piece % 2 == 0 else 7.0)
+			var axis_x := Vector2(cos(spin), sin(spin)) * 4.0 * effect_scale
+			var axis_y := Vector2(-sin(spin), cos(spin)) * 7.0 * effect_scale
+			var shard := PackedVector2Array([shard_pos - axis_x - axis_y, shard_pos + axis_x - axis_y * 0.6,
+				shard_pos + axis_x * 0.5 + axis_y, shard_pos - axis_x + axis_y * 0.4])
+			draw_colored_polygon(shard, Color(tint.r, tint.g, tint.b, minf(1.0, fade * 2.0)))
+			draw_line(shard[0], shard[1], Color(1.0, 0.9, 0.68, fade), 1.5, true)
+			var spark_pos := pos + velocity * age * 1.6
+			draw_line(spark_pos, spark_pos - direction * 9.0 * effect_scale, Color(1.0, 0.86, 0.5, fade * fade), 2.0, true)
+
+
+func armor_fragment_offset(plate: int, shell_segments: int = 3, croatian_shell: bool = false) -> Vector2:
+	if croatian_shell:
+		var angle := -PI / 2.0 + (float(plate) + 0.5) * TAU / float(maxi(1, shell_segments))
+		return Vector2(cos(angle), sin(angle)) * 14.0
+	return Vector2(-15.0 + float(plate) * 15.0, -6.0)
+
+
+func spawn_armor_fragments(tank_pos: Vector2, old_armor: int, new_armor: int, weapon_fx: String, enhanced_armor: bool = false, croatian_shell: bool = false, shell_segments: int = 3) -> void:
 	# Detach exactly the plates that were removed; visual only, no collisions.
 	for plate in range(new_armor, old_armor):
-		var offset_x: float = -15.0 + float(plate) * 15.0
-		var velocity: Vector2 = Vector2(randf_range(-130.0, 130.0), randf_range(-220.0, -95.0))
+		var offset := armor_fragment_offset(plate, shell_segments, croatian_shell)
+		# Croatia had no fragment RNG before: keep drop/path/attack RNG untouched.
+		var velocity: Vector2
+		var fragment_rotation: float
+		var spin: float
+		if croatian_shell:
+			velocity = Vector2(offset.x * 8.0, -150.0 + offset.y * 3.0)
+			fragment_rotation = float(plate) * 0.37
+			spin = -7.0 if plate % 2 == 0 else 7.0
+		else:
+			velocity = Vector2(randf_range(-130.0, 130.0), randf_range(-220.0, -95.0))
+			fragment_rotation = randf_range(-0.2, 0.2)
+			spin = randf_range(-9.0, 9.0)
+		if enhanced_armor:
+			velocity.x = (-1.0 if offset.x < 0.0 else 1.0) * maxf(absf(velocity.x), 65.0)
 		armor_fragments.append({
-			"pos": tank_pos + Vector2(offset_x, -6.0),
+			"pos": tank_pos + offset,
 			"velocity": velocity,
-			"rotation": randf_range(-0.2, 0.2),
-			"spin": randf_range(-9.0, 9.0),
+			"rotation": fragment_rotation,
+			"spin": spin,
 			"time": 0.55,
-			"fx": weapon_fx
+			"fx": weapon_fx,
+			"enhanced": enhanced_armor
 		})
+		if croatian_shell:
+			armor_fragments.back()["croatian_shell"] = true
 	# Keep draw/update overhead predictable during large waves.
 	while armor_fragments.size() > 72:
 		armor_fragments.pop_front()
+
+
+func is_croatian_tank(enemy: Dictionary) -> bool:
+	return not in_bosnia() and int(enemy["kind"]) == 1
+
+
+func has_reactive_armor(enemy: Dictionary) -> bool:
+	return is_croatian_tank(enemy) or (in_bosnia() and int(enemy["kind"]) == 4)
+
+
+func coral_colossus_draw_position(enemy: Dictionary) -> Vector2:
+	var pos: Vector2 = enemy["pos"]
+	if not has_reactive_armor(enemy):
+		return pos
+	var shock := float(enemy.get("armor_shock", 0.0))
+	if shock > 0.0:
+		var elapsed := CORAL_ARMOR_SHOCK_SECONDS - shock
+		var strength := shock / CORAL_ARMOR_SHOCK_SECONDS
+		return pos + Vector2(cos(elapsed * 160.0) * 3.5, sin(elapsed * 125.0) * 2.0) * strength
+	return pos
+
+
+func spawn_coral_armor_feedback(enemy: Dictionary, old_armor: int, remaining: int, croatian_shell: bool = false, shell_segments: int = 3) -> void:
+	# No gameplay RNG: changing these visuals must not change drops or pathing.
+	enemy["armor_shock"] = CORAL_ARMOR_SHOCK_SECONDS
+	var pos: Vector2 = enemy["pos"]
+	for plate in range(remaining, old_armor):
+		var plate_pos := pos + armor_fragment_offset(plate, shell_segments, croatian_shell)
+		for spark in range(6):
+			var angle := float(spark) * TAU / 6.0 + float(plate) * 0.7
+			coral_armor_sparks.append({"pos": plate_pos, "velocity": Vector2(cos(angle), sin(angle)) * (70.0 + float(spark % 3) * 35.0), "time": 0.22})
+			if croatian_shell:
+				coral_armor_sparks.back()["croatian_shell"] = true
+	while armor_fragments.size() > 72:
+		armor_fragments.pop_front()
+	while coral_armor_sparks.size() > 144:
+		coral_armor_sparks.pop_front()
+	while coral_energy_flashes.size() > 16:
+		coral_energy_flashes.pop_front()
+
+
+func spawn_reactive_armor_destruction(pos: Vector2, croatian_shell: bool) -> void:
+	coral_energy_flashes.append({"pos": pos, "time": 0.36})
+	if croatian_shell:
+		coral_energy_flashes.back()["croatian_shell"] = true
+	for shard in range(6):
+		var angle := float(shard) * TAU / 6.0
+		armor_fragments.append({"pos": pos + Vector2(cos(angle), sin(angle)) * 20.0,
+			"velocity": Vector2(cos(angle) * 175.0, -170.0 + sin(angle) * 95.0),
+			"rotation": angle, "spin": -7.0 if shard % 2 == 0 else 7.0,
+			"time": 0.7, "fx": "arc", "enhanced": true})
+		if croatian_shell:
+			armor_fragments.back()["croatian_shell"] = true
+	while armor_fragments.size() > 72:
+		armor_fragments.pop_front()
+	while coral_energy_flashes.size() > 16:
+		coral_energy_flashes.pop_front()
+
+
+func update_coral_armor_feedback(delta: float) -> void:
+	for enemy in enemies:
+		if has_reactive_armor(enemy) and enemy.has("armor_shock"):
+			enemy["armor_shock"] = maxf(0.0, float(enemy["armor_shock"]) - delta)
+	for i in range(coral_armor_sparks.size() - 1, -1, -1):
+		var spark: Dictionary = coral_armor_sparks[i]
+		spark["time"] = float(spark["time"]) - delta
+		if float(spark["time"]) <= 0.0:
+			coral_armor_sparks.remove_at(i)
+			continue
+		spark["pos"] = Vector2(spark["pos"]) + Vector2(spark["velocity"]) * delta
+		spark["velocity"] = Vector2(spark["velocity"]) + Vector2(0.0, 160.0) * delta
+	for i in range(coral_energy_flashes.size() - 1, -1, -1):
+		coral_energy_flashes[i]["time"] = float(coral_energy_flashes[i]["time"]) - delta
+		if float(coral_energy_flashes[i]["time"]) <= 0.0:
+			coral_energy_flashes.remove_at(i)
+
+
+func draw_coral_armor_feedback() -> void:
+	for spark in coral_armor_sparks:
+		var pos: Vector2 = spark["pos"]
+		var fade := clampf(float(spark["time"]) / 0.22, 0.0, 1.0)
+		var spark_color := Color(1.0, 0.58, 0.30, fade) if bool(spark.get("croatian_shell", false)) else Color(0.7, 0.96, 1.0, fade)
+		draw_line(pos, pos - Vector2(spark["velocity"]).normalized() * 7.0, spark_color, 2.0, true)
+		draw_circle(pos, 2.0, Color(1.0, 0.82, 0.4, fade))
+	for flash in coral_energy_flashes:
+		var pos: Vector2 = flash["pos"]
+		var fade := clampf(float(flash["time"]) / 0.36, 0.0, 1.0)
+		var croatian_shell := bool(flash.get("croatian_shell", false))
+		draw_destruction_burst(pos, fade, 1.0, Color(1.0, 0.24, 0.12) if croatian_shell else Color(0.12, 0.7, 1.0),
+			Color(1.0, 0.65, 0.32) if croatian_shell else Color(0.3, 0.92, 1.0))
 
 
 func update_armor_fragments(delta: float) -> void:
@@ -3265,13 +3495,24 @@ func draw_armor_fragments() -> void:
 		var angle: float = float(fragment["rotation"])
 		var axis_x: Vector2 = Vector2(cos(angle), sin(angle))
 		var axis_y: Vector2 = Vector2(-sin(angle), cos(angle))
+		var croatian_shell := bool(fragment.get("croatian_shell", false))
+		if croatian_shell:
+			axis_x *= 0.72
+			axis_y *= 0.60
 		var corners := PackedVector2Array([
 			pos - axis_x * 7.0 - axis_y * 12.0,
 			pos + axis_x * 7.0 - axis_y * 12.0,
 			pos + axis_x * 7.0 + axis_y * 12.0,
 			pos - axis_x * 7.0 + axis_y * 12.0
 		])
-		draw_colored_polygon(corners, Color(0.92, 0.40, 0.23, fade))
+		if bool(fragment.get("enhanced", false)):
+			# Jagged fracture edge and a bright exposed inner seam.
+			corners = PackedVector2Array([pos - axis_x * 7.0 - axis_y * 12.0,
+				pos + axis_x * 7.0 - axis_y * 9.0, pos + axis_x * 3.0,
+				pos + axis_x * 7.0 + axis_y * 6.0, pos - axis_x * 7.0 + axis_y * 12.0])
+		draw_colored_polygon(corners, Color(0.81, 0.20, 0.16, fade) if croatian_shell else Color(0.92, 0.40, 0.23, fade))
+		if bool(fragment.get("enhanced", false)):
+			draw_polyline(corners, Color(1.0, 0.57, 0.36, fade) if croatian_shell else Color(1.0, 0.76, 0.48, fade), 1.5, true)
 		var fx: String = String(fragment["fx"])
 		var spark_color: Color = Color(0.42, 0.86, 1.0, fade) if fx == "arc" else (Color(0.39, 1.0, 0.55, fade) if fx == "plasma" else Color(1.0, 0.74, 0.40, fade))
 		draw_line(pos, pos - Vector2(fragment["velocity"]).normalized() * 10.0, spark_color, 2.5, true)
@@ -3284,7 +3525,9 @@ func apply_enemy_weapon_damage(target_index: int, damage: float, armor_damage: i
 		var old_armor: int = int(enemies[target_index].get("armor_left", 3))
 		var remaining: int = 0 if god_mode else maxi(0, old_armor - armor_damage)
 		if remaining < old_armor:
-			spawn_armor_fragments(Vector2(enemies[target_index]["pos"]), old_armor, remaining, weapon_fx)
+			spawn_armor_fragments(Vector2(enemies[target_index]["pos"]), old_armor, remaining, weapon_fx, in_bosnia())
+			if in_bosnia():
+				spawn_coral_armor_feedback(enemies[target_index], old_armor, remaining)
 		enemies[target_index]["armor_left"] = remaining
 		if remaining > 0:
 			explosions.append({"pos": Vector2(enemies[target_index]["pos"]), "time": 0.18})
@@ -3292,7 +3535,15 @@ func apply_enemy_weapon_damage(target_index: int, damage: float, armor_damage: i
 			enemies[target_index]["hp"] = 0.0
 			award_enemy_kill(target_index)
 		return
+	var old_hp := float(enemies[target_index]["hp"])
 	enemies[target_index]["hp"] = 0.0 if god_mode else float(enemies[target_index]["hp"]) - damage
+	if is_croatian_tank(enemies[target_index]) and float(enemies[target_index]["hp"]) < old_hp:
+		var shell_max := maxi(1, ceili(float(enemies[target_index].get("visual_armor_max_hp", old_hp))))
+		var old_shell := clampi(ceili(old_hp), 0, shell_max)
+		var remaining_shell := clampi(ceili(float(enemies[target_index]["hp"])), 0, shell_max)
+		if remaining_shell < old_shell:
+			spawn_armor_fragments(Vector2(enemies[target_index]["pos"]), old_shell, remaining_shell, weapon_fx, true, true, shell_max)
+			spawn_coral_armor_feedback(enemies[target_index], old_shell, remaining_shell, true, shell_max)
 	if float(enemies[target_index]["hp"]) <= 0.0:
 		award_enemy_kill(target_index)
 
@@ -3374,11 +3625,11 @@ func update_bullets(delta: float) -> void:
 				elif boss_shield_hp > 0.0:
 					# Shield HP is 70% of the boss's max HP. Each hit removes
 					# weapon damage from the shield, not an entire ring.
-					boss_shield_hp = maxf(0.0, boss_shield_hp - (12.0 if bool(bullet.get("plasma", false)) else (8.0 if bool(bullet.get("arc", false)) else 2.0 + damage_level)))
+					boss_shield_hp = maxf(0.0, boss_shield_hp - float(bullet["boss_damage"]))
 					var total_layers := 4 if level == CROATIA_FINAL_LEVEL else 2
 					boss_shields = ceili(float(total_layers) * boss_shield_hp / boss_shield_max_hp) if boss_shield_hp > 0.0 else 0
 				else:
-					boss["hp"] = maxf(0.0, float(boss["hp"]) - (12.0 if bool(bullet.get("plasma", false)) else (8.0 if bool(bullet.get("arc", false)) else 2.0 + damage_level)))
+					boss["hp"] = maxf(0.0, float(boss["hp"]) - float(bullet["boss_damage"]))
 				if boss_shields == 0 and float(boss["hp"]) <= 0.0:
 					play_arcade_sfx("boss")
 					score += 2500 * score_multiplier()
@@ -3393,6 +3644,7 @@ func update_bullets(delta: float) -> void:
 						drop_white_orb(Vector2(boss["pos"]))
 					elif level != BOSNIA_FINAL_LEVEL:
 						drop_life_orb(Vector2(boss["pos"]))
+					spawn_enemy_destruction(boss, true)
 					boss.clear()
 			else:
 				if bool(bullet.get("arc", false)):
@@ -3401,10 +3653,10 @@ func update_bullets(delta: float) -> void:
 					arc_chain_impact(target_index)
 				elif bool(bullet.get("plasma", false)):
 					enemies[target_index]["last_plasma_hit"] = int(bullet["plasma_id"])
-					apply_enemy_weapon_damage(target_index, 12.0, 3, "plasma")
+					apply_enemy_weapon_damage(target_index, float(bullet["damage"]), int(bullet["armor_damage"]), "plasma")
 					pass # Plasma stops on first impact
 				else:
-					apply_enemy_weapon_damage(target_index, float(1 + damage_level), 3 if damage_level >= 6 else (2 if damage_level >= 3 else 1))
+					apply_enemy_weapon_damage(target_index, float(bullet["damage"]), int(bullet["armor_damage"]))
 		if hit or shot.y < -20.0 or shot.x < -25.0 or shot.x > W + 25.0:
 			player_bullets.remove_at(i)
 	for i in range(radial_bullets.size() - 1, -1, -1):
@@ -3428,6 +3680,9 @@ func take_damage() -> void:
 	if god_mode or invulnerable > 0.0 or ability_time > 0.0:
 		return
 	lives -= 1
+	# Each actual life loss removes one Speed and ROF level, never Extra Bullet.
+	speed_level = maxi(0, speed_level - 1)
+	rate_level = maxi(0, rate_level - 1)
 	play_arcade_sfx("hurt")
 	# Weapon power drops exactly one tier on each actual life lost.
 	# Triple -> Double -> Single; shields/invulnerability prevent the loss.
@@ -3658,6 +3913,7 @@ func show_weapon_score_bonus() -> void:
 
 
 func update_effects(delta: float) -> void:
+	update_destruction_effects(delta)
 	for i in range(arc_lightning_effects.size() - 1, -1, -1):
 		arc_lightning_effects[i]["time"] = float(arc_lightning_effects[i]["time"]) - delta
 		if float(arc_lightning_effects[i]["time"]) <= 0.0:
@@ -3668,6 +3924,7 @@ func update_effects(delta: float) -> void:
 		if float(bonus_popups[i]["time"]) <= 0.0:
 			bonus_popups.remove_at(i)
 	update_armor_fragments(delta)
+	update_coral_armor_feedback(delta)
 	for i in range(explosions.size() - 1, -1, -1):
 		explosions[i]["time"] = float(explosions[i]["time"]) - delta
 		if float(explosions[i]["time"]) <= 0.0:
@@ -4483,13 +4740,16 @@ func _draw() -> void:
 			0:
 				draw_jellyfish_25d(pos)
 			1:
-				draw_crab_25d(pos)
+				if is_croatian_tank(enemy):
+					draw_crab_25d(coral_colossus_draw_position(enemy), maxi(0, ceili(float(enemy["hp"]))), ceili(float(enemy.get("visual_armor_max_hp", enemy["hp"]))))
+				else:
+					draw_crab_25d(pos)
 			2:
 				draw_eel_25d(pos)
 			3:
 				draw_atlantean_lancer(pos)
 			4:
-				draw_coral_colossus(pos, int(enemy.get("armor_left", 3)))
+				draw_coral_colossus(coral_colossus_draw_position(enemy), int(enemy.get("armor_left", 3)), in_bosnia())
 			5:
 				draw_abyssal_siren(pos)
 	if boss_active and not boss.is_empty():
@@ -4557,6 +4817,8 @@ func _draw() -> void:
 			draw_arc_zap(from_pos, to_pos, alpha, from_pos.x + from_pos.y)
 			draw_arc_burst(to_pos, alpha * 0.85)
 	draw_armor_fragments()
+	draw_coral_armor_feedback()
+	draw_enemy_destructions()
 	for effect in explosions:
 		var pos: Vector2 = effect["pos"]
 		draw_arc(pos, 30.0 * float(effect["time"]) / 0.3 + 8.0, 0, TAU, 20, Color(1.0, 0.68, 0.2), 4.0)

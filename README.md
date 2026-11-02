@@ -1,5 +1,27 @@
 # Adriatic Uprising / Space Shooter
 
+## Shared enemy destruction (latest)
+
+- All six ordinary enemy types, city lieutenants and both final guardians use a shared destruction entry point and burst renderer. A short bright flash expands into a fading ring, rotating falling fragments and sparks; colors match the enemy and bosses use larger effects.
+- Reactive Armor keeps its existing plate loss, sparks, shock and exposed core. Its final burst and six finishing shards now originate from the common death entry point, without a second generic explosion.
+- Enemies leave combat and award rewards immediately. Death visuals continue during intermission and boss reward collection, and never delay stage progression. No gameplay random numbers are consumed.
+- Ordinary/boss animations last 0.65/1.1 seconds, with at most 24 active records and 8/12 procedural shards per record. Reactive effects retain their separate existing limits.
+- Test: `godot --headless --path . --script res://tests/destruction_test.gd`. Optional before/after gameplay comparison: append `-- --baseline=res://path/to/main-before.txt`.
+
+## Croatia reactive tank shell (latest)
+
+- Croatia's red armored front guards (`kind == 1`, crab sprites) now share the Coral Colossus feedback: rotating, falling red shell fragments, impact sparks, 0.15-second visual shock, a pulsing cyan exposed core, and a final destruction burst.
+- These tanks retain their original HP-based durability: 3 HP in levels 1–5, then 6/7/8/9 HP in subsequent city blocks. Shell segments follow remaining HP; they add no armor or extra hits. The core appears at the final third of HP. Bosnia's separate three-plate armor behavior is unchanged.
+- Effects reuse the existing bounded fragment/spark/burst pools and consume no extra gameplay random numbers. Movement, attacks, weapon damage, rewards, saves, Extra Bullet and death penalties are unchanged.
+- Test: `godot --headless --path . --script res://tests/reactive_armor_test.gd`. For a before/after gameplay and Bosnia-effect comparison, append `-- --baseline=res://path/to/main-before.txt` using a source snapshot made before this feature.
+
+## Projectile capacity and life-loss upgrades (latest)
+
+- All five weapons share a limit of **5 + Extra Bullet level** active player projectiles (5–13). Single, Arc and Plasma need one free slot, Double needs two, and Triple needs three. A volley fires only when the entire volley fits; rejected attempts do not consume firing cooldowns. Holding fire still does not repeat shots.
+- Each actual life loss reduces **Speed and ROF by one level**, with a minimum of zero. The existing weapon downgrade remains; Extra Bullet, shield upgrades, score and Scrap are preserved. R Shield, post-hit invulnerability and God Mode prevent these penalties.
+- Damage, projectile speeds, spread angles, upgrade prices and firing interval formulas are unchanged. Shots already in flight retain their launch damage.
+- Regression test: `godot --headless --path . --script res://tests/weapon_system_test.gd`. It runs without normal game startup or reading/writing player saves.
+
 Godot 4.x vertical arcade shooter prototype, inspired by the planned four-country Balkan campaign.
 
 ## Run
